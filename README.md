@@ -211,3 +211,10 @@ Lom is opening up module by module. The desktop interface is here under AGPL-3.0
   If Lom helps you run your one-person company, a ⭐ helps others find it.<br>
   <sub>From answering questions to getting work done.</sub>
 </p>
+
+## Acknowledgements
+
+Special thanks to these outstanding open-source projects and their maintainers and contributors:
+
+- [AionUi](https://github.com/iOfficeAI/AionUi)
+- [OpenMinis](https://github.com/OpenMinis/OpenMinis)

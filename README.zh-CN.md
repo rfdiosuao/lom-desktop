@@ -211,3 +211,10 @@ Lom 正在一个模块一个模块地开源。桌面端界面已在这里以 AGP
   如果 Lom 帮到了你的一人公司，点个 ⭐ 让更多人看到它。<br>
   <sub>让 AI 从回答问题，走向完成工作。</sub>
 </p>
+
+## 鸣谢
+
+特别感谢以下两个优秀的开源项目，以及它们的维护者与贡献者：
+
+- [AionUi](https://github.com/iOfficeAI/AionUi)
+- [OpenMinis](https://github.com/OpenMinis/OpenMinis)
