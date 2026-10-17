@@ -21,7 +21,7 @@
 <p align="center">
   <a href="https://lom.entermodetwo.com/en/">Website</a> ·
   <a href="https://github.com/rfdiosuao/lom-desktop/releases/latest">Download</a> ·
-  <a href="https://lom.entermodetwo.com/#video">Watch the 2½-minute demo</a> ·
+  <a href="https://lom.entermodetwo.com/en/#video">Watch the 2½-minute demo</a> ·
   <a href="https://lom.entermodetwo.com/en/docs/">Docs</a> ·
   <a href="README.zh-CN.md">中文</a>
 </p>
