@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://lom.entermodetwo.com"><img src="docs/assets/logo.png" width="104" alt="Lom logo"></a>
+  <a href="https://lom.entermodetwo.com/en/"><img src="docs/assets/logo.png" width="104" alt="Lom logo"></a>
 </p>
 
 <h1 align="center">Lom</h1>
@@ -19,10 +19,10 @@
 </p>
 
 <p align="center">
-  <a href="https://lom.entermodetwo.com">Website</a> ·
+  <a href="https://lom.entermodetwo.com/en/">Website</a> ·
   <a href="https://github.com/rfdiosuao/lom-desktop/releases/latest">Download</a> ·
   <a href="https://lom.entermodetwo.com/#video">Watch the 2½-minute demo</a> ·
-  <a href="https://lom.entermodetwo.com/docs/">Docs</a> ·
+  <a href="https://lom.entermodetwo.com/en/docs/">Docs</a> ·
   <a href="README.zh-CN.md">中文</a>
 </p>
 
@@ -159,7 +159,7 @@ A skill marketplace. Install skills on the commander or push them to a single ph
 |---|---|---|
 | **macOS** | macOS 11 or later, Apple silicon | `.dmg` from [Releases](https://github.com/rfdiosuao/lom-desktop/releases/latest) |
 | **Windows** | Windows 10 or 11, 64-bit | `.exe` installer from [Releases](https://github.com/rfdiosuao/lom-desktop/releases/latest) |
-| **Android** (Lom Agent) | Android 8 or later; live screen needs Android 11+ | `.apk` from the [website](https://lom.entermodetwo.com/#download) |
+| **Android** (Lom Agent) | Android 8 or later; live screen needs Android 11+ | `.apk` from the [website](https://lom.entermodetwo.com/en/#download) |
 
 First launch:
 
@@ -182,7 +182,7 @@ Getting started:
 
 1. Install Lom and sign in with a HEANG, Google or GitHub account.
 2. Click **+ → Add phone** and scan the QR code with the Lom Agent app on your phone.
-3. On the phone, turn on accessibility for Lom Agent ([phone setup guide](https://lom.entermodetwo.com/docs/phone.html)).
+3. On the phone, turn on accessibility for Lom Agent ([phone setup guide](https://lom.entermodetwo.com/en/docs/phone.html)).
 4. Tell the commander what you want done.
 
 ## Roadmap
