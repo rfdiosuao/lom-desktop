@@ -163,8 +163,20 @@ A skill marketplace. Install skills on the commander or push them to a single ph
 
 First launch:
 
-- **macOS:** if macOS says it cannot verify the developer, open System Settings → Privacy & Security and choose **Open Anyway**.
-- **Windows:** if SmartScreen shows "Windows protected your PC", choose **More info → Run anyway**. The installer works per user and needs no admin rights.
+- **macOS:** the app is not notarized yet, so macOS may say it "is damaged and can't be opened", that it cannot verify the developer, or simply do nothing. Drag Lom into Applications, open Terminal, run this line, then open Lom again:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/麓鸣 Lom.app"
+  ```
+
+  It only removes the download quarantine flag and needs no password. If it says `Permission denied`, run it again with `sudo` in front. You can also use System Settings → Privacy & Security → **Open Anyway**.
+- **Windows:** if SmartScreen shows "Windows protected your PC", choose **More info → Run anyway**. If there is no such button or the installer does nothing, open a terminal in your Downloads folder and run:
+
+  ```powershell
+  Unblock-File .\Lom-*-windows-x64-setup.exe
+  ```
+
+  Or right-click the installer → Properties → tick **Unblock**. The installer works per user and needs no admin rights.
 
 Getting started:
 
