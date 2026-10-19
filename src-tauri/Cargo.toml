@@ -13,6 +13,8 @@ tauri-build = { version = "=2.7.3", features = [] }
 [dependencies]
 tauri = { version = "=2.12.4", features = [] }
 tauri-plugin-dialog = "=2.8.3"
+getrandom = "0.3"
+dirs = "6"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 [profile.release]

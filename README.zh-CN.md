@@ -218,3 +218,9 @@ Lom 正在一个模块一个模块地开源。桌面端界面已在这里以 AGP
 
 - [AionUi](https://github.com/iOfficeAI/AionUi)
 - [OpenMinis](https://github.com/OpenMinis/OpenMinis)
+
+## 一起迭代 Lom 桌面端
+
+我们继续开放桌面界面、原生窗口/文件能力和本机 CLI 接入。欢迎从 **[社区完整计划与未修 Bug](COMMUNITY_PLAN.md)** 选择任务，再阅读 **[贡献指南](CONTRIBUTING.md)**。清单保留完成、未做、待验收和已取消状态，并区分公开源码可改、桌面页面待提取、需要官方接线的项目。
+
+公开源码可独立构建，包含本地文档工作台、桌面组件预览及可选本机运行时适配；目前尚未覆盖生产版全部聊天/工作区页面。手机端、服务端、商业模型内核和账号计费实现继续保密。具体内容见 [开源边界](docs/SCOPE.md)，完整产品下载仍在 Release。
