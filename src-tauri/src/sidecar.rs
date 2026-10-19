@@ -7,7 +7,9 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -40,11 +42,6 @@ fn err(code: &'static str, detail: impl std::fmt::Display) -> SidecarError {
         code,
         detail: detail.to_string(),
     }
-}
-
-pub struct Sidecar {
-    pub endpoint: Endpoint,
-    pub child: Child,
 }
 
 /// Opt-in only: never locate, download or bundle a private engine automatically.
@@ -103,7 +100,11 @@ fn ensure_dir(p: &Path) -> Result<(), SidecarError> {
 }
 
 /// 启动核心并等待就绪；`data_dir` 为应用数据目录
-pub fn start(data_dir: &Path) -> Result<Sidecar, SidecarError> {
+pub fn start(
+    data_dir: &Path,
+    child_slot: &Mutex<Option<Child>>,
+    stopping: &AtomicBool,
+) -> Result<Endpoint, SidecarError> {
     let bin = core_binary()?;
     let port = free_port()?;
     let token = random_token()?;
@@ -113,6 +114,13 @@ pub fn start(data_dir: &Path) -> Result<Sidecar, SidecarError> {
     let log_dir = data_dir.join("logs");
     for d in [data_dir, &work_dir, &log_dir, &default_folder] {
         ensure_dir(d)?;
+    }
+    // Registration and spawn share the shutdown lock: Exit cannot miss an in-flight child.
+    let mut registered = child_slot
+        .lock()
+        .map_err(|_| err("core.state_poisoned", "运行时状态不可用"))?;
+    if stopping.load(Ordering::SeqCst) {
+        return Err(err("core.stopped", "桌面正在关闭"));
     }
     let child = Command::new(&bin)
         .args([
@@ -146,35 +154,53 @@ pub fn start(data_dir: &Path) -> Result<Sidecar, SidecarError> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| err("core.spawn_failed", format!("{}: {e}", bin.display())))?;
-    let mut sidecar = Sidecar {
-        endpoint: Endpoint {
-            url: format!("http://127.0.0.1:{port}"),
-            token,
-            default_folder: default_folder.to_string_lossy().into_owned(),
-            home_dir: home.to_string_lossy().into_owned(),
-        },
-        child,
+    *registered = Some(child);
+    drop(registered);
+    let endpoint = Endpoint {
+        url: format!("http://127.0.0.1:{port}"),
+        token,
+        default_folder: default_folder.to_string_lossy().into_owned(),
+        home_dir: home.to_string_lossy().into_owned(),
     };
     let deadline = Instant::now() + Duration::from_secs(40);
     while Instant::now() < deadline {
-        if let Ok(Some(status)) = sidecar.child.try_wait() {
+        if stopping.load(Ordering::SeqCst) {
+            return Err(err("core.stopped", "桌面正在关闭"));
+        }
+        let mut guard = child_slot
+            .lock()
+            .map_err(|_| err("core.state_poisoned", "运行时状态不可用"))?;
+        let child = guard
+            .as_mut()
+            .ok_or_else(|| err("core.stopped", "运行时已关闭"))?;
+        let status = child.try_wait();
+        drop(guard);
+        if let Ok(Some(status)) = status {
             return Err(err(
                 "core.exited",
                 format!("核心启动后退出（{status}），日志见 {}", log_dir.display()),
             ));
         }
-        if healthy(port) {
-            return Ok(sidecar);
+        if healthy(port) && !stopping.load(Ordering::SeqCst) {
+            return Ok(endpoint);
         }
         std::thread::sleep(Duration::from_millis(150));
     }
     // 尽力结束未就绪的子进程；即使失败，--parent-pid 也会让它在外壳退出时结束
-    let _ = sidecar.child.kill();
-    let _ = sidecar.child.wait();
+    let _ = stop_child(child_slot);
     Err(err(
         "core.start_timeout",
         format!("40 秒内没有就绪，日志见 {}", log_dir.display()),
     ))
+}
+
+/// Best effort fallback also used by Drop; normal Exit calls this explicitly.
+pub fn stop_child(slot: &Mutex<Option<Child>>) -> Option<ExitStatus> {
+    let mut guard = slot.lock().ok()?;
+    let mut child = guard.take()?;
+    // The child may already have exited; wait still reaps it after a failed kill.
+    let _ = child.kill();
+    child.wait().ok()
 }
 
 #[cfg(test)]

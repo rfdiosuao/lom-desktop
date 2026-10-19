@@ -59,3 +59,11 @@ describe('desktop-local runtime boundary', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+it('a late REST response from a replaced runtime cannot become current data', async () => {
+  let finish: (response: Response) => void = () => {};
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
+  setEndpoint(endpoint); const result = listAgents();
+  setEndpoint({ ...endpoint, url: 'http://127.0.0.1:31416', token: 'new' });
+  const assertion = expect(result).rejects.toMatchObject({ code: 'LOM_CORE_SESSION_CHANGED' });
+  finish(response([agent])); await assertion;
+});

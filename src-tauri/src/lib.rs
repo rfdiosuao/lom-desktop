@@ -13,13 +13,24 @@ pub fn run() {
             documents::save_document,
             runtime::core_endpoint
         ])
-        .setup(move |app| {
-            runtime::start(app.handle(), Arc::clone(&state));
-            Ok(())
+        .setup({
+            let state = Arc::clone(&state);
+            move |app| {
+                runtime::start(app.handle(), Arc::clone(&state));
+                Ok(())
+            }
         })
-        .run(tauri::generate_context!());
-    if let Err(error) = result {
-        eprintln!("Desktop window failed: {error}");
-        std::process::exit(1);
+        .build(tauri::generate_context!());
+    match result {
+        Ok(app) => app.run(move |_, event| {
+            if let tauri::RunEvent::Exit = event {
+                let _ = state.shutdown();
+            }
+        }),
+        Err(error) => {
+            eprintln!("Desktop window failed: {error}");
+            let _ = state.shutdown();
+            std::process::exit(1);
+        }
     }
 }

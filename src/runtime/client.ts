@@ -11,6 +11,11 @@ export class CoreError extends Error {
 }
 
 let endpoint: Endpoint | null = null;
+const endpointListeners = new Set<() => void>();
+export function onEndpointChange(listener: () => void) {
+  endpointListeners.add(listener);
+  return () => { endpointListeners.delete(listener); };
+}
 /** Refuse remote hosts, URL credentials, query tokens and non-loopback aliases. */
 export const setEndpoint = (e: Endpoint | null) => {
   if (e) {
@@ -19,6 +24,7 @@ export const setEndpoint = (e: Endpoint | null) => {
       throw new CoreError('LOCAL_ENDPOINT_REQUIRED', '只允许本机运行时地址');
   }
   endpoint = e ? Object.freeze({ ...e, url: e.url.replace(/\/$/, '') }) : null;
+  for (const listener of [...endpointListeners]) listener();
 };
 export const getEndpoint = () => endpoint;
 
@@ -61,7 +67,9 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
     } catch (e) {
       throw new CoreError('LOM_CORE_UNREACHABLE', `无法连接核心服务（${e instanceof Error ? e.message : String(e)}）`);
     }
-    return parseResponse<T>(res);
+    const result = await parseResponse<T>(res);
+    if (current !== endpoint) throw new CoreError('LOM_CORE_SESSION_CHANGED', '本机运行时已切换，旧请求执行结果未应用');
+    return result;
   })();
   try { return await abortable(request, control.signal); }
   finally { control.clear(); }

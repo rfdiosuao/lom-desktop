@@ -1,4 +1,4 @@
-import { wsUrl } from './client';
+import { wsUrl, onEndpointChange } from './client';
 import type { CoreEvent } from './types';
 
 /* ===== lom-core 实时事件（WebSocket）：断线后指数退避重连 ===== */
@@ -17,11 +17,21 @@ export function connectEvents(opts: {
   let attempt = 0;
   let everOpened = false;
   let timer = 0;
+  let unsubscribe = () => {};
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    window.clearTimeout(timer);
+    unsubscribe();
+    ws?.close();
+  };
+  unsubscribe = onEndpointChange(close);
 
   const open = () => {
     if (closed) return;
     ws = new WebSocket(url);
     ws.onopen = () => {
+      if (closed) return;
       opts.onOpen(everOpened);
       everOpened = true;
       attempt = 0;
@@ -46,11 +56,5 @@ export function connectEvents(opts: {
   };
 
   open();
-  return {
-    close: () => {
-      closed = true;
-      window.clearTimeout(timer);
-      ws?.close();
-    },
-  };
+  return { close };
 }

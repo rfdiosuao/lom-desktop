@@ -29,3 +29,15 @@ it('does not print malformed event content or tokens', () => {
   Socket.all[0].onmessage?.({ data: 'private-payload-not-json' });
   expect(warn).toHaveBeenCalledWith('runtime.invalid_event'); connection.close();
 });
+it.each(['replace', 'clear'])('%s endpoint closes old sockets, cancels reconnects and ignores all late callbacks', async mode => {
+  vi.useFakeTimers(); vi.stubGlobal('WebSocket', Socket);
+  setEndpoint({ url: 'http://127.0.0.1:31415', token: 'old', defaultFolder: '', homeDir: '' });
+  const opts = { onEvent: vi.fn(), onOpen: vi.fn(), onDown: vi.fn() };
+  connectEvents(opts); const old = Socket.all[0]; old.onclose?.({ code: 1006, reason: '' });
+  opts.onDown.mockClear();
+  setEndpoint(mode === 'clear' ? null : { url: 'http://127.0.0.1:31416', token: 'new', defaultFolder: '', homeDir: '' });
+  expect(old.close).toHaveBeenCalledOnce();
+  old.onopen?.(); old.onmessage?.({ data: '{"name":"stale","data":{}}' }); old.onclose?.({ code: 1006, reason: '' });
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(Socket.all).toHaveLength(1); expect(opts.onEvent).not.toHaveBeenCalled(); expect(opts.onOpen).not.toHaveBeenCalled(); expect(opts.onDown).not.toHaveBeenCalled();
+});
