@@ -218,3 +218,9 @@ Special thanks to these outstanding open-source projects and their maintainers a
 
 - [AionUi](https://github.com/iOfficeAI/AionUi)
 - [OpenMinis](https://github.com/OpenMinis/OpenMinis)
+
+## Build Lom with us
+
+We are opening more desktop UI, native window/file functionality, and local CLI integration under the existing license. Start with the **[community roadmap and unresolved bugs](COMMUNITY_PLAN.md)** and **[contribution guide](CONTRIBUTING.md)**. The roadmap distinguishes public desktop tasks, modules awaiting extraction, and work that requires the maintainers' private services.
+
+The standalone source includes a document workbench, desktop component gallery, and optional local-runtime adapters. It does not yet reproduce every production chat/workspace screen. Mobile, server, commercial model runtime, and account/billing implementations remain private. See the exact [source and release boundaries](docs/SCOPE.md) before building.

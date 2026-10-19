@@ -1,0 +1,7 @@
+.gallery{padding:28px 32px;max-width:1080px;width:100%;margin:0 auto}
+.gallery .tabs{margin-bottom:28px}.gallery .section{margin:24px 0}.gallery p{font-size:14px;color:var(--muted)}
+.kit-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0}
+.gallery .skill-upload{display:inline-block;margin:14px 0}.gallery .skill-upload .btn{white-space:normal}
+.gallery .list-row{border:1px solid var(--line);border-radius:var(--r-md);margin:12px 0}
+.gallery .seg__opt.is-active{background:var(--surface)}.gallery .tabs__tab{border-radius:0}
+@media(max-width:580px){.gallery{padding:20px 16px}}
