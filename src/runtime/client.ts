@@ -28,7 +28,12 @@ export const setEndpoint = (e: Endpoint | null) => {
 };
 export const getEndpoint = () => endpoint;
 
-export interface RequestOptions { signal?: AbortSignal; timeoutMs?: number; }
+/** The desktop shell owns recovery. Keeping it here avoids a web/Tauri import. */
+type RecoveryHandler = () => Promise<void>;
+let recovery: RecoveryHandler | null = null;
+export const setRecoveryHandler = (handler: RecoveryHandler | null) => { recovery = handler; };
+
+export interface RequestOptions { signal?: AbortSignal; timeoutMs?: number; retry?: boolean; }
 
 function abortable<T>(request: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return request;
@@ -57,21 +62,28 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   // This client intentionally exposes only desktop-local CLI/conversation operations.
   if (!/^\/api\/(?:agents(?:\/management|\/[^/?#]+\/health-check)|conversations(?:\/[^/?#]+(?:\/(?:messages|cancel|confirmations(?:\/[^/?#]+\/confirm)?|runtime\/(?:ensure|restart)|config-options(?:\/[^/?#]+)?))?)?)$/.test(path) || /%2f|%5c|%2e|\.\./i.test(path))
     throw new CoreError('DESKTOP_ROUTE_ONLY', '此公开连接层只支持桌面 CLI 与会话');
-  const current = endpoint;
   const control = requestControl({ timeoutMs: 30_000, ...options });
   if (control.signal.aborted) { control.clear(); throw new CoreError('LOM_CORE_CANCELLED', '请求已取消，执行状态尚未确认'); }
-  const request = (async () => {
+  const call = async (allowRecovery: boolean): Promise<T> => {
+    const current = endpoint;
+    if (!current) throw new CoreError('LOM_CORE_NOT_READY', '核心服务还没有启动');
     let res: Response;
     try {
       res = await fetch(current.url + path, { method, signal: control.signal, headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'x-lom-token': current.token }, body: body === undefined ? undefined : JSON.stringify(body) });
     } catch (e) {
+      // Only replay idempotent reads automatically. A failed write must stay
+      // "unknown" unless the caller explicitly opts in.
+      if (allowRecovery && recovery && (method === 'GET' || options.retry === true)) {
+        try { await recovery(); } catch { /* keep the original transport error */ }
+        return call(false);
+      }
       throw new CoreError('LOM_CORE_UNREACHABLE', `无法连接核心服务（${e instanceof Error ? e.message : String(e)}）`);
     }
     const result = await parseResponse<T>(res);
     if (current !== endpoint) throw new CoreError('LOM_CORE_SESSION_CHANGED', '本机运行时已切换，旧请求执行结果未应用');
     return result;
-  })();
-  try { return await abortable(request, control.signal); }
+  };
+  try { return await abortable(call(true), control.signal); }
   finally { control.clear(); }
 }
 
