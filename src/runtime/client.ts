@@ -23,7 +23,11 @@ export const setEndpoint = (e: Endpoint | null) => {
     if (u.protocol !== 'http:' || u.hostname !== '127.0.0.1' || !u.port || u.username || u.password || u.search || u.hash || u.pathname !== '/')
       throw new CoreError('LOCAL_ENDPOINT_REQUIRED', '只允许本机运行时地址');
   }
-  endpoint = e ? Object.freeze({ ...e, url: e.url.replace(/\/$/, '') }) : null;
+  const next = e ? Object.freeze({ ...e, url: e.url.replace(/\/$/, '') }) : null;
+  // Native events, startup and recovery can all report the same generation.
+  // Preserve identity so a duplicate report does not cancel current requests.
+  if (next?.url === endpoint?.url && next?.token === endpoint?.token && next?.defaultFolder === endpoint?.defaultFolder && next?.homeDir === endpoint?.homeDir) return;
+  endpoint = next;
   for (const listener of [...endpointListeners]) listener();
 };
 export const getEndpoint = () => endpoint;
@@ -31,7 +35,16 @@ export const getEndpoint = () => endpoint;
 /** The desktop shell owns recovery. Keeping it here avoids a web/Tauri import. */
 type RecoveryHandler = () => Promise<void>;
 let recovery: RecoveryHandler | null = null;
-export const setRecoveryHandler = (handler: RecoveryHandler | null) => { recovery = handler; };
+let recovering: { handler: RecoveryHandler; promise: Promise<void> } | null = null;
+export const setRecoveryHandler = (handler: RecoveryHandler | null) => { recovery = handler; recovering = null; };
+
+function recover(handler: RecoveryHandler): Promise<void> {
+  if (recovering?.handler === handler) return recovering.promise;
+  const attempt = { handler, promise: Promise.resolve().then(handler) };
+  recovering = attempt;
+  void attempt.promise.then(() => { if (recovering === attempt) recovering = null; }, () => { if (recovering === attempt) recovering = null; });
+  return attempt.promise;
+}
 
 export interface RequestOptions { signal?: AbortSignal; timeoutMs?: number; retry?: boolean; }
 
@@ -65,19 +78,23 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   const control = requestControl({ timeoutMs: 30_000, ...options });
   if (control.signal.aborted) { control.clear(); throw new CoreError('LOM_CORE_CANCELLED', '请求已取消，执行状态尚未确认'); }
   const call = async (allowRecovery: boolean): Promise<T> => {
+    if (control.signal.aborted) throw new CoreError('LOM_CORE_CANCELLED', '请求已取消或超时，执行状态尚未确认');
     const current = endpoint;
     if (!current) throw new CoreError('LOM_CORE_NOT_READY', '核心服务还没有启动');
     let res: Response;
     try {
       res = await fetch(current.url + path, { method, signal: control.signal, headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'x-lom-token': current.token }, body: body === undefined ? undefined : JSON.stringify(body) });
     } catch (e) {
+      if (control.signal.aborted) throw new CoreError('LOM_CORE_CANCELLED', '请求已取消或超时，执行状态尚未确认');
       // Only replay idempotent reads automatically. A failed write must stay
       // "unknown" unless the caller explicitly opts in.
       if (allowRecovery && recovery && (method === 'GET' || options.retry === true)) {
-        try { await recovery(); } catch { /* keep the original transport error */ }
+        try { await recover(recovery); } catch { /* keep the original transport error */ }
         return call(false);
       }
-      throw new CoreError('LOM_CORE_UNREACHABLE', `无法连接核心服务（${e instanceof Error ? e.message : String(e)}）`);
+      throw new CoreError('LOM_CORE_UNREACHABLE', method === 'GET'
+        ? `无法连接核心服务（${e instanceof Error ? e.message : String(e)}）`
+        : '无法连接核心服务；执行状态未知，请核对结果后再决定是否重试');
     }
     const result = await parseResponse<T>(res);
     if (current !== endpoint) throw new CoreError('LOM_CORE_SESSION_CHANGED', '本机运行时已切换，旧请求执行结果未应用');

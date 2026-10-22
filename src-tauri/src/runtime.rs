@@ -107,6 +107,7 @@ impl Runtime {
                 break;
             }
             let _ = sidecar::stop_child(&self.child);
+            self.fatal.store(false, Ordering::SeqCst);
             self.set_status("starting", attempt, self.last_error());
             self.emit_status(&app);
 
@@ -175,7 +176,7 @@ impl Runtime {
                                 break;
                             }
                         }
-                        self.sleep(Duration::from_millis(500));
+                        self.sleep(Duration::from_millis(500), epoch);
                     }
 
                     if self.stopping.load(Ordering::SeqCst) {
@@ -192,7 +193,7 @@ impl Runtime {
                     } else {
                         attempt + 1
                     };
-                    self.sleep(backoff_delay(attempt));
+                    self.sleep(backoff_delay(attempt), epoch);
                 }
                 Err(error) => {
                     let fatal = matches!(
@@ -210,7 +211,9 @@ impl Runtime {
                     );
                     self.emit_status(&app);
                     if fatal {
-                        self.wait_for_restart();
+                        // Keep the epoch from before start: a retry arriving
+                        // while start fails must not be swallowed by the wait.
+                        self.wait_for_restart(epoch);
                         if self.stopping.load(Ordering::SeqCst) {
                             break;
                         }
@@ -218,7 +221,7 @@ impl Runtime {
                         continue;
                     }
                     attempt += 1;
-                    self.sleep(backoff_delay(attempt));
+                    self.sleep(backoff_delay(attempt), epoch);
                 }
             }
         }
@@ -232,6 +235,9 @@ impl Runtime {
         let deadline = Instant::now() + START_TIMEOUT;
         let mut requested = false;
         loop {
+            if self.stopping.load(Ordering::SeqCst) {
+                return Err("core.stopped".to_owned());
+            }
             if self.fatal.load(Ordering::SeqCst) {
                 return Err(self
                     .last_error()
@@ -277,6 +283,11 @@ impl Runtime {
             if self.stopping.load(Ordering::SeqCst) {
                 return Err("core.stopped".to_owned());
             }
+            if self.fatal.load(Ordering::SeqCst) {
+                return Err(self
+                    .last_error()
+                    .unwrap_or_else(|| "core.unavailable".to_owned()));
+            }
             if self.generation.load(Ordering::SeqCst) > after {
                 if let Some(endpoint) = slot.as_ref() {
                     if endpoint.port().is_some_and(sidecar::healthy) {
@@ -308,22 +319,23 @@ impl Runtime {
         self.wake_cv.notify_all();
     }
 
-    fn wait_for_restart(&self) {
-        let epoch = self.restart_epoch.load(Ordering::SeqCst);
-        while !self.stopping.load(Ordering::SeqCst)
-            && self.restart_epoch.load(Ordering::SeqCst) == epoch
-        {
-            let Ok(guard) = self.wake.lock() else { return };
-            let _ = self.wake_cv.wait_timeout(guard, Duration::from_secs(1));
-        }
+    fn wait_for_restart(&self, epoch: u64) {
+        let Ok(guard) = self.wake.lock() else { return };
+        let _guard = self.wake_cv.wait_while(guard, |_| {
+            !self.stopping.load(Ordering::SeqCst)
+                && self.restart_epoch.load(Ordering::SeqCst) == epoch
+        });
     }
 
-    fn sleep(&self, delay: Duration) {
+    fn sleep(&self, delay: Duration, epoch: u64) {
         let Ok(guard) = self.wake.lock() else {
             std::thread::sleep(delay);
             return;
         };
-        let _ = self.wake_cv.wait_timeout(guard, delay);
+        let _ = self.wake_cv.wait_timeout_while(guard, delay, |_| {
+            !self.stopping.load(Ordering::SeqCst)
+                && self.restart_epoch.load(Ordering::SeqCst) == epoch
+        });
     }
 
     fn current_endpoint(&self) -> Option<Endpoint> {
@@ -349,6 +361,12 @@ impl Runtime {
             status.state = state.to_owned();
             status.attempt = attempt;
             status.last_error = last_error;
+        }
+        if state != "ready" {
+            if let Ok(mut endpoint) = self.endpoint.lock() {
+                *endpoint = None;
+                self.changed.notify_all();
+            }
         }
     }
 
@@ -379,8 +397,13 @@ impl Runtime {
 
     pub fn shutdown(&self) -> Option<ExitStatus> {
         self.stopping.store(true, Ordering::SeqCst);
-        self.changed.notify_all();
-        self.wake_cv.notify_all();
+        // Synchronize notification with waiters' predicate checks.
+        if let Ok(_guard) = self.endpoint.lock() {
+            self.changed.notify_all();
+        }
+        if let Ok(_guard) = self.wake.lock() {
+            self.wake_cv.notify_all();
+        }
         sidecar::stop_child(&self.child)
     }
 }
@@ -468,5 +491,67 @@ mod tests {
         assert_eq!(status.state, "starting");
         assert_eq!(status.attempt, 0);
         assert!(status.endpoint.is_none());
+    }
+
+    #[test]
+    fn ensure_after_shutdown_returns_stopped_immediately() {
+        let runtime = Runtime::default();
+        runtime.shutdown();
+        assert!(matches!(runtime.ensure_blocking(), Err(error) if error == "core.stopped"));
+    }
+
+    #[test]
+    fn fatal_start_failure_releases_restart_waiter() {
+        let runtime = Runtime::default();
+        runtime.fatal.store(true, Ordering::SeqCst);
+        runtime.set_status("unavailable", 1, Some("core.invalid_binary".into()));
+        let started = Instant::now();
+        assert!(
+            matches!(runtime.wait_for_generation(0, Duration::from_secs(2)), Err(error) if error == "core.invalid_binary")
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn restart_requested_during_failed_start_is_not_lost() {
+        let runtime = Arc::new(Runtime::default());
+        let start_epoch = runtime.restart_epoch.load(Ordering::SeqCst);
+        runtime.request_restart();
+        let (send, receive) = std::sync::mpsc::channel();
+        let waiting = runtime.clone();
+        let thread = std::thread::spawn(move || {
+            waiting.wait_for_restart(start_epoch);
+            send.send(()).unwrap();
+        });
+        let completed = receive.recv_timeout(Duration::from_secs(1)).is_ok();
+        runtime.shutdown();
+        thread.join().unwrap();
+        assert!(
+            completed,
+            "a restart received before waiting must still wake the supervisor"
+        );
+    }
+
+    #[test]
+    fn retry_backoff_observes_restart_before_waiting() {
+        let runtime = Runtime::default();
+        let epoch = runtime.restart_epoch.load(Ordering::SeqCst);
+        runtime.request_restart();
+        let started = Instant::now();
+        runtime.sleep(Duration::from_secs(2), epoch);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn failed_runtime_does_not_advertise_an_old_endpoint() {
+        let runtime = Runtime::default();
+        *runtime.endpoint.lock().unwrap() = Some(Endpoint {
+            url: "http://127.0.0.1:31415".into(),
+            token: "test".into(),
+            default_folder: String::new(),
+            home_dir: String::new(),
+        });
+        runtime.set_status("restarting", 1, Some("core.exited".into()));
+        assert!(runtime.snapshot().endpoint.is_none());
     }
 }

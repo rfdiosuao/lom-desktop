@@ -12,11 +12,22 @@ export function RuntimePanel() {
   const [rows, setRows] = useState<AgentRow[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [loaded, setLoaded] = useState(false), [status, setStatus] = useState<CoreStatus | null>(null);
   useEffect(() => {
     if (!isTauri()) return;
+    let disposed = false, revision = 0;
     let unlisten: (() => void) | undefined;
-    void listen<CoreStatus>('core://status', event => setStatus(event.payload))
-      .then(stop => { unlisten = stop; })
+    void listen<CoreStatus>('core://status', event => {
+      if (disposed) return;
+      revision += 1;
+      setStatus(event.payload);
+    })
+      .then(async stop => {
+        if (disposed) { stop(); return; }
+        unlisten = stop;
+        const before = revision;
+        const current = await invoke<CoreStatus>('core_status');
+        if (!disposed && before === revision) setStatus(current);
+      })
       .catch(() => { /* status is optional diagnostics */ });
-    return () => unlisten?.();
+    return () => { disposed = true; unlisten?.(); };
   }, []);
   async function connect() {
     setBusy(true); setError(''); setLoaded(false); setRows([]);
