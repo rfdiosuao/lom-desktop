@@ -24,6 +24,18 @@ pub struct Endpoint {
     pub home_dir: String,
 }
 
+impl Endpoint {
+    /// Port of the loopback endpoint. The URL is validated by the desktop shell.
+    pub fn port(&self) -> Option<u16> {
+        self.url
+            .rsplit(':')
+            .next()?
+            .trim_end_matches('/')
+            .parse()
+            .ok()
+    }
+}
+
 /// 启动失败的原因，带错误码（`core.<原因>`）
 #[derive(Debug, Clone)]
 pub struct SidecarError {
@@ -78,21 +90,57 @@ fn random_token() -> Result<String, SidecarError> {
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-fn healthy(port: u16) -> bool {
-    let Ok(mut s) =
+pub(crate) fn healthy(port: u16) -> bool {
+    let Ok(mut stream) =
         TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(300))
     else {
         return false;
     };
-    // 设置超时失败时继续：最坏情况是这一次探测慢一些，外层仍有 40 秒总时限
-    let _ = s.set_read_timeout(Some(Duration::from_millis(800)));
-    if s.write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+    // Bound the entire probe, including fragmented/trickling responses.
+    let deadline = Instant::now() + Duration::from_millis(800);
+    if stream
+        .set_write_timeout(Some(Duration::from_millis(800)))
         .is_err()
     {
         return false;
     }
-    let mut head = [0u8; 16];
-    matches!(s.read(&mut head), Ok(n) if n >= 12 && head.starts_with(b"HTTP/1.1 200"))
+    if stream
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    // Read the status line only; a single read can split the response arbitrarily.
+    let mut buf = [0u8; 256];
+    let mut filled = 0;
+    let mut line_end = None;
+    while filled < buf.len() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() {
+            return false;
+        }
+        match stream.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                filled += n;
+                line_end = buf[..filled]
+                    .windows(2)
+                    .position(|window| window == b"\r\n");
+                if line_end.is_some() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let Some(line_end) = line_end else {
+        return false;
+    };
+    let head = String::from_utf8_lossy(&buf[..line_end]);
+    let mut parts = head.split_whitespace();
+    let protocol = parts.next().unwrap_or_default();
+    let code = parts.next().unwrap_or_default();
+    matches!(protocol, "HTTP/1.1" | "HTTP/1.0") && matches!(code, "200" | "204")
 }
 
 fn ensure_dir(p: &Path) -> Result<(), SidecarError> {
@@ -165,6 +213,7 @@ pub fn start(
     let deadline = Instant::now() + Duration::from_secs(40);
     while Instant::now() < deadline {
         if stopping.load(Ordering::SeqCst) {
+            let _ = stop_child(child_slot);
             return Err(err("core.stopped", "桌面正在关闭"));
         }
         let mut guard = child_slot
@@ -221,5 +270,93 @@ mod tests {
         let second = random_token().expect("test entropy");
         assert!(first.len() == 48 && first.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert!(first != second);
+    }
+
+    #[test]
+    fn endpoint_ports_are_parsed_from_loopback_urls() {
+        let endpoint = Endpoint {
+            url: "http://127.0.0.1:51234".into(),
+            token: String::new(),
+            default_folder: String::new(),
+            home_dir: String::new(),
+        };
+        assert_eq!(endpoint.port(), Some(51234));
+        assert_eq!(
+            Endpoint {
+                url: "http://127.0.0.1".into(),
+                ..endpoint
+            }
+            .port(),
+            None
+        );
+    }
+
+    fn health_server(status: &'static str) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepted connection");
+            let mut request = [0u8; 256];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(status.as_bytes());
+        });
+        port
+    }
+
+    #[test]
+    fn health_probe_accepts_a_200_status_line() {
+        let port = health_server("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+        assert!(healthy(port));
+    }
+
+    #[test]
+    fn health_probe_rejects_non_success_status() {
+        let port = health_server("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+        assert!(!healthy(port));
+    }
+
+    #[test]
+    fn health_probe_requires_a_complete_status_line() {
+        for status in ["HTTP/1.1 200", "HTTP/1.1 200 OK", "HTTP/1.1 200 OK\n"] {
+            assert!(!healthy(health_server(status)));
+        }
+    }
+
+    #[test]
+    fn health_probe_accepts_fragmented_status_lines() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 256];
+            let _ = stream.read(&mut request);
+            stream.write_all(b"HTTP/1.0 2").unwrap();
+            std::thread::sleep(Duration::from_millis(20));
+            stream.write_all(b"04 No Content\r\n\r\n").unwrap();
+        });
+        assert!(healthy(port));
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn health_probe_has_a_total_deadline_for_trickling_responses() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 256];
+            let _ = stream.read(&mut request);
+            for part in [b"HTTP/1.1 ".as_slice(), b"200", b" OK", b"\r\n"] {
+                if stream.write_all(part).is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(350));
+            }
+        });
+        assert!(
+            !healthy(port),
+            "a slowly completed 200 response exceeds the probe deadline"
+        );
+        thread.join().unwrap();
     }
 }

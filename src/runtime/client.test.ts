@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, CoreError, getEndpoint, setEndpoint, wsUrl } from './client';
+import { api, CoreError, getEndpoint, setEndpoint, setRecoveryHandler, wsUrl } from './client';
 import { createConversation, listAgents, sendMessage } from './cli';
 const endpoint = { url: 'http://127.0.0.1:31415', token: 'test-launch-token', defaultFolder: '/workspace', homeDir: '/workspace' };
 const agent = { id: 'codex', name: 'Codex', installed: true, enabled: true, status: 'online' as const, agent_type: 'acp', agent_source: 'external', backend: 'codex' };
-afterEach(() => { setEndpoint(null); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { setEndpoint(null); setRecoveryHandler(null); vi.unstubAllGlobals(); vi.useRealTimers(); });
 const response = (data: unknown) => new Response(JSON.stringify({ success: true, data }));
 
 describe('desktop-local runtime boundary', () => {
@@ -66,4 +66,60 @@ it('a late REST response from a replaced runtime cannot become current data', as
   setEndpoint({ ...endpoint, url: 'http://127.0.0.1:31416', token: 'new' });
   const assertion = expect(result).rejects.toMatchObject({ code: 'LOM_CORE_SESSION_CHANGED' });
   finish(response([agent])); await assertion;
+});
+
+it('re-reading the same endpoint does not invalidate an in-flight request', async () => {
+  let finish!: (value: Response) => void;
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
+  setEndpoint(endpoint); const result = listAgents();
+  setEndpoint({ ...endpoint, url: endpoint.url + '/' });
+  finish(response([agent]));
+  expect(await result).toEqual([agent]);
+});
+
+it('does not recover or replay an aborted read', async () => {
+  const controller = new AbortController();
+  let reject!: (error: Error) => void;
+  const recover = vi.fn().mockResolvedValue(undefined);
+  const fetcher = vi.fn(() => new Promise<Response>((_, fail) => { reject = fail; }));
+  setEndpoint(endpoint); setRecoveryHandler(recover); vi.stubGlobal('fetch', fetcher);
+  const result = api('GET', '/api/agents/management', undefined, { signal: controller.signal });
+  const rejected = expect(result).rejects.toMatchObject({ code: 'LOM_CORE_CANCELLED' });
+  controller.abort(); reject(new Error('aborted')); await rejected;
+  await Promise.resolve();
+  expect(recover).not.toHaveBeenCalled(); expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it('cancellation while recovering prevents a later retry', async () => {
+  const controller = new AbortController();
+  let finish!: () => void;
+  const recover = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  const fetcher = vi.fn().mockRejectedValue(new Error('offline'));
+  setEndpoint(endpoint); setRecoveryHandler(recover); vi.stubGlobal('fetch', fetcher);
+  const result = api('GET', '/api/agents/management', undefined, { signal: controller.signal });
+  const rejected = expect(result).rejects.toMatchObject({ code: 'LOM_CORE_CANCELLED' });
+  await Promise.resolve(); await Promise.resolve(); expect(recover).toHaveBeenCalledTimes(1);
+  controller.abort(); await rejected; finish();
+  await Promise.resolve(); await Promise.resolve();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it('concurrent failed reads share recovery and each retry once on the new endpoint', async () => {
+  let finish!: () => void;
+  const recover = vi.fn(() => new Promise<void>(resolve => { finish = () => { setEndpoint({ ...endpoint, url: 'http://127.0.0.1:31416', token: 'new' }); resolve(); }; }));
+  const fetcher = vi.fn().mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline')).mockImplementation(async () => response([agent]));
+  setEndpoint(endpoint); setRecoveryHandler(recover); vi.stubGlobal('fetch', fetcher);
+  const first = listAgents(); const second = listAgents();
+  await Promise.resolve(); await Promise.resolve();
+  expect(recover).toHaveBeenCalledTimes(1); finish();
+  expect(await Promise.all([first, second])).toEqual([[agent], [agent]]);
+  expect(fetcher).toHaveBeenCalledTimes(4);
+  expect(fetcher.mock.calls[2][0]).toBe('http://127.0.0.1:31416/api/agents/management');
+});
+
+it('failed writes stay unknown and are never automatically recovered or replayed', async () => {
+  const recover = vi.fn(); const fetcher = vi.fn().mockRejectedValue(new Error('offline'));
+  setEndpoint(endpoint); setRecoveryHandler(recover); vi.stubGlobal('fetch', fetcher);
+  await expect(sendMessage('c1', 'hello')).rejects.toThrow('执行状态未知');
+  expect(fetcher).toHaveBeenCalledTimes(1); expect(recover).not.toHaveBeenCalled();
 });
