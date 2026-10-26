@@ -1,9 +1,7 @@
-# 安全报告
+# Security
 
-请使用仓库 **Security → Report a vulnerability** 私密报告，不要在公开 Issue 放密钥、用户历史、完整日志或攻击目标信息。如果该入口不可用，请只创建不含细节的联系 Issue，等维护者提供私密渠道。
+Do not post credentials, pairing secrets, user transcripts or exploit details in a public issue. Use GitHub private vulnerability reporting when available, or contact the maintainers privately through their GitHub profile.
 
-本仓库不含远程业务服务。默认文档功能无网络请求，生产窗口 CSP 阻止远程业务连接；可选本机 CLI 适配仅访问回环地址。只有用户设置可信 `LOM_CORE_BIN` 才启动该程序，独立应用目录与启动令牌不复用线上账号。CLI 可能访问本地文件/运行工具，权限由兼容运行时与 CLI 继续验证；公开预览页不会发消息或执行 CLI 握手。
+This source distribution includes a powerful local execution core and mobile automation code. Keep loopback launch-token checks, normal tool approvals, Android permission checks and component isolation intact. The source-export audit is only one review layer; successful frontend tests do not establish that a package or device integration is secure.
 
-文件读取通过原生系统选择对话框；文档不自动落盘，HTML 不执行，远程图片不自动加载。修改窗口权限、原生命令、渲染器、网络/运行时适配或依赖后，执行前端和原生检查。
-
-`npm run audit:public` 检查已跟踪、未忽略的新增文件及暂存区，报告典型凭据、个人路径、私网地址、禁入模块/产物、符号链接和非回环网络字面量，图片中的可读元数据也扫描。规则不覆盖所有秘密形式、运行行为或完整 Git 历史；仍须人工检查 diff、资源、第三方许可和提交历史，不能宣称绝对脱敏。
+No official account, billing, model gateway or device relay server is supplied. Community builds must not silently connect to a production service or reuse commercial app credentials. Desktop and Android community application IDs are separate from commercial IDs. Use your own model credentials and distribution signatures; never commit them.

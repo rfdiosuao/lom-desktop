@@ -1,0 +1,6 @@
+# Preserve upstream component sources; identify mechanical imports for review.
+apps/android/deps/** linguist-vendored
+apps/android/src/android/app/src/main/cpp/vendor/** linguist-vendored
+protocol/generated/** linguist-generated
+apps/desktop/src/core/remoteWire.ts linguist-generated
+apps/desktop/src-tauri/src/remote_wire.rs linguist-generated

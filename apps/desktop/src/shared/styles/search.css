@@ -1,0 +1,34 @@
+/* ===== 联网搜索来源条：工具组下方一行站点，点开看完整列表 ===== */
+.search-sources{display:flex;flex-direction:column;gap:4px;min-width:0;animation:src-enter var(--panel-duration) var(--panel-ease) both}
+.search-sources__bar{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:4px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);font-size:12.5px;line-height:1.4;color:var(--muted);text-align:left}
+.search-sources__bar:hover{background:var(--bg-hover);color:var(--text-2)}
+.search-sources__caption{display:inline-flex;align-items:center;gap:4px;flex:none;color:var(--text-2)}
+.search-sources__caption .icon{width:14px;height:14px;color:var(--brand)}
+.search-sources__count{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:var(--r-pill);background:var(--brand-soft);color:var(--brand-ink);font-size:11px;font-weight:600;line-height:1}
+.search-sources__viewport{flex:1;min-width:0;overflow:hidden}
+.search-sources__track{display:flex;align-items:center;width:max-content}
+.search-sources__track.is-scrolling{animation:src-scroll 28s linear infinite}
+.search-sources__bar:hover .search-sources__track.is-scrolling,.search-sources__bar:focus-visible .search-sources__track.is-scrolling{animation-play-state:paused}
+.search-sources__group{display:flex;align-items:center;gap:10px;padding-right:10px}
+.search-sources__chev{width:14px;height:14px;flex:none;color:var(--muted);transition:transform .15s}
+.search-sources__chev.is-open{transform:rotate(180deg)}
+.src-chip{display:inline-flex;align-items:center;gap:5px;flex:none;max-width:160px;min-width:0;color:var(--text-2)}
+.src-chip__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none;border-radius:var(--r-xs);background:var(--bg-hover);color:var(--text-2);overflow:hidden}
+.src-mark__img{width:16px;height:16px;object-fit:contain}
+.src-mark__letter{font-size:9px;font-weight:600;line-height:1}
+.src-mark--0{background:var(--brand-soft);color:var(--brand-ink)}
+.src-mark--1{background:var(--info-soft);color:var(--info)}
+.src-mark--2{background:var(--warn-soft);color:var(--warn)}
+.src-mark--3{background:var(--danger-soft);color:var(--danger)}
+.search-sources__panel{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
+.search-sources__item+.search-sources__item{border-top:1px solid var(--line)}
+.search-sources__link{display:flex;align-items:center;gap:8px;padding:7px 10px;color:var(--text);text-decoration:none}
+.search-sources__link:hover{background:var(--bg-hover)}
+.search-sources__meta{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.search-sources__title{font-size:13px;line-height:1.4;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-sources__url{font-size:11.5px;line-height:1.4;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-sources__site{flex:none;max-width:96px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes src-enter{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+@keyframes src-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion: reduce){.search-sources{animation:none}.search-sources__track.is-scrolling{animation:none}}

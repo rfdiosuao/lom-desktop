@@ -1,0 +1,17 @@
+/* Agent 历史分类及运行状态：头像不旋转，只旋转外圈。 */
+.history-heading{gap:2px;padding-left:2px}
+.history-picker{display:flex;align-items:center;justify-content:center;flex:0 0 var(--h-md);width:var(--h-md);height:var(--h-md);padding:0;border-radius:var(--r-pill);color:var(--text-2)}
+.history-picker:hover,.history-picker[aria-expanded="true"]{background:transparent;box-shadow:inset 0 0 0 1px var(--history-ring)}
+.history-picker .history-icon{width:100%;height:100%;flex-basis:100%}
+.history-picker .history-icon__image{width:32px;height:32px;clip-path:circle(50%)}
+.history-picker .history-icon>.icon{width:28px;height:28px}
+.history-heading__label{white-space:nowrap;margin-left:4px}
+.history-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex:0 0 24px;border-radius:var(--r-pill);vertical-align:middle}
+.history-icon__image{width:18px;height:18px;object-fit:contain;border-radius:var(--r-pill)}
+.history-icon>.icon{width:16px;height:16px;margin:0}
+.history-icon__image--lom{mix-blend-mode:multiply}
+:root[data-theme="dark"] .history-icon__image--lom{filter:invert(1);mix-blend-mode:screen}
+.history-icon__ring{position:absolute;inset:0;border:2px solid var(--history-ring);border-right-color:transparent;border-radius:var(--r-pill);animation:lom-spinner-turn .85s linear infinite;pointer-events:none}
+.conv__name--desktop{display:flex;align-items:center;gap:6px}
+.conv__title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.history-icon__ring{animation:none}}
