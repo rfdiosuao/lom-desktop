@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <application>
+        <activity android:name="top.heang.lom.pairing.ui.PairingScanActivity"
+            android:exported="false" android:screenOrientation="portrait"
+            android:theme="@style/zxing_CaptureTheme" />
+        <activity android:name="top.heang.lom.pairing.ui.PairingActivity"
+            android:exported="false" android:enabled="false" android:theme="@style/LomPairingTheme">
+        </activity>
+    </application>
+</manifest>

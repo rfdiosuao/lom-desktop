@@ -1,0 +1,4 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/white" />
+    <foreground><inset android:drawable="@drawable/lom_launcher" android:inset="18%" /></foreground>
+</adaptive-icon>

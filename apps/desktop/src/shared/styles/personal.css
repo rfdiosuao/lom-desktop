@@ -1,0 +1,91 @@
+/* PA02: main-window floating panel, independently scrolling conversation and management. */
+.pa-window{height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--text);overflow:hidden}
+.pa-titlebar{height:var(--pa-titlebar);flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid var(--line);user-select:none}
+.pa-brand{font-size:var(--pa-brand-size);color:var(--text-strong);margin-right:10px}
+.pa-assistants{display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;scrollbar-width:thin}
+.pa-assistants .btn{flex:none;gap:8px;max-width:180px}
+.pa-assistants .btn>span{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pa-assistants img{width:26px;height:26px;border-radius:50%;object-fit:cover}
+.pa-window-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}
+.pa-window-actions .btn{border-color:var(--brand-ring)}
+.pa-body{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(290px,1fr);flex:1;min-height:0}
+.pa-conversation{display:flex;flex-direction:column;min-width:0;min-height:0}
+.pa-chathead{padding:22px 24px 8px;display:flex;align-items:center;gap:14px;flex:none}
+.pa-chathead>div{display:grid;gap:5px;min-width:0;flex:1}.pa-chathead strong{font-size:var(--pa-heading-size)}
+.pa-chathead small,.pa-muted,.pa-workspace{color:var(--muted);font-size:var(--pa-small-size)}
+.pa-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;background:var(--brand-soft)}
+.pa-workspace{padding:0 24px 8px 86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+.pa-messages{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:20px 24px;overscroll-behavior:contain}
+.pa-messages .msg{margin-bottom:22px}.pa-messages .user-msg{max-width:92%}
+.pa-empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:48px 0;color:var(--muted)}
+.pa-empty img{width:48px;height:48px;border-radius:50%}.pa-empty h1{font-size:var(--pa-heading-size);color:var(--text-strong);margin:0}
+.pa-empty p{line-height:1.7;margin:0}.pa-composer{padding:12px 18px 20px;flex:none}
+.pa-composer .composer-wrap{margin:0;padding:0;width:100%;max-width:none}.pa-composer .composer{margin:0;background:var(--surface);border-radius:var(--r-xl)}
+.pa-composer .composer__input{min-height:48px;font-size:var(--pa-body-size)}
+.pa-composer-placeholder{border:1px solid var(--line);border-radius:var(--r-xl);padding:24px 18px;color:var(--muted)}
+.pa-inspector{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--surface)}
+.pa-inspector__scroll{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0;padding:0 22px;scrollbar-gutter:stable;overscroll-behavior:contain;scrollbar-width:thin}
+.pa-inspector footer{flex:none;display:flex;align-items:center;gap:7px;border-top:1px solid var(--line);padding:12px 20px;color:var(--muted);font-size:var(--pa-small-size)}
+.pa-inspector footer .icon{width:15px;height:15px;flex:none}.pa-section{padding:20px 0 14px;border-bottom:1px solid var(--line)}
+.pa-section h2{font-size:var(--pa-heading-size);margin:0 0 14px;color:var(--text-strong)}.pa-section h2 small{font-weight:400;color:var(--muted);font-size:var(--pa-small-size)}
+.pa-section h3{font-size:var(--pa-body-size);margin:18px 0 8px}.pa-section__heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.pa-channel{width:100%;text-align:left;color:var(--text);background:transparent;border:0;display:flex;align-items:center;gap:12px;padding:14px 0;border-top:1px solid var(--line);font-size:var(--pa-body-size)}
+.pa-channel>span:not(.pa-channel__icon){margin-left:auto;color:var(--muted);font-size:var(--pa-small-size)}.pa-channel>.icon:first-child{color:var(--brand)}
+.pa-task{padding:12px 0;border-top:1px solid var(--line)}.pa-task__title{display:flex;gap:8px;align-items:center;margin:0 0 12px;min-width:0}
+.pa-task__title strong{overflow-wrap:anywhere;font-size:var(--pa-body-size)}.pa-task__title small{color:var(--muted);font-size:var(--pa-small-size);margin-left:auto}
+.pa-task__title .icon{width:18px;flex:none}.pa-toggle{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg-subtle);font-size:var(--pa-body-size)}
+.pa-toggle+small{display:block;margin-top:8px}.pa-document{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 0;border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);cursor:pointer}
+.pa-document:hover{color:var(--text-strong)}.pa-document>span{min-width:0;flex:1;display:grid;gap:4px}.pa-document strong{font-size:var(--pa-body-size);font-weight:500;overflow-wrap:anywhere}
+.pa-document small{color:var(--muted);font-size:var(--pa-small-size);font-weight:400}.pa-document strong small{margin-left:6px}
+.pa-document>.icon{flex:none;width:20px;height:20px}.pa-editor{padding:12px;background:var(--bg-subtle);border-radius:var(--r-sm);overflow-wrap:anywhere;font-size:var(--pa-small-size)}
+.pa-editor textarea{width:100%;min-height:200px;resize:vertical;font-family:var(--mono);font-size:var(--pa-body-size);line-height:1.6}
+.pa-editor__actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}.pa-error{color:var(--danger);font-size:var(--pa-small-size);overflow-wrap:anywhere}
+.pa-search{display:flex;align-items:center;gap:8px;background:var(--bg-subtle);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px;margin-bottom:10px}.pa-search .icon{width:16px;color:var(--muted)}
+.pa-search input{padding:0;border:0;min-width:0;background:transparent;width:100%;font-size:var(--pa-body-size);color:var(--text)}
+.pa-form{display:grid;gap:12px;padding:12px 0}.pa-form label{display:grid;gap:6px;font-size:var(--pa-small-size)}.pa-form input,.pa-form textarea{width:100%;min-width:0}.pa-form textarea{min-height:90px;resize:vertical}
+.pa-form small{color:var(--muted);line-height:1.6}
+@media(max-width:900px){.pa-titlebar{gap:6px;padding:0 12px}.pa-brand{margin-right:0}.pa-window-actions{gap:2px}.pa-body{grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr)}.pa-inspector__scroll{padding:0 16px}.pa-messages{padding:16px}.pa-chathead{padding:18px 16px 8px}}
+.pa-message-avatar{width:30px;height:30px;object-fit:cover;border-radius:50%;flex:none}
+.pa-channel__icon{width:25px;height:25px;flex:none;background:var(--muted);-webkit-mask-position:center;mask-position:center;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-size:contain;mask-size:contain}
+.pa-channel__icon--wechat{-webkit-mask-image:url('/channels/wechat.svg');mask-image:url('/channels/wechat.svg')}
+.pa-channel__icon--feishu{-webkit-mask-image:url('/channels/feishu.svg');mask-image:url('/channels/feishu.svg')}
+.pa-destinations{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:var(--pa-small-size);color:var(--muted)}
+.pa-destinations label{display:flex;align-items:center;gap:5px}
+.pa-assistants .btn.is-active{border-color:var(--brand-ring)}
+/* PA02: the account entry floats inside the existing Lom window. */
+.pa-floating{position:fixed;z-index:160;width:1060px;height:760px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);min-width:min(720px,calc(100vw - 32px));min-height:min(480px,calc(100vh - 32px));resize:both;overflow:hidden;border:1px solid var(--line-strong);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);animation:menuIn .18s ease-out}
+.pa-floating[hidden]{display:none}.pa-floating .pa-titlebar{cursor:grab;touch-action:none}.pa-floating .pa-titlebar:active{cursor:grabbing}
+.pa-floating .pa-titlebar button{cursor:pointer}.pa-restore{position:fixed;z-index:160;right:24px;bottom:24px}
+@media(prefers-reduced-motion:reduce){.pa-floating{animation:none}}
+/* PA-AVATAR: the six selected mascots share transparent, uncropped avatar framing. */
+.pa-assistants img,.pa-avatar,.pa-message-avatar,.pa-empty img{object-fit:contain;background:transparent;border-radius:0}
+.pa-avatar-picker{border:0;padding:0;margin:18px 0 0;min-width:0}
+.pa-avatar-picker legend{font-size:var(--pa-body-size);color:var(--text-strong);margin-bottom:10px}
+.pa-avatar-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pa-avatar-option{position:relative;display:flex;align-items:center;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 4px;cursor:pointer;background:var(--surface)}
+.pa-avatar-option:has(input:checked){border-color:var(--brand);background:var(--brand-soft)}
+.pa-avatar-option:has(input:focus-visible){outline:2px solid var(--brand);outline-offset:2px}
+.pa-avatar-option input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.pa-avatar-option img{width:64px;height:64px;object-fit:contain}
+.pa-avatar-option span{font-size:var(--pa-small-size);color:var(--text);text-align:center}
+/* FEISHU-01：飞书扫码接入 */
+.pa-channel--live{cursor:default}
+.pa-channel__ok{display:inline-flex;align-items:center;gap:4px;color:var(--brand)!important}.pa-channel__ok .icon{width:14px;height:14px}
+.pa-feishu-qr{display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0 12px;text-align:center}
+.pa-feishu-qr img{width:176px;height:176px;padding:10px;border-radius:var(--r-md);background:var(--logo-bg)}
+.pa-feishu-qr p{margin:0;font-size:var(--pa-small-size);color:var(--text-2);line-height:1.6}
+
+/* PA02: closable tabs preserve assistant data; controls follow Lom tokens. */
+.pa-assistant-tab{position:relative;flex:none;display:flex;align-items:center}
+.pa-assistant-tab>.btn{padding-right:34px}
+.pa-assistant-tab>.ibtn{position:absolute;right:5px;width:24px;height:24px;color:var(--text-2)}
+.pa-permission-select{width:100%;min-height:36px;padding:8px 12px;background:var(--bg-subtle);color:var(--text-strong);border:1px solid var(--line-strong);border-radius:var(--r-sm);font:inherit;font-size:var(--pa-body-size)}
+.pa-permission-select option{background:var(--surface);color:var(--text-strong)}
+.pa-permission-select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.pa-window :is(.pa-inspector__scroll,.pa-messages,.pa-assistants){scrollbar-width:thin;scrollbar-color:var(--muted) transparent}
+.pa-window :is(.pa-inspector__scroll,.pa-messages,.pa-assistants)::-webkit-scrollbar{width:6px;height:6px;background:transparent}
+.pa-window :is(.pa-inspector__scroll,.pa-messages,.pa-assistants)::-webkit-scrollbar-track{background:transparent}
+.pa-window :is(.pa-inspector__scroll,.pa-messages,.pa-assistants)::-webkit-scrollbar-thumb{background:var(--muted);border-radius:var(--r-sm)}
+
+/* PA-DELETE：删除助理按钮用危险色，与其他操作区分 */
+.pa-danger{color:var(--danger)}

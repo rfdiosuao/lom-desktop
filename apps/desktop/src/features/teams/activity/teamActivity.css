@@ -1,0 +1,86 @@
+/* ===== D33 团队活动看板 =====
+ * 只用 tokens.css 的令牌；横向泳道、卡片、工具栏。 */
+
+.team-activity{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0}
+
+/* 工具栏 */
+.act-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--bg-subtle);flex:none}
+.act-bar__members{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:thin;flex:1 1 220px;padding:2px 0}
+.act-bar__chip{flex:none;height:26px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--surface);color:var(--text-2);font-size:12px;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.act-bar__chip:hover{border-color:var(--line-strong)}
+.act-bar__chip[aria-pressed="true"]{background:var(--brand-soft);border-color:var(--brand-ring);color:var(--brand-ink)}
+.act-bar__switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);flex:none}
+
+/* 看板 */
+.team-activity__loading{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--muted)}
+.team-activity__error{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:13px;color:var(--danger);background:var(--danger-soft);border-bottom:1px solid var(--line);flex:none}
+
+.team-board{flex:1;min-width:0;min-height:0;display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:8px;scrollbar-width:thin}
+.team-board--empty{align-items:center;justify-content:center;text-align:center}
+.team-board__hint{margin:0 0 4px;font-size:14px;font-weight:600;color:var(--text)}
+.team-board__hint-sub{margin:0;font-size:13px;color:var(--muted)}
+
+.team-board__col{flex:0 0 288px;display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);overflow:hidden}
+.team-board__head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface);flex:none;min-width:0}
+.team-board__head .avatar{flex:none}
+.team-board__dot{width:8px;height:8px;border-radius:50%;background:var(--placeholder);flex:none}
+.team-board__title{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team-board__count{flex:none;font-size:11px;color:var(--muted);background:var(--bg-hover);border-radius:var(--r-pill);padding:1px 7px}
+.team-board__body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:8px;scrollbar-width:thin}
+.team-board__empty{margin:12px 0;text-align:center;font-size:12px;color:var(--placeholder)}
+.team-board__more{align-self:center;font-size:12px;color:var(--brand);background:none;border:0;padding:6px 8px;border-radius:var(--r-sm)}
+.team-board__more:hover{background:var(--bg-hover)}
+.team-board__loading{display:flex;justify-content:center;padding:6px 0}
+
+/* 成员空状态：会话窗格和看板空列共用 */
+.team-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:24px 16px;margin:auto;max-width:360px;text-align:center}
+.team-empty--compact{padding:16px 6px;gap:7px;max-width:100%}
+.team-empty__logo{width:48px;height:48px;border-radius:var(--r-md);object-fit:contain;opacity:.9;flex:none;display:flex;align-items:center;justify-content:center}
+.team-empty--compact .team-empty__logo{width:44px;height:44px}
+/* Lom 的 logo 是长方形不透明图：放进同色圆形底座，按比例缩在圆内，不裁字形 */
+.team-empty__logo--lom{border-radius:50%;background:var(--logo-bg);padding:7px;box-sizing:border-box;object-fit:contain;opacity:1}
+.team-empty--compact .team-empty__logo--lom{padding:6px}
+.team-empty__logo--letter{background:var(--bg-hover);font-size:20px;font-weight:600}
+.team-empty__name{max-width:100%;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team-empty--compact .team-empty__name{font-size:13px}
+.team-empty__greeting{margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+.team-empty__suggestions{display:flex;flex-direction:column;gap:6px;width:100%;margin-top:2px}
+.team-empty__suggestion{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--text-2);font-size:12px;line-height:1.4;text-align:left}
+.team-empty__suggestion:hover:not(:disabled){border-color:var(--line-strong);background:var(--bg-hover)}
+.team-empty__suggestion:disabled{cursor:default;opacity:.85}
+.team-empty__suggestion .icon{flex:none;color:var(--muted)}
+.team-empty--compact .team-empty__suggestion{padding:6px 8px;gap:6px}
+.pane__empty{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+
+/* 卡片 */
+.act-card{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);transition:box-shadow .15s,border-color .15s}
+.act-card.is-flash{border-color:var(--brand-ring);box-shadow:0 0 0 2px var(--brand-soft)}
+.act-card__head{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--text-2)}
+.act-card__kind{flex:none;color:var(--muted)}
+.act-card__member{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:120px}
+.act-card__dot{width:8px;height:8px;border-radius:50%;flex:none}
+.act-card__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.act-card__arrow{flex:none;color:var(--placeholder)}
+.act-card__tags{display:inline-flex;align-items:center;gap:4px;margin-left:auto;flex:none}
+.act-card__subject{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-card__owner{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);min-width:0}
+.act-card__deps{display:flex;flex-wrap:wrap;gap:4px}
+.act-card__dep{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:2px 8px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--warn-soft);color:var(--warn);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-card__dep .icon{width:11px;height:11px;flex:none}
+.act-card__body{font-size:13px;line-height:1.55;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.act-card__body--desc{font-size:12px;color:var(--text-2)}
+.act-card__foot{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.act-card__files{display:inline-flex;align-items:center;gap:3px}
+.act-card__files .icon{width:11px;height:11px}
+.act-card__more{border:0;background:none;padding:0;font-size:11px;color:var(--brand);cursor:pointer}
+.act-card__more:hover{text-decoration:underline}
+.act-card__time{margin-left:auto;flex:none;color:var(--placeholder)}
+
+@media (max-width: 720px){
+  .team-board__col{flex-basis:240px}
+}
+
+.act-card--linked{cursor:pointer}
+.act-card--linked:hover{border-color:var(--brand-ring)}
+
+.team-board__status{color:var(--muted);font-size:var(--reply-detail-size);flex:none}
