@@ -11,7 +11,7 @@ import { initialState } from '@/state/state';
 let host: HTMLDivElement, root: Root, first: string, second: string;
 beforeEach(async () => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState());
+  Object.assign(S, initialState(true));
   const team = S.teams[0]; [first, second] = team.members.map(m => m.mid);
   team.core = { id: 'core-team', assistant: 'leader', slots: { [first]: 'lead', [second]: 'worker' } };
   S.route = { name: 'team', id: team.id }; S.teamView = 'board';

@@ -121,7 +121,7 @@ export const clearCache = () => confirm({ title: '清除预览缓存？', desc: 
 /** 只恢复示例团队：真实团队、偏好、目标、文件夹和模型选择等本机设置都保留（示例手机和定时任务本来就不保存） */
 export function restoreDemoTeams<T extends Record<string, unknown>>(saved: T): T & { teams: Team[] } {
   const real = Array.isArray(saved.teams) ? (saved.teams as Team[]).filter(t => t.real) : [];
-  return { ...saved, teams: [...initialState().teams.filter(t => !t.real), ...real] };
+  return { ...saved, teams: [...initialState(true).teams.filter(t => !t.real), ...real] };
 }
 export const resetDemo = () => confirm({
   title: '重置演示数据？', desc: '会刷新界面并恢复示例团队；你建的真实团队、偏好设置、电脑任务和模型服务都不受影响。', okText: '重置', danger: true,

@@ -17,12 +17,15 @@ export interface Route { name: string; id?: string; }
 export interface NavSnap { mode: Mode; route: Route; activeConv: string | null; phoneId: string; agentPick?: string; }
 export interface Toast { text: string; icon: string; key: number; tone?: 'ok' | 'info' | 'error'; }
 
-export const initialState = () => {
-  const phone = demoPhoneData();
+/** Examples are opt-in fixtures; normal startup must not invent user content. */
+export const initialState = (examples = false) => {
+  const phone: ReturnType<typeof demoPhoneData> = examples ? demoPhoneData() : {
+    installed: {}, mySkills: [], subagents: {}, souls: {}, memories: {}, authorizedPCs: {},
+  };
   return {
     /* 导航 */
     mode: 'desktop' as Mode, route: { name: 'home' } as Route, back: [] as NavSnap[], fwd: [] as NavSnap[],
-    phoneId: 'p1', activeConv: null as string | null,
+    phoneId: examples ? 'p1' : '', activeConv: null as string | null,
     /* 布局（可拖拽、可收起，持久化） */
     layout: { left: 276, right: 380, leftCollapsed: false, rightCollapsed: false } as Layout,
     theme: 'light' as 'light' | 'dark' | 'system',
@@ -33,7 +36,7 @@ export const initialState = () => {
     files: null as FileNode | null, filesLoading: false, filesError: '' as string,
     previewHtml: '' as string, previewAt: 0, previewError: '' as string,
     /* 输入 */
-    lit: { p1: true, p2: true, p3: false } as Record<string, boolean>, homeExtra: [] as string[],
+    lit: (examples ? { p1: true, p2: true, p3: false } : {}) as Record<string, boolean>, homeExtra: [] as string[],
     folder: '' as string, recentFolders: [] as string[], homeDir: '' as string,
     permission: 'ask', model: '' as string, phoneModel: 'lom-mini',
     turtles: {} as Record<string, TurtleSession>,
@@ -70,18 +73,18 @@ export const initialState = () => {
     /** 新任务页选的推理强度（Lom 自己的模型）；空 = 模型默认 */
     effortPick: '' as string,
     /* Agent 与会话 */
-    agents: demoAgents() as Record<string, Agent>, phoneOrder: ['p1', 'p2', 'p3'],
-    convs: demoPhoneConvs() as Conv[],
-    customGroups: { p1: [], p2: [], p3: [] } as Record<string, { id: string; name: string }[]>,
+    agents: (examples ? demoAgents() : { pc: { id: 'pc', kind: 'computer', name: '电脑主控', persona: '总指挥 · 大模型', status: 'online' } }) as Record<string, Agent>, phoneOrder: examples ? ['p1', 'p2', 'p3'] : [],
+    convs: (examples ? demoPhoneConvs() : []) as Conv[],
+    customGroups: (examples ? { p1: [], p2: [], p3: [] } : {}) as Record<string, { id: string; name: string }[]>,
     convGroup: {} as Record<string, string>, groupFold: {} as Record<string, boolean>,
     convPhones: {} as Record<string, string[]>,
     running: {} as Record<string, boolean>, pending: {} as Record<string, () => void>, takeover: null as string | null,
     /* 定时任务 / 技能 / 团队（演示） */
-    schedules: demoSchedules() as Schedule[], skills: demoSkills() as Skill[],
+    schedules: (examples ? demoSchedules() : []) as Schedule[], skills: (examples ? demoSkills() : []) as Skill[],
     commandSkills: { items: [] as CommandSkill[], loading: false, error: '' },
     installed: phone.installed, mySkills: phone.mySkills,
     subagents: phone.subagents, souls: phone.souls, memories: phone.memories, authorizedPCs: phone.authorizedPCs,
-    teams: demoTeams() as Team[], teamView: 'board' as 'board' | 'side' | 'single', teamFocus: 'm1',
+    teams: (examples ? demoTeams() : []) as Team[], teamView: 'board' as 'board' | 'side' | 'single', teamFocus: examples ? 'm1' : '',
     /* 设置 */
     settingsPage: 'connections',
     prefs: { reconnect: true, notify: true, launchAtLogin: false, sound: true, lang: '简体中文', supervise: 30, autoTakeover: false, notifyHelp: true, cellularCap: true, confirmPublish: true, auditLog: true, allowInstall: 'ask' } as Record<string, string | number | boolean>,

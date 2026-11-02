@@ -1,3 +1,4 @@
+import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
 import { ImportedHistoryRows } from '@/features/history/ui/ImportedHistoryRows';
 import { beginConversationDrag, refreshHistory } from '@/features/history/runtime/historyImport';
@@ -139,6 +140,7 @@ export function DesktopSidebar() {
 export function PhoneSidebar() {
   const s = useStore();
   const p = phone();
+  if (!p) return <aside className="sidebar" aria-label="侧边栏"><SidebarTop /><Brand /><ModeSwitch /><div className="sidebar__body"><NoPhone /></div><SidebarFoot /></aside>;
   const r = s.route.name;
   const list = convsOf(p.id).filter(c => !s.q.conv || c.title.includes(s.q.conv));
   const day = 24 * 3600e3, today0 = new Date().setHours(0, 0, 0, 0);

@@ -12,7 +12,7 @@ import { initialState, loadPersisted } from '@/state/state';
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState());
+  Object.assign(S, initialState(true));
   S.route = { name: 'team', id: S.teams[0].id };
   S.teamView = 'side';
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
@@ -39,6 +39,6 @@ it('D33 AC-11 middle mode replaces all panes with the board and keeps exactly th
 });
 it.each(['grid', 'invalid', 'side', 'single', 'board'])('D33 AC-12 restores %s preference without retaining the old grid mode', value => {
   localStorage.setItem('lom-desktop-v1', JSON.stringify({ teamView: value, prefs: { teamBoardV1: true } }));
-  const state = initialState(); loadPersisted(state);
+  const state = initialState(true); loadPersisted(state);
   expect(state.teamView).toBe(['grid', 'invalid'].includes(value) ? 'board' : value);
 });

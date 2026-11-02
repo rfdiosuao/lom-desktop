@@ -1,3 +1,4 @@
+import { initialState } from '@/state/state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { S } from '@/state/store';
 import { installSkill, uninstallSkill, saveUpload, unpublish } from '@/features/skills/actions/skills';
@@ -11,7 +12,7 @@ import { sim } from '@/demo/simulator';
 const { runCoreSchedule, writePhoneDocument } = vi.hoisted(() => ({ runCoreSchedule: vi.fn(), writePhoneDocument: vi.fn() }));
 vi.mock('@/features/schedules/runtime/schedules', async original => ({ ...await original<object>(), runCoreSchedule }));
 vi.mock('@/features/phones/runtime/phoneDocuments', async original => ({ ...await original<object>(), writePhoneDocument }));
-beforeEach(() => { vi.useFakeTimers(); runCoreSchedule.mockReset(); writePhoneDocument.mockReset(); });
+beforeEach(() => { Object.assign(S, initialState(true)); vi.useFakeTimers(); runCoreSchedule.mockReset(); writePhoneDocument.mockReset(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 const notExecuted = () => expect(S.toast?.text).toContain('暂未接入');
 const toastText = () => S.toast?.text;

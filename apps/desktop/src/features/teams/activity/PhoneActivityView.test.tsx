@@ -14,7 +14,7 @@ beforeEach(() => {
   vi.useFakeTimers(); m.watch.mockReset(); m.feed.error = ''; m.feed.isLoading = false;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState()); S.cloud = 'signed-in'; S.account = { id: 'account' } as typeof S.account;
+  Object.assign(S, initialState(true)); S.cloud = 'signed-in'; S.account = { id: 'account' } as typeof S.account;
   S.agents.dev_phone = { id: 'dev_phone', kind: 'phone', name: '测试手机', persona: '', status: 'online', real: true };
   const team = S.teams[0]; team.real = true; team.members = [{ mid: 'mobile', agent: 'dev_phone', role: '手机' }]; team.core = undefined;
   S.convs = [{ id: 'exact-conv', owner: 'dev_phone', phoneSession: 'session', teamId: team.id, title: '历史任务', updated: 2, loaded: true, messages: [{ id: 'reply', type: 'assistant', at: 1, text: '真实手机回复'.repeat(80) }] }];

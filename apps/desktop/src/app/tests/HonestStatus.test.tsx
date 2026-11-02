@@ -1,3 +1,4 @@
+import { initialState } from '@/state/state';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import { PhoneSubagents } from '@/features/phones/ui/PhonePages';
 
 let host: HTMLDivElement, root: Root;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
+beforeEach(() => { Object.assign(S, initialState(true)); host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 it('D10 设置真实开关与配对授权，不显示演示权限', () => {

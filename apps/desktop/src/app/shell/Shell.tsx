@@ -1,3 +1,4 @@
+import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { dragWindow } from '@/core/platform';
 import { useEffect, useRef, type CSSProperties, type PointerEvent as RPointerEvent, type KeyboardEvent as RKeyboardEvent } from 'react';
 import { renameConv } from '@/features/chat/actions/conversations';
@@ -9,7 +10,7 @@ import { Avatar } from '@/shared/ui/Agent';
 import { IconBtn } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
-import { agent, conv, team } from '@/state/selectors';
+import { agent, conv, team, phone } from '@/state/selectors';
 import { update, useStore } from '@/state/store';
 import { clamp, cx } from '@/shared/lib/util';
 import { Chat, Home } from '@/features/chat/ui/Chat';
@@ -65,6 +66,7 @@ function CenterHeader() {
 
 function Route() {
   const s = useStore();
+  if (s.mode === 'phone' && s.route.name !== 'settings' && !phone()) return <NoPhone />;
   switch (s.route.name) {
     case 'chat': return <Chat />;
     case 'schedule': case 'phone-schedule': return <SchedulePage />;

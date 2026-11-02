@@ -1,3 +1,4 @@
+import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { t } from '@/shared/i18n/index';
 import { PhoneScreen } from '@/features/phones/ui/PhoneScreen';
 import { PhonePlaceholder } from '@/shared/ui/PhonePlaceholder';
@@ -114,6 +115,7 @@ export function WsFiles() {
 function WsPhone() {
   useStore();
   const p = phone();
+  if (!p) return <NoPhone />;
   return <>
     <DeviceButton phone={p} variant="panel" />
     {p.real ? <PhoneScreen key={p.id} device={p.id} /> : <PhonePlaceholder />}
