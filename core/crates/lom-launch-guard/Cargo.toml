@@ -1,0 +1,15 @@
+[package]
+name = "lom-launch-guard"
+version.workspace = true
+edition.workspace = true
+description = "Lom: launch-token guard for the embedded (--local) server"
+
+[dependencies]
+axum.workspace = true
+http.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tower.workspace = true

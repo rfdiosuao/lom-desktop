@@ -1,0 +1,57 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { Composer } from '@/features/chat/ui/Composer';
+import { S } from '@/state/store';
+import { setEndpoint } from '@/core/client';
+import { ImportedHistoryRows } from './ImportedHistoryRows';
+import { beginConversationDrag, CONVERSATION_MIME, HISTORY_MIME } from '../runtime/historyImport';
+let host: HTMLDivElement, root: Root;
+const entry = { id: 'a'.repeat(64), source: 'claude' as const, title: '之前的工作', session_id: 'native', cwd: '/项目', timestamp: '', digest: 'b'.repeat(64), bytes: 100, events: 3, warnings: [] };
+beforeEach(() => {
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  setEndpoint({ url: 'http://127.0.0.1:1234', token: 'test' } as any);
+  S.mode = 'desktop'; S.route = { name: 'chat' }; S.activeConv = 'target';
+  S.historyAgentPick = 'archive:claude'; S.historyImports = [entry];
+  S.drafts = { 'conv:target': '我的新要求' }; S.attachments = {}; S.running = {};
+  S.agentCatalog = []; S.agentPins = []; S.agentOptions = {};
+  S.convs = [{ id: 'target', owner: 'pc', title: '目标', messages: [], updated: 1, remote: true, agentId: 'codex', agentName: 'Codex CLI' }];
+});
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); setEndpoint(null as any); vi.unstubAllGlobals(); S.historyImports = []; });
+it('HIST-01 dragging a Claude archive into a Codex composer attaches real context and retains the chat and draft', async () => {
+  const calls: string[] = [];
+  vi.stubGlobal('fetch', async (url: string) => { calls.push(url); return new Response(JSON.stringify({ data: { entry, transcript_path: '/archive/a.md', raw_path: '/archive/a.jsonl' } })); });
+  await act(async () => root.render(<><ImportedHistoryRows /><Composer ckey="conv:target" /></>));
+  const values = new Map<string, string>();
+  const data = { types: [HISTORY_MIME], effectAllowed: '', setData: (key: string, value: string) => values.set(key, value), getData: (key: string) => values.get(key) || '' };
+  const drag = new Event('dragstart', { bubbles: true }); Object.defineProperty(drag, 'dataTransfer', { value: data });
+  await act(async () => host.querySelector('[draggable]')!.dispatchEvent(drag));
+  const drop = new Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: data });
+  await act(async () => host.querySelector('.composer')!.dispatchEvent(drop));
+  expect(drop.defaultPrevented).toBe(true);
+  expect(S.attachments['conv:target'].map(a => a.path)).toEqual(['/archive/a.md']);
+  expect(host.querySelector('textarea')?.value).toContain('我的新要求');
+  expect(host.querySelector('textarea')?.value).toBe('我的新要求');
+  expect(host.querySelector('[data-history-reference]')?.textContent).toContain('之前的工作');
+  expect(S.activeConv).toBe('target'); expect(S.historyAgentPick).toBe('archive:claude');
+  expect(calls).toEqual([`http://127.0.0.1:1234/api/lom/history/${entry.id}/bundle`]);
+  expect(host.textContent).not.toContain('追加到当前输入框');
+});
+
+it('HIST-01 existing Qoder conversation drops into a Codex composer without switching or sending', async () => {
+  S.convs.push({ id: 'source', owner: 'pc', title: 'Qoder 已有会话', updated: 1, agentId: 'qoder', messages: [{ id: 'm', type: 'assistant', at: 1, text: '下一步继续实现测试' }] });
+  const fetch = vi.fn(async (_url: string) => new Response(JSON.stringify({ data: '/managed/history.md' }))); vi.stubGlobal('fetch', fetch);
+  await act(async () => root.render(<Composer ckey="conv:target" />));
+  const values = new Map<string, string>();
+  const data = { types: [CONVERSATION_MIME], setData: (k: string, v: string) => values.set(k, v), getData: (k: string) => values.get(k) || '' } as unknown as DataTransfer;
+  beginConversationDrag(data, 'source');
+  const drop = new Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: data });
+  await act(async () => host.querySelector('.composer')!.dispatchEvent(drop));
+  expect(drop.defaultPrevented).toBe(true);
+  expect(host.querySelector('textarea')?.value).toContain('我的新要求');
+  expect(host.querySelector('textarea')?.value).toBe('我的新要求');
+  expect(host.querySelector('[data-history-reference]')?.textContent).toContain('Qoder 已有会话');
+  expect(S.activeConv).toBe('target'); expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toContain('/api/fs/upload');
+});

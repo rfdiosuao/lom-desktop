@@ -1,0 +1,40 @@
+name: Community source checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - run: python3 tools/audit-source.py
+      - run: python3 apps/android/tests/check_public_boundary.py -v
+      - run: python3 protocol/tools/generate-remote.py && git diff --exit-code -- protocol/generated
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm test -- --maxWorkers=2
+        working-directory: apps/desktop
+      - run: npm run build
+        working-directory: apps/desktop
+  pairing-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: bash apps/android/src/android/gradlew -p apps/android/src/android/pairing-check :lom-pairing-core:test --console=plain --no-daemon

@@ -1,0 +1,111 @@
+/* ===== 应用外壳：左 / 中 / 右 三栏，宽度由 --lw / --rw 控制 ===== */
+#app{height:100vh;padding:0}
+/* 仅压缩显示宽度，给主区域保留 400px；窗口恢复后仍使用保存的面板宽度。 */
+.shell{--visible-lw:min(var(--lw,272px),max(200px,calc(100% - 400px - var(--rw,380px))));--visible-rw:min(var(--rw,380px),max(280px,calc(100% - 400px - var(--visible-lw))));position:relative;height:100vh;min-width:880px;display:grid;grid-template-columns:var(--visible-lw) minmax(0,1fr) var(--visible-rw);background:var(--bg);overflow:hidden;transition:grid-template-columns var(--panel-duration) var(--panel-ease)}
+.shell.is-left-collapsed{--lw:0px}
+.shell.is-right-collapsed{--rw:0px}
+.shell.no-right{--rw:0px}
+.shell.is-dragging{cursor:col-resize;user-select:none}
+.shell.is-dragging *{pointer-events:none}
+.shell.is-dragging .resizer{pointer-events:auto}
+.panel-slot{min-width:0;min-height:0;overflow:hidden}
+.panel-slot>.sidebar,.panel-slot>.workspace{height:100%;transition:transform var(--panel-duration) var(--panel-ease),opacity var(--panel-duration) var(--panel-ease),visibility 0s}
+.panel-slot>.sidebar{width:min(var(--left-panel-width,276px),max(200px,calc(100vw - 400px - var(--rw,380px))))}
+.panel-slot>.workspace{width:min(var(--right-panel-width,380px),max(280px,calc(100vw - 400px - var(--visible-lw))))}
+.is-left-collapsed .sidebar,.is-right-collapsed .workspace,.no-right .workspace{opacity:0;visibility:hidden;pointer-events:none;transition-delay:0s,0s,var(--panel-duration)}
+.is-left-collapsed .sidebar{transform:translateX(-24px)}
+.is-right-collapsed .workspace,.no-right .workspace{transform:translateX(24px)}
+.shell.is-dragging,.shell.is-dragging .resizer,.shell.is-dragging .sidebar,.shell.is-dragging .workspace{transition:none}
+.shell.is-dragging .sidebar,.shell.is-dragging .workspace{width:100%}
+
+/* 拖拽条 */
+.resizer{position:absolute;top:0;bottom:0;width:9px;margin-left:-4px;z-index:30;cursor:col-resize;display:flex;justify-content:center;touch-action:none;transition:left var(--panel-duration) var(--panel-ease)}
+.resizer::before{content:"";width:1px;height:100%;background:var(--line);transition:background .15s,width .15s}
+.resizer:hover::before,.resizer.is-active::before,.resizer:focus-visible::before{width:3px;background:var(--brand-ring)}
+.resizer:focus-visible{outline:none}
+.resizer--left{left:var(--visible-lw)}
+.resizer--right{left:calc(100% - var(--visible-rw))}
+.is-left-collapsed .resizer--left,.is-right-collapsed .resizer--right,.no-right .resizer--right{display:none}
+
+/* ===== 左侧栏 ===== */
+.sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--bg-sidebar)}
+.sidebar__top{display:flex;align-items:center;gap:2px;padding:14px 12px 0 16px;height:44px;flex:none}
+.traffic{display:flex;gap:8px;margin-right:auto}
+.traffic span{width:12px;height:12px;border-radius:50%}
+.traffic .r{background:#ff6257}.traffic .y{background:#ffbd2e}.traffic .g{background:#25c840}
+.brand{display:flex;align-items:center;gap:10px;padding:14px 18px 18px;flex:none}
+.brand img{width:40px;height:33px;object-fit:contain;mix-blend-mode:multiply}
+:root[data-theme="dark"] .brand img{filter:invert(1);mix-blend-mode:screen}
+.brand span{font-size:28px;font-weight:650;letter-spacing:-1px;color:var(--text-strong)}
+.mode-switch{display:flex;align-items:center;gap:6px;padding:0 14px 16px;flex:none}
+.mode-switch .seg{flex:1}
+.sidebar__body{flex:1;min-height:0;overflow:auto;padding:0 10px 10px;scrollbar-width:thin}
+.sidebar__section{padding:12px 0;border-top:1px solid var(--line)}
+.sidebar__section:first-child{border-top:0;padding-top:0}
+.sidebar__label{display:flex;align-items:center;justify-content:space-between;padding:4px 8px 6px;font-size:13px;color:var(--muted);font-weight:500}
+.sidebar__foot{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--line);flex:none}
+.account{display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:4px;border-radius:var(--r-sm);text-align:left}
+.account:hover{background:var(--bg-hover)}
+.account__name{font-size:14px;font-weight:600}
+.account__sub{font-size:12px;color:var(--muted)}
+.tree-children{padding-left:22px}
+
+/* 会话分组 */
+.group-head{display:flex;align-items:center;gap:6px;width:100%;padding:6px 6px;font-size:13px;color:var(--text-2);border-radius:6px}
+.group-head:hover{background:var(--bg-hover)}
+.group-head .icon{width:14px;height:14px;transition:transform .15s}
+.group-head.is-folded .icon{transform:rotate(-90deg)}
+.conv{display:flex;align-items:center;border-radius:6px;min-height:32px;padding-left:20px}
+.conv:hover{background:var(--bg-hover)}
+.conv.is-active{background:var(--bg-active);color:var(--brand-ink)}
+.conv__name{flex:1;min-width:0;text-align:left;padding:6px 4px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv__logo{width:16px;height:16px;object-fit:contain;vertical-align:-3px;margin-right:6px;border-radius:4px}
+.conv__logo--lom{mix-blend-mode:multiply}
+:root[data-theme="dark"] .conv__logo--lom{filter:invert(1);mix-blend-mode:screen}
+.conv__state{display:inline-flex;align-items:center;justify-content:center;flex:0 0 16px;width:16px;height:16px;margin-right:4px}
+.conv .ibtn{opacity:0}
+.conv:hover .ibtn,.conv.is-active .ibtn,.conv .ibtn.is-pinned{opacity:1}
+
+
+/* ===== 中间区域 ===== */
+.center{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);position:relative}
+.center__header{display:flex;align-items:center;gap:8px;height:var(--header-h);padding:0 14px;flex:none;border-bottom:1px solid transparent}
+.center__header.has-border{border-bottom-color:var(--line)}
+.center__title{display:flex;align-items:center;gap:8px;min-width:0;flex:1;font-size:15px;font-weight:600}
+.center__title-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.center__actions{display:flex;align-items:center;gap:4px}
+.center__body{scrollbar-gutter:stable;flex:1;min-height:0;overflow:auto;scrollbar-width:thin;display:flex;flex-direction:column}
+.collapsed-bar{display:flex;align-items:center;gap:4px;padding-right:6px;margin-right:4px;border-right:1px solid var(--line)}
+.collapsed-bar .traffic{margin-right:8px}
+
+/* ===== 右侧工作区 ===== */
+.workspace{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--bg)}
+.workspace__head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 0 18px;height:var(--header-h);flex:none}
+.workspace__title{font-size:18px;font-weight:650;color:var(--text-strong)}
+.workspace__tabs{padding:0 14px;flex:none}
+.workspace__body{scrollbar-gutter:stable;flex:1;min-height:0;overflow:auto;padding:14px 16px 18px;scrollbar-width:thin}
+
+/* ===== Windows 自绘窗口：缩放热区与窗口按钮 ===== */
+.window-resizers{position:fixed;inset:0;z-index:340;pointer-events:none}
+.window-resizers__edge{position:absolute;pointer-events:auto}
+.window-resizers__edge--north{top:0;left:8px;right:8px;height:5px;cursor:n-resize}
+.window-resizers__edge--south{bottom:0;left:8px;right:8px;height:5px;cursor:s-resize}
+.window-resizers__edge--east{top:8px;right:0;bottom:8px;width:5px;cursor:e-resize}
+.window-resizers__edge--west{top:8px;left:0;bottom:8px;width:5px;cursor:w-resize}
+.window-resizers__edge--northeast{top:0;right:0;width:10px;height:10px;cursor:nesw-resize}
+.window-resizers__edge--northwest{top:0;left:0;width:10px;height:10px;cursor:nwse-resize}
+.window-resizers__edge--southeast{right:0;bottom:0;width:10px;height:10px;cursor:nwse-resize}
+.window-resizers__edge--southwest{left:0;bottom:0;width:10px;height:10px;cursor:nesw-resize}
+
+/* 原生标题栏由外壳隐藏，顶部由应用自己的按钮占位 */
+.window-controls{position:fixed;top:0;right:0;z-index:350;display:flex;height:var(--header-h);user-select:none}
+.window-controls button{width:var(--titlebar-btn-w);height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-2);background:transparent}
+.window-controls button:hover{background:var(--bg-hover);color:var(--text-strong)}
+.window-controls button:focus-visible{outline:2px solid var(--brand-ring);outline-offset:-2px}
+.window-controls .icon{width:15px;height:15px}
+.window-controls button.window-controls__close:hover{background:var(--titlebar-close-bg);color:var(--titlebar-close-ink)}
+
+/* 给右上角的窗口按钮留出点击区域，避免盖住顶栏里的操作 */
+html.is-windows .workspace__head{padding-right:calc(var(--titlebar-btn-w) * 3 + 6px)}
+html.is-windows .shell.is-right-collapsed .center__header,
+html.is-windows .shell.no-right .center__header{padding-right:calc(var(--titlebar-btn-w) * 3 + 6px)}

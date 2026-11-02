@@ -1,0 +1,6 @@
+[submodule "android-ish"]
+ path = apps/android/deps/ish
+ url = https://github.com/OpenMinis/ish-arm64.git
+[submodule "android-proot"]
+ path = apps/android/deps/proot
+ url = https://github.com/OpenMinis/proot.git

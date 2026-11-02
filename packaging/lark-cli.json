@@ -1,0 +1,7 @@
+{
+  "version": "1.0.97",
+  "source": "https://github.com/larksuite/cli/releases/tag/v1.0.97",
+  "license": "MIT",
+  "mac-arm64": { "asset": "lark-cli-1.0.97-darwin-arm64.tar.gz", "sha256": "64e856a05c8dfdac5dbecd316766e4b05299f230f54833b674a623df3ac13f1c" },
+  "windows-x64": { "asset": "lark-cli-1.0.97-windows-amd64.zip", "sha256": "88ee81ec73be12432b2297df010098b5069e5ff0403123e1cd308ad0061f1397" }
+}

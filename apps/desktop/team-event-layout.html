@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><pre id="result">pending</pre>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { Message } from './src/views/Message.tsx';
+import { S } from './src/store/store.ts';
+import './src/styles/tokens.css';
+import './src/styles/components.css';
+import './src/styles/layout.css';
+import './src/styles/views.css';
+import './src/styles/app.css';
+S.eventOpen = {};
+const cases = [340,480,800].flatMap(width => [5,30].map(count => ({width,count})));
+createRoot(document.getElementById('root')).render(React.createElement('div', {}, ...cases.map(({width,count}, index) =>
+ React.createElement('section', {className:'pane',key:index,style:{width,height:400,flex:'none',marginBottom:20}},
+ React.createElement('div',{className:'pane__scroll'},...Array.from({length:count},(_,i)=>React.createElement(Message,{key:i,ctxId:'fixture',m:{id:`${index}-${i}`,type:i%4===0?'assistant':'tool',at:0,text:'正在查看手机状态。\n这是保留的文字回复。',tool:'读取手机应用列表',detail:'手机工具调用 · 测试参数',command:'phone_apps',output:'真实工具输出测试\n'.repeat(30),status:'done'}})))))));
+setTimeout(async()=>{
+ const results=[];
+ for (const [i,pane] of [...document.querySelectorAll('.pane__scroll')].entries()) {
+  const cards=[...pane.querySelectorAll('.event')];
+  const before=cards.map(c=>c.getBoundingClientRect().height);
+  const card=cards.at(-1);card.querySelector('button').click();
+  await new Promise(r=>setTimeout(r,50));
+  const expanded=card.getBoundingClientRect().height;
+  const body=card.querySelector('.event__body');
+  const visibleBody=!!body && body.getBoundingClientRect().bottom<=card.getBoundingClientRect().bottom+1;
+  card.querySelector('button').click();await new Promise(r=>setTimeout(r,50));
+  results.push({...cases[i],minHeight:Math.min(...before),expanded,visibleBody,collapsed:card.getBoundingClientRect().height,scroll: pane.scrollHeight>pane.clientHeight});
+ }
+ const ok=results.every(r=>r.minHeight>=44 && r.expanded>r.collapsed && r.visibleBody && (r.count<30 || r.scroll));
+ const output=document.getElementById('result'); output.dataset.ok=String(ok);output.textContent=JSON.stringify(results);
+},1000);
+</script></body></html>

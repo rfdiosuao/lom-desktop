@@ -1,0 +1,11 @@
+[package]
+name = "aionui-personal-evolution"
+version = "0.2.2"
+edition = "2024"
+license = "MIT"
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+[dev-dependencies]
+tempfile = "3"

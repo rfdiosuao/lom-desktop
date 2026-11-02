@@ -1,0 +1,63 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "麓鸣 Lom",
+  "mainBinaryName": "Lom",
+  "version": "0.2.5",
+  "identifier": "org.lom.community.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "麓鸣 Lom",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 880,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 24
+        },
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "Productivity",
+    "shortDescription": "麓鸣 Lom",
+    "externalBin": [
+      "binaries/aioncore",
+      "binaries/lark-cli"
+    ],
+    "resources": [
+      "licenses/lark-cli-LICENSE",
+      "licenses/personal-templates-NOTICE"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    }
+  }
+}

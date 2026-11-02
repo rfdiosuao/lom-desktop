@@ -1,0 +1,32 @@
+<!doctype html><html data-theme="dark"><meta charset="utf-8"><body><div id="root" style="height:620px"></div><pre id="result">pending</pre><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {TeamPage} from './src/views/pages/Teams.tsx';
+import {TeamModal} from './src/overlays/modals/work.tsx';
+import {S,useStore} from './src/store/store.ts';
+import './src/styles/tokens.css';import './src/styles/components.css';import './src/styles/layout.css';import './src/styles/views.css';import './src/styles/app.css';
+S.agentCatalog=['Codex CLI','Kimi','CodeBuddy','Claude Code','Gemini'].map((name,i)=>({id:'a'+i,name,enabled:true,installed:true,status:'online',backend:'codex'}));
+S.teams=[{id:'test',name:'测试团队',created:0,real:false,panes:{},members:[{mid:'l',agent:'pc',role:'总编',leader:true},...S.agentCatalog.map(a=>({mid:a.id,agent:'ag:'+a.id,role:'执行'}))]}];
+S.route={name:'team',id:'test'};S.teamView='side';S.teamFocus='l';S.convs=[];S.running={};S.modals=[];
+function App(){useStore();return React.createElement(React.Fragment,null,React.createElement(TeamPage),S.modals.length?React.createElement(TeamModal,{p:S.modals.at(-1).props}):null)}
+createRoot(document.getElementById('root')).render(React.createElement(App));
+const delay=()=>new Promise(r=>setTimeout(r,100));
+setTimeout(async()=>{try{
+ const results=[];
+ for(const width of [960,1280,1920]){
+ document.getElementById('root').style.width=width+'px';await delay();
+ const strip=document.querySelector('.team__members'),r=strip.getBoundingClientRect(),kids=[...strip.children];
+ const visible=kids.filter(k=>{const b=k.getBoundingClientRect();return b.left>=r.left-1&&b.right<=r.right+1}).length;
+ const manage=[...document.querySelectorAll('.team__bar>button')].find(b=>b.textContent==='管理成员');
+ results.push({width,visible,overflow:strip.scrollWidth>strip.clientWidth,clear:manage.getBoundingClientRect().left>=r.right});
+ }
+ document.querySelector('.team__members').scrollLeft=9999;await delay();const scrolled=document.querySelector('.team__members').scrollLeft>0;
+ [...document.querySelectorAll('button')].find(b=>b.textContent==='管理成员').click();await delay();
+ const before=S.teams[0].members.length;document.querySelector('[aria-label="移除"]').click();await delay();
+ const unchanged=S.teams[0].members.length===before;
+ [...document.querySelectorAll('button')].find(b=>b.textContent==='保存').click();await delay();
+ const removed=S.teams[0].members.length===before-1;
+ const ok=results.every(x=>x.visible===4&&x.overflow&&x.clear)&&scrolled&&unchanged&&removed;
+ document.getElementById('result').dataset.ok=String(ok);document.getElementById('result').textContent=JSON.stringify({results,scrolled,unchanged,removed});
+ }catch(e){document.getElementById('result').textContent=String(e)}} ,1000);
+</script></body></html>

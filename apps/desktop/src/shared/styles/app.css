@@ -1,0 +1,60 @@
+/* ===== 桌面版补充样式：只用 tokens.css 中的设计令牌 =====
+ * 原型的四个样式文件原样保留；这里只补原型里没有、但真实数据需要的元素。 */
+
+/* 真实预览：生成的页面在 iframe 里 */
+.preview-frame__page{display:block;width:100%;height:min(62vh,520px);border:0;background:#fff}
+.preview-frame--mobile .preview-frame__page{height:100%;min-height:520px}
+.modal--full .preview-frame{flex:1;display:flex;flex-direction:column}
+.modal--full .preview-frame__page{flex:1;height:auto;min-height:60vh}
+.preview-building{height:300px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:14px;background:var(--bg-subtle)}
+
+/* 模型输出的代码块与有序列表 */
+.msg__text .md-code{margin:8px 0;padding:10px 12px;border-radius:var(--r-sm);background:var(--bg-subtle);border:1px solid var(--line);font-family:var(--mono);font-size:13px;line-height:1.55;overflow:auto;white-space:pre}
+.msg__text ol{margin:6px 0;padding-left:22px}
+/* CW06：引用、分隔线、表格、链接、删除线 */
+.msg__text blockquote{margin:6px 0;padding:2px 0 2px 12px;border-left:3px solid var(--line-strong);color:var(--text-2)}
+.msg__text hr{margin:12px 0;border:0;border-top:1px solid var(--line)}
+.msg__text .md-table{margin:8px 0;overflow-x:auto}
+.msg__text table{border-collapse:collapse;font-size:14px;line-height:1.5}
+.msg__text th,.msg__text td{padding:5px 10px;border:1px solid var(--line);text-align:left;vertical-align:top}
+.msg__text th{background:var(--bg-subtle);color:var(--text-strong);font-weight:600}
+.msg__text a.md-link{color:var(--brand);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
+.msg__text del{color:var(--muted)}
+
+/* 演示标注：手机端与云端接入前的说明，退到次要层级 */
+.demo-note{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:13px;color:var(--muted)}
+.demo-note .icon{width:14px;height:14px}
+.sidebar__demo{padding:10px 8px 0}
+.sidebar__demo .demo-note{margin-left:0}
+
+/* 表单错误 */
+.form-error{display:flex;align-items:flex-start;gap:6px;margin:4px 0 0;padding:8px 10px;border-radius:var(--r-sm);background:var(--danger-soft);color:var(--danger);font-size:13px;line-height:1.5}
+.form-error .icon{flex:none;width:15px;height:15px;margin-top:1px}
+
+/* 核心服务连接状态条 */
+.conn-banner{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:350;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:var(--r-pill);background:var(--warn-soft);color:var(--text);border:1px solid var(--line);box-shadow:var(--shadow-md);font-size:13px}
+.conn-banner .icon{width:15px;height:15px;color:var(--warn)}
+
+/* 桌面外壳：系统自己绘制红绿灯，原型里的假红绿灯只保留占位 */
+html.in-shell .traffic span{visibility:hidden}
+
+/* 路径按钮：真实路径可能很长，超出时省略中间部分以外的内容 */
+.btn--path{min-width:0;max-width:calc(100% - 72px)}
+.btn--path span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* 在线充值档位：支付开放前置灰 */
+.price-grid.is-disabled .price{opacity:.55;cursor:not-allowed}
+
+/* 粘贴 / 拖入的图片：附件上的缩略图、上传中、拖放高亮 */
+.attach__thumb{width:20px;height:20px;border-radius:4px;object-fit:cover;flex:none;border:1px solid var(--line)}
+.attach.is-uploading{opacity:.7}
+.composer.is-dragover{outline:2px dashed var(--brand-ring);outline-offset:-2px;background:var(--brand-softer)}
+
+/* R01 真实配对二维码：内容约 190 字节（版本 10，57 格）。放大一些，并且不在中间叠 logo（会盖住中心的校正图形，影响识别） */
+.qr--live{width:216px;height:216px}
+.qr__img{width:100%;height:100%;display:block;image-rendering:pixelated}
+
+/* D25 desktop update prompt */
+.update-banner{position:fixed;bottom:20px;right:24px;z-index:190;display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);color:var(--text)}
+.update-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:35vh;overflow:auto;padding:12px;background:var(--bg-subtle);border-radius:var(--r-sm)}
+.update-error{color:var(--danger)}

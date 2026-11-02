@@ -1,0 +1,300 @@
+# Building Minis
+
+Minis ships a full Linux sandbox inside the app, so a first build is not just
+"open the project and press Run": the native dependencies (iSH on iOS, PRoot on
+Android, FFmpeg, LAME) and the Alpine rootfs are **built from source by the
+scripts in `deps/`**, not committed as binaries. Budget ~30–60 minutes for the
+first build; afterwards the artifacts are cached on disk and normal builds are
+fast.
+
+Read the section for your platform end to end before starting — the steps are
+ordered by dependency, and skipping one produces confusing link errors later.
+
+---
+
+## Common setup
+
+From the monorepo root, initialize the public native dependency submodules:
+
+```sh
+git submodule update --init --recursive
+cd apps/android
+```
+
+`deps/ish` uses OpenMinis/ish-arm64 at `e6521d9cfe9cd48f19917fc3b23aea622ba358b4`; `deps/proot` uses OpenMinis/proot at `1b444ee1cb2f4896c08166e9a12c905af5416f1c`. URLs are recorded in the monorepo root `.gitmodules`.
+
+### Build-time customization
+
+Some values are injected at build time and are **not** in this repository.
+Copy the templates before building:
+
+```sh
+cp src/ios/Configs/ProviderCustomization.xcconfig.example \
+   src/ios/Configs/ProviderCustomization.xcconfig
+
+cp src/android/app/provider-customization.properties.example \
+   src/android/app/provider-customization.properties
+```
+
+Leaving the values empty is fine — **the app compiles and runs**. A value is
+only required by the feature that uses it, and that feature fails loudly at
+runtime when it is missing. API-key based sign-in works without any
+customization.
+
+### `ANTHROPIC_OAUTH_IDENTIFIER_PROMPT`
+
+Only relevant if you want to **sign in with Claude OAuth credentials** rather
+than an Anthropic API key.
+
+When a request is authenticated with OAuth, Anthropic's endpoint expects the
+system prompt to begin with the identifying line that Claude Code itself
+sends; without it the request is rejected. The build injects that line from
+this value, so OAuth sign-in fails at runtime while it is empty.
+
+We do not ship a value. Supply your own if you need this path — other
+open-source projects that talk to the same endpoint declare the same
+identifier, for example
+[claude-relay-service](https://github.com/Wei-Shaw/claude-relay-service),
+which you can consult for the exact wording.
+
+Everything else — Anthropic API keys, and every other provider — works
+without setting this.
+
+---
+
+## iOS
+
+### Requirements
+
+| Tool | Version / notes |
+|---|---|
+| macOS | Apple Silicon strongly recommended (see the simulator note below) |
+| Xcode | With the iOS SDK; the project targets **iOS 26.2** and **Swift 6.0** |
+| Metal Toolchain | `xcodebuild -downloadComponent MetalToolchain` — recent Xcode ships it as a separate component |
+| Homebrew packages | `brew install ninja llvm libarchive pkg-config` |
+| Python 3 + Meson | `pip3 install meson` |
+| Go | **1.25+** (`brew install go`), for rclone |
+
+`llvm` is needed to compile the guest VDSO, `libarchive` to unpack the rootfs,
+and Meson/Ninja to build the iSH kernel.
+
+The Metal Toolchain matters even though the build succeeds without it: FFmpeg's
+`configure` probes for the `metal` compiler and, when it is missing, **silently
+drops** the Metal-backed `yadif_videotoolbox` deinterlace filter. Check with
+`xcrun -sdk iphoneos metal --version` before running `build_ffmpeg.sh`.
+
+### 1. Build the native dependencies
+
+Run these from the repository root, **in this order** — FFmpeg links against
+LAME, so LAME must exist first or MP3 encoding is silently dropped:
+
+```sh
+./deps/build_lame.sh          # → deps/lame-build/lib/libmp3lame.a
+./deps/build_ffmpeg.sh        # → deps/frameworks/*.framework  (LGPL config)
+./deps/build_ish.sh           # → deps/libs/*.a, deps/include/, deps/resources/
+./deps/prepare_alpine_rootfs.sh   # → deps/resources/alpine-rootfs.zip
+./deps/build_rclone_ios.sh    # → deps/frameworks/Rclone.xcframework
+```
+
+What each produces:
+
+- **`build_lame.sh`** — LAME 3.100 as a static library for arm64.
+- **`build_ffmpeg.sh`** — FFmpeg 6.1.2 as per-library `.framework` bundles plus
+  an umbrella `FFmpeg.framework`. Configured **LGPL**: do not add
+  `--enable-gpl` or `--enable-nonfree` — see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- **`build_ish.sh`** — `libish`, `libish_emu`, `libfakefs` from the `deps/ish`
+  submodule, plus headers and the VDSO.
+- **`prepare_alpine_rootfs.sh`** — downloads Alpine aarch64 minirootfs and
+  converts it to iSH's fakefs format.
+- **`build_rclone_ios.sh`** — rclone as a static-library XCFramework (device
+  and simulator slices) for the backup feature's remote destinations (SMB /
+  WebDAV / SFTP / S3 / FTP). Needs only the Go toolchain, not gomobile. The
+  linked backends are listed in `deps/rclone-mobile/backends/backends.go`.
+
+The Xcode project references `deps/libs/`, `deps/include/`, `deps/frameworks/`
+and `deps/resources/` relative to the project, so nothing needs to be copied
+by hand.
+
+### 2. Build the app
+
+```sh
+open src/ios/Minis.xcodeproj
+```
+
+Select the **Minis** scheme and build. For a device build, set your own team
+under *Signing & Capabilities* — the project ships with an empty
+`DEVELOPMENT_TEAM`.
+
+From the command line:
+
+```sh
+xcodebuild -project src/ios/Minis.xcodeproj -scheme Minis \
+           -configuration Debug -destination 'generic/platform=iOS' \
+           CODE_SIGNING_ALLOWED=NO build
+```
+
+> **Simulator builds need simulator-architecture dependencies.** The scripts
+> above build for **device arm64**. Linking a simulator build against them
+> fails with `building for 'iOS-simulator', but linking in object file built
+> for 'iOS'` (or a missing-symbol error for x86_64 on Intel Macs). Build for a
+> device destination, or rebuild the native deps for the simulator SDK.
+
+### Targets
+
+`Minis` (app), `MinisShare` (share extension), `AgentWidgetExtension`,
+`MinisFileProvider`, plus `MinisTests` / `MinisUITests`.
+
+---
+
+## Android
+
+### Requirements
+
+| Tool | Version / notes |
+|---|---|
+| JDK | **17** (`sourceCompatibility`/`targetCompatibility` are 17) |
+| Android SDK | **compileSdk 36**, targetSdk 35, **minSdk 26** |
+| Android NDK | **r28+** — set `$ANDROID_NDK_HOME`, or install via Android Studio |
+| CMake | 3.22.1 (install through the SDK Manager) |
+| Go + gomobile | Go **1.25+**, then `go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init` — for rclone |
+| Shell tools | `curl`, `tar`, `make`, `awk`, `sed` |
+
+Gradle itself comes from the wrapper (Gradle 8.11.1, AGP 8.7.3, Kotlin 2.1.0) —
+do not install it separately.
+
+Only `arm64-v8a` is built (`abiFilters`), so use an arm64 device or emulator
+image.
+
+### 1. Build the native dependencies
+
+```sh
+./deps/build_proot.sh              # → assets/proot-aarch64, jniLibs/arm64-v8a/*.so
+./scripts/prepare_android_sandbox.sh   # → assets/alpine-minirootfs.tar.gz
+./deps/build_rclone_android.sh     # → deps/build/rclone/rclone.aar
+mkdir -p src/android/app/libs && cp deps/build/rclone/rclone.aar src/android/app/libs/
+```
+
+- **`build_proot.sh`** cross-compiles a static `libtalloc` and the
+  `deps/proot` fork with the NDK, then installs into the app's `assets/` and
+  `jniLibs/arm64-v8a/`: the proot binary itself plus **`libproot-loader.so`
+  and `libproot-loader32.so`**. The script verifies all of them at the end and
+  fails the build if any is missing.
+
+  The loaders are required, not optional. Android 10+ enforces W^X for
+  `untrusted_app`: nothing labelled `app_data_file` — which includes the whole
+  extracted Alpine rootfs under the app's `files/` dir — can ever be executed.
+  Only `nativeLibraryDir`, populated from `lib/**/*.so` in the APK, is
+  executable, so the loader lives there and maps guest binaries itself instead
+  of relying on the kernel's `execve`. (proot can normally extract an embedded
+  loader at runtime, but on Android it writes it into the app's temp dir and
+  hits the same W^X wall.) That is also why they carry a `.so` suffix despite
+  being executables rather than shared objects — only `*.so` gets extracted.
+
+  Artifacts are **not** byte-identical across NDK releases; the loader's code
+  differs between toolchain generations. Functionally equivalent — don't expect
+  checksums to match someone else's build.
+- **`prepare_android_sandbox.sh`** downloads the Alpine aarch64 minirootfs into
+  `assets/`.
+- **`build_rclone_android.sh`** binds rclone with gomobile into an `.aar` for
+  the backup feature's remote destinations. It needs `ANDROID_NDK_HOME` (or
+  `ANDROID_HOME`) set, and it writes to `deps/build/rclone/`; Gradle reads the
+  `.aar` from `src/android/app/libs/`, so copy it there as shown above.
+
+All of these outputs are gitignored — they are build artifacts, so rerun the
+scripts rather than committing them.
+
+The small JNI libraries in `src/main/cpp/` (`pty_bridge`, the crash handler,
+`jieba_jni`) are built by CMake as part of the normal Gradle build; no separate
+step is needed.
+
+### 2. Build the app
+
+```sh
+cd src/android
+./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
+./gradlew :app:installDebug           # install onto a connected device
+```
+
+Release builds are configured with the debug signing config, so no keystore is
+required to produce one locally.
+
+### Tests
+
+```sh
+./gradlew :app:testDebugUnitTest        # JVM unit tests
+./gradlew :app:connectedAndroidTest     # instrumented; needs a device/emulator
+```
+
+---
+
+## Troubleshooting
+
+**`deps/ish` or `deps/proot` is empty** — the submodules were not initialised:
+`git submodule update --init --recursive`.
+
+**iOS: `Undefined symbols … _vstats_version` / `symbol(s) not found`** — FFmpeg
+was not built, or was built for a different architecture than the one you are
+linking. Rerun `./deps/build_ffmpeg.sh` and build for a device destination.
+
+**iOS: `linking in object file built for 'iOS'` on a simulator build** — see
+the simulator note above.
+
+**iOS: MP3 encoding unavailable** — `build_lame.sh` did not run before
+`build_ffmpeg.sh`. Rerun both in order.
+
+**iOS: `There is no XCFramework found at '…/deps/frameworks/Rclone.xcframework'`**
+— rclone was not built. Run `./deps/build_rclone_ios.sh`.
+
+**iOS: `cannot execute tool 'metal' due to missing Metal Toolchain`** in the
+FFmpeg build log, or the `yadif_videotoolbox` filter is absent — install it with
+`xcodebuild -downloadComponent MetalToolchain`, then rerun
+`./deps/build_ffmpeg.sh`.
+
+**Android: `Could not find :rclone:`** — `rclone.aar` is not in
+`src/android/app/libs/`. Run `./deps/build_rclone_android.sh` and copy
+`deps/build/rclone/rclone.aar` there.
+
+**Android: `Android NDK not found`** — set `ANDROID_NDK_HOME` to your NDK r28+
+installation, e.g.
+`export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/28.0.12433566`.
+
+**Android: app starts but the shell does not** — the sandbox assets are
+missing. Rerun `./deps/build_proot.sh` and
+`./scripts/prepare_android_sandbox.sh`, then rebuild.
+
+**Android: every command returns `[Shell not running] (exit code: -1)`** —
+the proot ELF loaders are missing from the APK. Check that
+`src/android/app/src/main/jniLibs/arm64-v8a/` contains `libproot-loader.so`
+(and `libproot-loader32.so`); if not, rerun `./deps/build_proot.sh`, which
+now verifies them, and rebuild. Confirm with
+`unzip -l app-debug.apk | grep libproot` — all three `.so` files must be
+present.
+
+This failure is deliberately hard to spot from the outside: proot still
+launches and logs its `native_offload` initialisation, so the sandbox looks
+healthy and any "does it start?" check passes. Only the first
+`execve("/bin/sh")` fails, with `Permission denied` in logcat under the
+`PRootStderr` tag. When touching this area, verify by **running a command and
+asserting exit code 0** — starting the sandbox is not enough.
+
+**A feature throws about a missing configuration value** — that value comes
+from the customization file; see [Build-time customization](#build-time-customization).
+
+---
+
+## Licensing note
+
+Minis is **GPLv3** because it links iSH (GPLv3) and PRoot (GPLv2). If you
+change how the native dependencies are built, keep FFmpeg on its LGPL
+configuration and preserve the vendored `LICENSE` files. See
+[LICENSE](LICENSE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+## LOM Android build
+
+After preparing the native dependencies above, run `cd src/android && bash gradlew :app:assembleLomRelease`. Release currently uses a locally generated Android debug key for development; supply your own stable release signing configuration before distributing binaries. No signing material is included.
+
+Cloud pairing, startup recovery and background relay are disabled in this public export. The commercial server is excluded. Desktop LAN/USB transport is not implemented. The upstream development debug server is a separate developer facility. Full APK construction and device behavior have not been verified for this export.
+
+## Export checks
+
+Run `python3 tests/check_public_boundary.py -v` for source-text export checks and independent cryptographic vector checks. These passed on 2026-10-26 (3 checks); they do not execute Android behavior. The JVM command `bash src/android/gradlew -p src/android/pairing-check :lom-pairing-core:test --console=plain` requires a separately configured JDK (the default macOS Java launcher is not configured); JDK 21 started Gradle successfully, but the pairing test build requires a Java 17 toolchain that is not installed; no passing JVM/Android result is claimed. No full APK or device verification was performed.

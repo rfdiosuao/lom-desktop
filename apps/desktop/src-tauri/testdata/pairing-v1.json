@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "spec": "lom/specs/relay/R01-pairing.md §2.8",
+  "notes": "All binary values are base64url without padding. keys = b64url(x25519_pub || ed25519_pub). Public keys here are arbitrary 32-byte test values, not derived from private keys.",
+  "manual_code_alphabet": "23456789ABCDEFGHJKMNPQRSTUVWXYZ",
+  "cases": [
+    {
+      "host": "relay.example.invalid",
+      "pairing_id": "OgX7dsvX6Pp6hNZsT6w8Sw",
+      "claim_token": "FQw1yQZ_QDI9gaoYuU4eRwQdFFjrO-YJZWp5v_TVKaE",
+      "psk": "3yUTIoVtslOrzFoP_u6Mv94XCSibzlDW7C6unULIp3o",
+      "desktop": {
+        "x25519": "32jqJTBThIbGnEQca3yRNAUe9-fqOW8Rkj1fHjMPej0",
+        "ed25519": "hNW7ANOdfKLErI90afHceDFyOprtLfVUN9HIVorG52w",
+        "keys": "32jqJTBThIbGnEQca3yRNAUe9-fqOW8Rkj1fHjMPej2E1bsA0518osSsj3Rp8dx4MXI6mu0t9VQ30chWisbnbA",
+        "fingerprint": "rp1mfT5Bdyg1iFGecQecVQ"
+      },
+      "phone": {
+        "x25519": "FukJ5vAdsxAgpk1BpIEm6fz2ExraZY4MBy6QymqDna8",
+        "ed25519": "wgdmyEadxpRMH6sMQu1FLLvFcg1fOKf0yZkJ5D8Llm8",
+        "keys": "FukJ5vAdsxAgpk1BpIEm6fz2ExraZY4MBy6QymqDna_CB2bIRp3GlEwfqwxC7UUsu8VyDV84p_TJmQnkPwuWbw",
+        "fingerprint": "Ti0hVBou-hZOde-bso7M2Q"
+      },
+      "qr": "lom://pair?v=1&h=cmVsYXkuZXhhbXBsZS5pbnZhbGlk&p=OgX7dsvX6Pp6hNZsT6w8Sw&t=FQw1yQZ_QDI9gaoYuU4eRwQdFFjrO-YJZWp5v_TVKaE&k=3yUTIoVtslOrzFoP_u6Mv94XCSibzlDW7C6unULIp3o&f=rp1mfT5Bdyg1iFGecQecVQ",
+      "key_proof": "AhC3_kPvKz1tG45um27Ovh-jkGhQ8jxCPBCk9lkVqqE",
+      "sas": "643266"
+    },
+    {
+      "host": "relay.example.cn",
+      "pairing_id": "mntD9iGtAxNFEDb-v4rUSg",
+      "claim_token": "ZdzxbqPfpJBpYoCJ60p1SDBw9VhLKiHuZJErX2IfEto",
+      "psk": "TYDmLs6Q7vnG0RRnN_cFPAgJeFchsJkOIp85TSIzgh4",
+      "desktop": {
+        "x25519": "uzOk8RlrRIgVr9vcplKLSAIWTs2NvxtQMJxum7qc_B8",
+        "ed25519": "zGx6JDCqmP9aGKaOVWHTTuOTkl02W4XP8XQFnc71ftI",
+        "keys": "uzOk8RlrRIgVr9vcplKLSAIWTs2NvxtQMJxum7qc_B_MbHokMKqY_1oYpo5VYdNO45OSXTZbhc_xdAWdzvV-0g",
+        "fingerprint": "NuqfSSvlficw-XJrjywqxQ"
+      },
+      "phone": {
+        "x25519": "h_UTzu97EWvgemFEkBmivdbfWhgnvGp8viwKK3gucnc",
+        "ed25519": "sV7uaZxLI-0qljOtl0Rhi-bbGNlzOjbQxobmaLeECl8",
+        "keys": "h_UTzu97EWvgemFEkBmivdbfWhgnvGp8viwKK3gucnexXu5pnEsj7SqWM62XRGGL5tsY2XM6NtDGhuZot4QKXw",
+        "fingerprint": "YGKr9rMqR0BMZ3SaIWD-FA"
+      },
+      "qr": "lom://pair?v=1&h=cmVsYXkuZXhhbXBsZS5jbg&p=mntD9iGtAxNFEDb-v4rUSg&t=ZdzxbqPfpJBpYoCJ60p1SDBw9VhLKiHuZJErX2IfEto&k=TYDmLs6Q7vnG0RRnN_cFPAgJeFchsJkOIp85TSIzgh4&f=NuqfSSvlficw-XJrjywqxQ",
+      "key_proof": "0gQ8fpfbC8YA2zeTYY-JkoAz3xUJq0cDpMcpkYaCEI4",
+      "sas": "645446"
+    }
+  ]
+}

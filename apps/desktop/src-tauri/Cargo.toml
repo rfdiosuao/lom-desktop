@@ -1,0 +1,56 @@
+[package]
+name = "lom-desktop"
+version = "0.2.5"
+description = "麓鸣 Lom 桌面外壳：窗口、系统对话框，并以 sidecar 方式启动 lom-core"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+
+[lib]
+name = "lom_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", features = [] }
+
+[dependencies]
+aionui-personal-evolution = { path = "vendor/personal-evolution", version = "=0.2.2" }
+arboard = { version = "=3.6.1", default-features = false, features = ["image-data"] }
+tauri = { version = "=2.12.4", features = ["tray-icon"] }
+tauri-plugin-dialog = "=2.8.3"
+tauri-plugin-opener = "=2.7.2"
+keyring = { version = "=3.6.3", features = ["apple-native", "windows-native"] }
+ureq = { version = "=2.12.1", features = ["json"] }
+sha2 = "0.10"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+getrandom = "0.3"
+dirs = "6"
+log = "0.4"
+# R01 配对：安装身份密钥、key_proof / 确认码计算、二维码
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = "2"
+hmac = "0.12"
+hkdf = "=0.12.4"
+chacha20poly1305 = "=0.10.1"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+serde_json = "1"
+whoami = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+[dependencies.zip]
+version = "=8.6.0"
+default-features = false
+features = ["deflate"]
+
+[dev-dependencies]
+minisign-verify = "=0.3.0"
+
+# Windows：窗口收进托盘后，再次打开 Lom 时唤回已在运行的那一个，不另起第二个实例和核心
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-single-instance = "=2.5.2"

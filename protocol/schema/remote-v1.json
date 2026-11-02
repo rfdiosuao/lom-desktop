@@ -1,0 +1,242 @@
+{
+  "Envelope": [
+    "id",
+    "sender",
+    "recipient",
+    "ephemeral",
+    "ciphertext",
+    "signature"
+  ],
+  "TaskRequest": [
+    "action",
+    "task_id",
+    "session_id",
+    "text"
+  ],
+  "TaskReply": [
+    "task_id",
+    "session_id",
+    "status",
+    "text",
+    "error"
+  ],
+  "RpcRequest": [
+    "method",
+    "payload",
+    "issued_at"
+  ],
+  "RpcResponse": [
+    "status",
+    "payload",
+    "error"
+  ],
+  "ModelConfig": [
+    "base_url",
+    "api_key",
+    "model",
+    "platform",
+    "revision"
+  ],
+  "ChatSend": [
+    "client_id",
+    "session_id",
+    "text"
+  ],
+  "DocumentWrite": [
+    "name",
+    "text",
+    "revision"
+  ],
+  "FileBegin": [
+    "id",
+    "name",
+    "mime",
+    "size",
+    "sha256"
+  ],
+  "FileChunk": [
+    "id",
+    "offset",
+    "data"
+  ],
+  "FileState": [
+    "id",
+    "name",
+    "mime",
+    "size",
+    "sha256",
+    "offset",
+    "status"
+  ],
+  "FileRead": [
+    "id",
+    "offset"
+  ],
+  "FileData": [
+    "data",
+    "next"
+  ],
+  "FileList": [
+    "items"
+  ],
+  "ChatSendFiles": [
+    "client_id",
+    "session_id",
+    "text",
+    "files"
+  ],
+  "ScheduleWrite": [
+    "id",
+    "revision",
+    "name",
+    "prompt",
+    "freq",
+    "time",
+    "days",
+    "every",
+    "enabled",
+    "session_id"
+  ],
+  "ScheduleAction": [
+    "id",
+    "revision",
+    "request_id",
+    "enabled"
+  ],
+  "PhoneSchedule": [
+    "id",
+    "revision",
+    "name",
+    "prompt",
+    "freq",
+    "time",
+    "days",
+    "every",
+    "enabled",
+    "session_id",
+    "next",
+    "last",
+    "runs",
+    "editable"
+  ],
+  "PhoneSchedules": [
+    "items",
+    "timezone",
+    "exact"
+  ],
+  "ChatFile": [
+    "session_id",
+    "message_id",
+    "index"
+  ],
+  "ScreenRequest": [
+    "quality",
+    "cellular_cap"
+  ],
+  "ScreenFrame": [
+    "image",
+    "width",
+    "height",
+    "captured_at",
+    "mime"
+  ],
+  "PhoneControl": [
+    "request_id",
+    "action",
+    "x",
+    "y",
+    "x2",
+    "y2",
+    "text",
+    "package_name"
+  ],
+  "CommanderConfig": [
+    "scope",
+    "url",
+    "token"
+  ],
+  "CommanderCall": [
+    "id",
+    "scope",
+    "name",
+    "arguments"
+  ],
+  "ChatImage": [
+    "session_id",
+    "source"
+  ],
+  "ImageCacheKey": [
+    "key"
+  ],
+  "ImageCacheWrite": [
+    "key",
+    "data"
+  ],
+  "SkillPackage": [
+    "archive",
+    "sha256"
+  ],
+  "SkillStage": [
+    "path"
+  ],
+  "SkillAction": [
+    "id",
+    "enabled"
+  ],
+  "PhoneSkill": [
+    "id",
+    "name",
+    "description",
+    "version",
+    "enabled",
+    "body"
+  ],
+  "PhoneSkills": [
+    "items"
+  ],
+  "DeviceStatus": [
+    "battery",
+    "network",
+    "sampled_at"
+  ],
+  "FileGalleryRequest": [
+    "id"
+  ],
+  "FileGalleryResult": [
+    "id",
+    "uri",
+    "status"
+  ],
+  "DeviceName": [
+    "name"
+  ],
+  "PhoneSubAgent": [
+    "id",
+    "name",
+    "description",
+    "instructions",
+    "model_group",
+    "enabled",
+    "builtin",
+    "revision"
+  ],
+  "PhoneSubAgents": [
+    "items",
+    "groups",
+    "delegation_enabled"
+  ],
+  "SubAgentWrite": [
+    "id",
+    "name",
+    "description",
+    "instructions",
+    "model_group",
+    "enabled",
+    "revision"
+  ],
+  "SubAgentAction": [
+    "id",
+    "enabled",
+    "revision"
+  ]
+}

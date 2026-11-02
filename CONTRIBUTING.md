@@ -1,23 +1,7 @@
-# 参与 Lom Desktop
+# Contributing
 
-欢迎一起改进桌面体验。完整待办和未修问题集中在 [社区迭代计划](COMMUNITY_PLAN.md)，开发与构建命令见 [开发说明](docs/DEVELOPMENT.md)。此仓库采用 AGPL-3.0-only；提交请保留必要的来源和许可证。
+Start with [README.md](README.md), [BUILDING.md](BUILDING.md), and the relevant component's contributor instructions. Keep changes scoped to the desktop shell, local core, mobile app or protocol; preserve component licenses and upstream attribution.
 
-## 从哪里开始
+The commercial backend is not part of this repository. Do not add production endpoints, credentials, signing material, local user data or private repository dependencies. Community LAN/relay work should be a separate proposal with its own authentication and threat model; this export does not implement that transport.
 
-1. 选择标为“桌面可认领”的项目；例如 CW07 Markdown 保真、控件可访问性、本地文件体验与跨平台适配。先在 Issue 写明任务 ID 和最小复现，避免重复工作。
-2. “桌面待提取”表示生产页面尚未完整公开，可以先讨论设计/测试。手机、服务端、商业内核保持私有，相关问题由维护者接线；无需私有账号、密钥或源码就能运行文档工作台和组件预览。
-3. 执行 `npm ci`、`npm run dev` 或 `npm run tauri -- dev`。组件与 CLI 页说明真实支持范围，不用假回复冒充已连接。
-4. 行为变化附针对性测试，运行 `npm test`、`npm run build`、`npm run audit:public`；涉及 Rust 另跑原生测试和格式检查。仅网页构建不证明桌面命令正确。
-5. PR 说明问题、最终行为、验证、未执行项及参考任务 ID。保持改动集中，不顺手重写 README 或引入大型依赖。维护者审核、回流正式桌面后再更新完成状态。
-
-## 公开边界
-
-不要提交手机协议/配对代码、商业模型/账号计费/服务端实现、生产配置、私有仓库链接、个人路径、用户历史、日志、截图里的个人信息、任何密钥或安装包。官网完整版分发继续通过 Release；本源码不自动下载或构建商业内核。
-
-本机 CLI 接入只允许回环地址，启动令牌只在内存里。不要把令牌、完整运行时 URL 或消息事件打印到日志。显式发送之后 CLI 可能执行本地操作；默认权限不得静默升级。未知执行结果不能自动重发有副作用的命令。
-
-公开脱敏扫描是辅助检查，仍需人工查看 diff、资源与许可。安全问题请用 [私密报告](SECURITY.md)，普通 Issue 仅放已清理的复现材料。
-
-## Issue 建议
-
-标题含任务 ID（若有），正文写操作系统、公开源码提交/官方安装包版本、实际步骤、预期/实际结果、脱敏的最小输入。区分公开工作台和官网完整版。无需复制用户整段聊天或生产日志。
+Run the publication audit against both worktree and staged files, plus relevant behavioral tests. A source-text boundary check is a publication guard, not proof of runtime behavior. Record unexecuted platform/device checks honestly. Do not weaken desktop loopback authentication or tool approvals when making a component work independently.
