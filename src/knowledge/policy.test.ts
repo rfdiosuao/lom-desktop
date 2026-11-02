@@ -270,3 +270,42 @@ describe('injection ranking', () => {
     expect(ranked.map(item => item.id)).toEqual([fresh.id, expired.id]);
   });
 });
+
+
+describe('knowledge policy review regressions', () => {
+  const secret = 'sk-' + 'synthetic_test_only'.repeat(2);
+  it.each(['domain', 'tags', 'evidence', 'supersedes'])('rejects secrets in retained %s metadata', field => {
+    const metadata = field === 'tags' ? [secret] : field === 'evidence' ? [{ ...EVIDENCE[0], sessionId: secret }] : secret;
+    expect(validateCandidate(baseInput({ [field]: metadata }))).toMatchObject({ ok: false, code: 'SECRET_DETECTED' });
+  });
+  it.each(['domain', 'tags', 'evidence', 'supersedes'])('reviews public PII in %s metadata', field => {
+    const pii = 'person@example.com';
+    const metadata = field === 'tags' ? [pii] : field === 'evidence' ? [{ ...EVIDENCE[0], toolCallId: pii }] : pii;
+    expect(validateCandidate(baseInput({ scope: 'public', explicitRating: 'up', [field]: metadata }))).toMatchObject({ ok: false, code: 'PII_REQUIRES_REVIEW' });
+  });
+  it('duplicate evidence cannot inflate confidence, feedback counters or verification time', () => {
+    const item = { ...accepted({ kind: 'playbook', evidence: [EVIDENCE[0]] }), stats: { retrievals: 3, adoptions: 3, regressions: 0 } };
+    const first = mergeKnowledge(item, item, new Date('2026-11-02'));
+    if (first.status !== 'merged') throw new Error('expected merge');
+    const second = mergeKnowledge(first.item, item, new Date('2026-11-03'));
+    expect(second).toEqual({ status: 'merged', item });
+    expect(first.item.confidence).toBe(0.6);
+    expect(canPromoteToSkill(first.item, new Date('2026-11-03'))).toBe(false);
+  });
+  it('new calls in one session do not bypass the single-observation confidence cap', () => {
+    const item = accepted({ kind: 'playbook', evidence: [EVIDENCE[0]] });
+    const incoming = accepted({ kind: 'playbook', evidence: [{ ...EVIDENCE[0], toolCallId: 'new-call' }] });
+    const result = mergeKnowledge(item, incoming, NOW);
+    expect(result).toMatchObject({ status: 'merged', item: { confidence: 0.6 } });
+  });
+  it.each([['+1', '-1'], ['< 10', '> 10'], ['a-b', 'ab']])('preserves semantic symbols %s versus %s', (a, b) => {
+    const item = accepted({ claim: `Advance offset by ${a} every time` });
+    const incoming = accepted({ claim: `Advance offset by ${b} every time` });
+    expect(mergeKnowledge(item, incoming)).toMatchObject({ status: 'conflict' });
+  });
+  it('expired knowledge remains downranked for retrieval but cannot be promoted', () => {
+    const item = { ...accepted(), confidence: 0.9, createdAt: '2026-01-01', lastVerifiedAt: '2026-01-01', ttlDays: 30, stats: { retrievals: 3, adoptions: 3, regressions: 0 } };
+    expect(rankForInjection([item], { scope: 'project', context: '', now: NOW })).toEqual([item]);
+    expect(canPromoteToSkill(item, NOW)).toBe(false);
+  });
+});

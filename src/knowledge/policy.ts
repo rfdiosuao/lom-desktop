@@ -130,6 +130,13 @@ const PII_PATTERNS = [/\b[\w.+-]+@[\w-]+\.[\w.]+\b/, /\b1[3-9]\d{9}\b/];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const round = (value: number) => Math.round(value * 1000) / 1000;
+const claimIdentity = (value: string) => value.normalize('NFC').trim().replace(/\s+/gu, ' ');
+const evidenceIdentity = (ref: EvidenceRef) => JSON.stringify([ref.sessionId, ref.toolCallId ?? '', ref.outcome]);
+function retainedStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (value && typeof value === 'object') return Object.values(value).flatMap(retainedStrings);
+  return [];
+}
 const normalize = (value: string) =>
   value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
 
@@ -198,7 +205,8 @@ export function confidenceFor(input: CandidateInput): number {
 }
 
 export function validateCandidate(input: CandidateInput, now: Date = new Date()): ValidationResult {
-  const text = [input.trigger, input.claim, input.boundary, input.verification].join('\n');
+  // Inspect metadata too: evidence is retained verbatim, not just the prose fields.
+  const text = retainedStrings(input).join('\n');
   if (!input.evidence.length || !input.evidence.some(evidence => evidence.toolCallId)) {
     return { ok: false, code: 'NO_EVIDENCE' };
   }
@@ -258,16 +266,24 @@ export function mergeKnowledge(existing: KnowledgeItem, incoming: KnowledgeItem,
   if (existing.dedupeKey !== incoming.dedupeKey) {
     throw new Error('cannot merge different dedupe keys');
   }
-  if (normalize(existing.claim) !== normalize(incoming.claim)) {
+  if (claimIdentity(existing.claim) !== claimIdentity(incoming.claim)) {
     return { status: 'conflict', existing, incoming };
   }
-  const evidence = new Map<string, EvidenceRef>();
-  for (const ref of [...existing.evidence, ...incoming.evidence]) {
-    evidence.set(`${ref.sessionId}:${ref.toolCallId ?? ''}:${ref.outcome}`, ref);
+  const evidence = new Map(existing.evidence.map(ref => [evidenceIdentity(ref), ref]));
+  const sessions = new Set(existing.evidence.map(ref => ref.sessionId));
+  let added = false, independent = false;
+  for (const ref of incoming.evidence) {
+    if (evidence.has(evidenceIdentity(ref))) continue;
+    evidence.set(evidenceIdentity(ref), { ...ref }); added = true;
+    if (!sessions.has(ref.sessionId)) independent = true;
+    sessions.add(ref.sessionId);
   }
-  const confidence = round(
-    clamp(1 - (1 - existing.confidence) * (1 - incoming.confidence * 0.6), 0, 0.95),
-  );
+  // Replaying the same observation must not refresh TTL, stats or confidence.
+  if (!added) return { status: 'merged', item: existing };
+  const cap = sessions.size <= 1 && ['decision', 'playbook'].includes(existing.kind) ? 0.6 : 0.95;
+  const confidence = independent
+    ? round(clamp(1 - (1 - existing.confidence) * (1 - incoming.confidence * 0.6), 0, cap))
+    : Math.min(existing.confidence, cap);
   return {
     status: 'merged',
     item: {
@@ -276,11 +292,8 @@ export function mergeKnowledge(existing: KnowledgeItem, incoming: KnowledgeItem,
       confidence,
       updatedAt: now.toISOString(),
       lastVerifiedAt: now.toISOString(),
-      stats: {
-        retrievals: existing.stats.retrievals + incoming.stats.retrievals,
-        adoptions: existing.stats.adoptions + incoming.stats.adoptions,
-        regressions: existing.stats.regressions + incoming.stats.regressions,
-      },
+      // Aggregate counters have no event identity: only applyFeedback owns them.
+      stats: { ...existing.stats },
     },
   };
 }
@@ -331,7 +344,7 @@ export function canPromoteToSkill(
   now: Date = new Date(),
   policy: PromotionPolicy = DEFAULT_PROMOTION,
 ): boolean {
-  if (item.status !== 'active') return false;
+  if (item.status !== 'active' || isExpired(item, now)) return false;
   if (item.confidence < policy.minConfidence) return false;
   if (item.stats.adoptions < policy.minAdoptions) return false;
   if (item.stats.regressions > policy.maxRegressions) return false;

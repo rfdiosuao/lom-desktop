@@ -147,3 +147,11 @@
 
 这条知识目前应处于 `active`，但**不应**直接升级为 Skill：它还没有 3 次“被采纳”的使用记录。等真实用户在关窗/崩溃场景中复用并验证后，再按第 8 节的门槛升级。
 
+
+## 审查补充（2026-11-02）
+
+- 密钥及 public PII 校验覆盖全部保留字符串，包括 domain、tags、evidence 和 supersedes。
+- 结论冲突比较保留正负号、比较符号、大小写等语义；只有首尾/连续空白可归一。
+- 证据身份为 sessionId/toolCallId/outcome 元组。重复合并不刷新置信度、TTL 或使用统计；同 session 的更多调用不构成独立观测。
+- 使用统计只由 applyFeedback 更新。没有事件身份的聚合计数不能安全相加，mergeKnowledge 不导入 incoming.stats。
+- 维持原规格：TTL 过期的 active 条目在检索中降权 0.2；过期项禁止晋升 Skill，须重新验证。纯策略不自动接入任何工作台 Agent；Personal Agent 后续接线单独验收。
