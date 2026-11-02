@@ -2,7 +2,7 @@
 
 > 目标：让一次任务产生的经验，在下一次任务中被检索、验证和复用，并在稳定后升级为可执行 Skill。
 >
-> 公开边界：本仓库只包含**策略层**（`src/knowledge/policy.ts`）与本文档。候选抽取、持久化、模型调用、Skill 发布由私有运行时接线；这里不包含账号、云端或手机实现。
+> 公开边界：本仓库只包含**策略层**（`apps/desktop/src/features/personal/knowledge/policy.ts`）与本文档。候选抽取、持久化、模型调用、Skill 发布由私有运行时接线；这里不包含账号、云端或手机实现。
 
 ## 1. 第一性原理
 
@@ -155,3 +155,5 @@
 - 证据身份为 sessionId/toolCallId/outcome 元组。重复合并不刷新置信度、TTL 或使用统计；同 session 的更多调用不构成独立观测。
 - 使用统计只由 applyFeedback 更新。没有事件身份的聚合计数不能安全相加，mergeKnowledge 不导入 incoming.stats。
 - 维持原规格：TTL 过期的 active 条目在检索中降权 0.2；过期项禁止晋升 Skill，须重新验证。纯策略不自动接入任何工作台 Agent；Personal Agent 后续接线单独验收。
+
+代码已适配 monorepo：策略与测试位于 apps/desktop/src/features/personal/knowledge/，由现有桌面测试与类型检查覆盖。没有新增持久化、注入或自动发布入口。
