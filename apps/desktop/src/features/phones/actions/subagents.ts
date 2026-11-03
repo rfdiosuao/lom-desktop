@@ -1,8 +1,8 @@
-import { authAccount } from '@/features/account/runtime/authScope';
 import type { SubAgentWrite } from '@/core/remoteWire';
 import { S } from '@/state/store';
 import { closeModal, confirm, openModal, toast, toastError, topModal } from '@/shared/overlays/controller';
 import { changePhoneSubagent, phoneSubagents, savePhoneSubagent } from '../runtime/phoneSubagents';
+import { phoneGuard } from '../runtime/deviceLink';
 
 export function editSub(id?: string) {
   const device = S.phoneId, state = phoneSubagents(device);
@@ -10,7 +10,7 @@ export function editSub(id?: string) {
   const item = state.items.find(row => row.id === id);
   if (id && !item) { toast('子代理已变化，请刷新列表', 'info'); return; }
   S.form = item ? { ...item } : { id: crypto.randomUUID(), name: '', description: '', instructions: '', model_group: '', enabled: 'true', revision: '', builtin: 'false' };
-  openModal('sub', { id, agentId: S.form.id, phoneId: device, current: authAccount(), revision: item?.revision || '' });
+  openModal('sub', { id, agentId: S.form.id, phoneId: device, current: phoneGuard(), revision: item?.revision || '' });
 }
 export async function saveSub() {
   const modal = topModal();
@@ -28,14 +28,14 @@ export async function saveSub() {
   } catch (error) { if (current() && topModal() === modal) toastError('保存失败，草稿已保留', error); }
 }
 export async function toggleSub(id: string) {
-  const device = S.phoneId, current = authAccount();
+  const device = S.phoneId, current = phoneGuard();
   const item = phoneSubagents(device).items.find(row => row.id === id);
   if (!item) return;
   try { await changePhoneSubagent(device, 'toggle', { id, enabled: item.enabled === 'true' ? 'false' : 'true', revision: item.revision }); }
   catch (error) { if (current()) toastError('子代理启停失败', error); }
 }
 export function deleteSub(id: string) {
-  const device = S.phoneId, current = authAccount();
+  const device = S.phoneId, current = phoneGuard();
   const item = phoneSubagents(device).items.find(row => row.id === id);
   if (!item || item.builtin === 'true') return;
   confirm({ title: `删除子代理「${item.name}」？`, desc: '手机确认后删除配置；不会终止已经运行的任务。', okText: '删除', danger: true, onOk: () => {

@@ -41,7 +41,7 @@ import top.heang.lom.pairing.cloud.RelayStatus
 /** Home-screen entry left of the clock: 扫一扫 / 配对码; once paired, the computer and 解除配对. */
 @Composable
 fun LomConnectionButton() {
-    if (!LomPairing.CLOUD_ENABLED) return
+    if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return
     val context = LocalContext.current
     val pairing = remember { LomPairing.get(context) }
     val deviceName by top.heang.lom.pairing.cloud.LomDeviceName.state.collectAsState()

@@ -252,3 +252,19 @@ mod tests {
         }
     }
 }
+
+/// LAN pairing: verify a phone proof with the in-memory psk without exposing the psk.
+pub(crate) fn verify_proof(
+    psk: &[u8; 32],
+    pairing_id: &str,
+    desktop: &str,
+    phone: &str,
+    proof: &str,
+) -> bool {
+    let Ok(bytes) = B64.decode(proof) else {
+        return false;
+    };
+    proof_mac(psk, pairing_id, desktop, phone)
+        .map(|m| m.verify_slice(&bytes).is_ok())
+        .unwrap_or(false)
+}

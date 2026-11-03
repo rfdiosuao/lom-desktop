@@ -3,7 +3,7 @@ import { deleteSub, editSub, toggleSub } from '../actions/subagents';
 import { loadPhoneSubagents, phoneSubagents } from '../runtime/phoneSubagents';
 import { phone } from '@/state/selectors';
 import { S, useStore } from '@/state/store';
-import { authAccount } from '@/features/account/runtime/authScope';
+import { phoneGuard } from '../runtime/deviceLink';
 import { Avatar } from '@/shared/ui/Agent';
 import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Controls';
@@ -15,7 +15,7 @@ export function PhoneSubagents() {
   const [error, setError] = useState('');
   const disabled = state.busy || p.status !== 'online' || !state.loaded;
   async function reload() {
-    const current = authAccount();
+    const current = phoneGuard();
     setError('');
     try { await loadPhoneSubagents(p.id); }
     catch (cause) { if (current() && S.phoneId === p.id) setError(cause instanceof Error ? cause.message : String(cause)); }

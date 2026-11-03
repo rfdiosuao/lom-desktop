@@ -21,6 +21,7 @@ class PairingController(
     private val gateway: PairingGateway,
     private val allowedHosts: Set<String>,
     private val scope: CoroutineScope,
+    private val allowLan: Boolean = false,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val mutable = MutableStateFlow(PairingUiState())
@@ -33,8 +34,8 @@ class PairingController(
         if (state.value.stage == PairingStage.INPUT) mutable.value = state.value.copy(error = null)
     }
     fun submitQr(raw: String) = claim {
-        if (allowedHosts.isEmpty()) throw PairingFailure("pairing.service_unconfigured")
-        PairingParser.qr(raw, allowedHosts)
+        if (!allowLan && allowedHosts.isEmpty()) throw PairingFailure("pairing.service_unconfigured")
+        PairingParser.qr(raw, allowedHosts, allowLan)
     }
 
     private fun claim(parse: () -> PairingInput) {

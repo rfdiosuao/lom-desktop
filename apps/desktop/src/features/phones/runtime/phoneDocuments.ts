@@ -1,7 +1,8 @@
 import { savePhoneCache } from './phoneCache';
 import { phoneRpc } from './phoneRpc';
 import { S, update } from '@/state/store';
-import { authAccount, type AuthGuard } from '@/features/account/runtime/authScope';
+import type { AuthGuard } from '@/features/account/runtime/authScope';
+import { phoneGuard } from './deviceLink';
 
 export interface PhoneDocument { name: string; text: string; revision: string; modified: number; }
 const documents = new Map<string, { doc: PhoneDocument; current: AuthGuard }>();
@@ -10,7 +11,7 @@ export const phoneDocument = (device: string, name: string) => {
   return entry?.current() ? entry.doc : undefined;
 };
 export async function syncPhoneDocuments(device: string) {
-  const current = authAccount();
+  const current = phoneGuard();
   if (!current()) return;
   const index = await phoneRpc<{ items: Omit<PhoneDocument, 'text'>[] }>(device, 'document.list', {});
   if (!current()) return; // The account changed while reading; discard its response.
@@ -36,7 +37,7 @@ export async function syncPhoneDocuments(device: string) {
   await savePhoneCache();
 }
 export async function writePhoneDocument(device: string, name: string, text: string) {
-  const current = authAccount();
+  const current = phoneGuard();
   if (!current()) throw new Error('请先登录后保存手机内容');
   const before = phoneDocument(device, name);
   if (!before) throw new Error('请先加载手机内容，再编辑保存');

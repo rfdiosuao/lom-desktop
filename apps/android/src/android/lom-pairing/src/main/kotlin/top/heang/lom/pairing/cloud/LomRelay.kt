@@ -27,6 +27,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import top.heang.lom.pairing.PairedState
 import top.heang.lom.pairing.PairingFailure
 import top.heang.lom.pairing.RelayBackoff
 
@@ -73,7 +74,7 @@ internal class LomRelay(
     }
 
     @Synchronized fun start() {
-        if (!LomPairing.CLOUD_ENABLED) return
+        if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return
         if (started) return
         started = true
         scope.launch {
@@ -95,6 +96,23 @@ internal class LomRelay(
         var attempt = 0
         while (scope.isActive) {
             val paired = store.load() ?: return
+            if (lanHost(paired.host)) {
+                status.value = RelayStatus.CONNECTING
+                try {
+                    lanLoop(paired)
+                    continue
+                } catch (e: CancellationException) { throw e
+                } catch (e: PairingFailure) {
+                    if (e.code == "relay.device_revoked" || e.code == "lan.unauthorized") { revoked(); return }
+                    android.util.Log.w("LomRelay", "lan poll failed: ${e.code}")
+                } catch (e: Exception) {
+                    android.util.Log.w("LomRelay", "lan poll failed: ${e.javaClass.simpleName}")
+                }
+                status.value = RelayStatus.OFFLINE
+                val wait = RelayBackoff.delayMillis(attempt++, Math.random() * 2 - 1)
+                withTimeoutOrNull(wait) { wake.receive() }
+                continue
+            }
             status.value = RelayStatus.CONNECTING
             try {
                 val token = api.relayToken(paired)
@@ -110,6 +128,45 @@ internal class LomRelay(
             status.value = RelayStatus.OFFLINE
             val wait = RelayBackoff.delayMillis(attempt++, Math.random() * 2 - 1)
             withTimeoutOrNull(wait) { wake.receive() }
+        }
+    }
+
+    private fun lanHost(host: String): Boolean {
+        val parts = host.split(":")
+        if (parts.size != 2 || (parts[1].toIntOrNull() ?: return false) !in 1024..65535) return false
+        val o = parts[0].split(".").mapNotNull { it.toIntOrNull() }
+        if (o.size != 4 || o.any { it !in 0..255 }) return false
+        return o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && o[1] in 16..31)
+    }
+
+    /** LAN mode: short-poll the desktop, decrypt and execute the same signed envelopes. */
+    private suspend fun lanLoop(paired: PairedState) {
+        var failures = 0
+        while (scope.isActive) {
+            try {
+                val messages = api.lanPoll(paired)
+                status.value = RelayStatus.ONLINE
+                failures = 0
+                for (i in 0 until messages.length()) {
+                    val message = messages.getJSONObject(i)
+                    when (message.optString("type")) {
+                        "device.revoked" -> { revoked(); return }
+                        "task.rpc" -> {
+                            val reply = LomRemote.receive(context, store, message)
+                            if (reply != null) api.lanReply(paired, reply.getJSONObject("envelope"))
+                        }
+                    }
+                }
+                delay(800)
+            } catch (e: PairingFailure) {
+                if (e.code == "lan.unauthorized" || e.code == "relay.device_revoked") { revoked(); return }
+                status.value = RelayStatus.OFFLINE
+                delay(RelayBackoff.delayMillis(failures++, Math.random() * 2 - 1))
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                status.value = RelayStatus.OFFLINE
+                delay(RelayBackoff.delayMillis(failures++, Math.random() * 2 - 1))
+            }
         }
     }
 

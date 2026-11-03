@@ -26,6 +26,7 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 getrandom = "0.3"
 dirs = "6"
+if-addrs = "=0.15.0"
 log = "0.4"
 # R01 配对：安装身份密钥、key_proof / 确认码计算、二维码
 x25519-dalek = { version = "2", features = ["static_secrets"] }

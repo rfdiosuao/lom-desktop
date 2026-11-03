@@ -33,6 +33,14 @@ class PairingTest {
             assertFailure("pairing.qr_invalid") { PairingParser.qr(bad, hosts) }
     }
 
+    @Test fun LAN_PAIR_01_accepts_only_private_ipv4_with_port_when_enabled() {
+        assertEquals("192.168.1.23:41234", PairingParser.qr(qr("192.168.1.23:41234"), emptySet(), allowLan = true).host)
+        assertEquals("10.0.0.7:41234", PairingParser.qr(qr("10.0.0.7:41234"), emptySet(), allowLan = true).host)
+        assertFailure("pairing.qr_invalid") { PairingParser.qr(qr("8.8.8.8:41234"), emptySet(), allowLan = true) }
+        assertFailure("pairing.qr_invalid") { PairingParser.qr(qr("192.168.1.23:41234"), emptySet(), allowLan = false) }
+        assertFailure("pairing.qr_invalid") { PairingParser.qr(qr("192.168.1.23"), emptySet(), allowLan = true) }
+    }
+
     @Test fun R01_credentials_are_not_in_diagnostic_strings() {
         assertEquals("Qr([REDACTED])", PairingParser.qr(qr(), hosts).toString())
         assertEquals("Manual([REDACTED])", PairingParser.manual("ABCD2345").toString())

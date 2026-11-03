@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import top.heang.lom.pairing.CodeClaim
@@ -28,10 +29,19 @@ internal class HttpPairingApi(private val client: OkHttpClient) : PairingApi {
         private val JSON_TYPE = "application/json".toMediaType()
     }
 
+    private fun lanHost(host: String): Boolean {
+        val parts = host.split(":")
+        if (parts.size != 2 || (parts[1].toIntOrNull() ?: return false) !in 1024..65535) return false
+        val o = parts[0].split(".").mapNotNull { it.toIntOrNull() }
+        if (o.size != 4 || o.any { it !in 0..255 }) return false
+        return o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && o[1] in 16..31)
+    }
+
     private suspend fun call(host: String, method: String, path: String, body: JSONObject?,
         authorization: String? = null): JSONObject = withContext(Dispatchers.IO) {
-        if (!LomPairing.CLOUD_ENABLED) throw PairingFailure("pairing.unavailable")
-        val request = Request.Builder().url("https://$host$path")
+        if (!LomPairing.CLOUD_ENABLED && !(LomPairing.LAN_ENABLED && lanHost(host))) throw PairingFailure("pairing.unavailable")
+        val scheme = if (lanHost(host)) "http" else "https"
+        val request = Request.Builder().url("$scheme://$host$path")
             .method(method, body?.toString()?.toRequestBody(JSON_TYPE))
             .apply { authorization?.let { header("Authorization", it) } }
             .build()
@@ -90,5 +100,15 @@ internal class HttpPairingApi(private val client: OkHttpClient) : PairingApi {
 
     suspend fun unpairSelf(state: PairedState) {
         call(state.host, "DELETE", "/v1/devices/me", null, state.authorization)
+    }
+
+    /** LAN devices receive encrypted work by short polling; no Lom relay is involved. */
+    suspend fun lanPoll(state: PairedState): JSONArray {
+        val data = call(state.host, "POST", "/v1/lan/poll", JSONObject(), state.authorization)
+        return data.optJSONArray("messages") ?: JSONArray()
+    }
+
+    suspend fun lanReply(state: PairedState, envelope: JSONObject) {
+        call(state.host, "POST", "/v1/lan/reply", JSONObject().put("envelope", envelope), state.authorization)
     }
 }

@@ -4,11 +4,13 @@ import type { Envelope, RpcRequest, RpcResponse } from '@/core/remoteWire';
 import { S } from '@/state/store';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { recordRpc } from './deviceLink';
+import { lanMode } from './deviceLink';
 
 /** Payloads never enter UI state/logging/storage. Only encrypted envelopes cross the cloud. */
 export async function phoneRpc<T>(device: string, method: string, payload: unknown): Promise<T> {
-  if (S.cloud !== 'signed-in') throw new Error('请先在电脑登录');
-  const isCurrent = authAccount();
+  const lan = lanMode();
+  if (!lan && S.cloud !== 'signed-in') throw new Error('请先在电脑登录');
+  const isCurrent = lan ? () => true : authAccount();
   if (!isCurrent()) throw new Error('请先在电脑登录');
   const id = crypto.randomUUID().replaceAll('-', '');
   const request: RpcRequest = { method, payload: JSON.stringify(payload), issued_at: Date.now().toString() };
@@ -16,7 +18,9 @@ export async function phoneRpc<T>(device: string, method: string, payload: unkno
   if (!isCurrent()) throw new Error('账号已切换，已停止同步');
   let decoded: string;
   try {
-    const response = await cloud<Envelope>('POST', `/v1/devices/${encodeURIComponent(device)}/rpc`, envelope);
+    const response = lan
+      ? await invoke<Envelope>('lan_rpc', { deviceId: device, envelope })
+      : await cloud<Envelope>('POST', `/v1/devices/${encodeURIComponent(device)}/rpc`, envelope);
     if (!isCurrent()) throw new Error('账号已切换，已停止同步');
     if (response.id !== id) throw new Error('手机回复与请求不匹配');
     decoded = await invoke<string>('remote_open', { deviceId: device, envelope: response });

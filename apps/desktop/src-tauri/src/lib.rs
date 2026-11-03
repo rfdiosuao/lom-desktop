@@ -10,6 +10,7 @@ mod feishu_register;
 mod feishu_scope;
 mod feishu_tools;
 mod local_file_access;
+mod lan;
 mod local_files;
 mod login;
 mod login_callback;
@@ -39,6 +40,7 @@ mod vision;
 use std::process::Child;
 use std::sync::{Arc, Condvar, Mutex};
 
+use lan::{lan_devices, lan_pair_cancel, lan_pair_start, lan_pair_status, lan_remove_device, lan_rename_device, lan_rpc};
 use sidecar::Endpoint;
 use tauri::{Manager, RunEvent};
 
@@ -146,6 +148,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::clone(&state))
         .manage(Arc::new(phone_bridge::Bridge::default()))
+        .manage(Arc::new(lan::Lan::default()))
         .manage(Arc::new(feishu::FeishuState::default()))
         .invoke_handler(tauri::generate_handler![
             core_endpoint,
@@ -171,6 +174,13 @@ pub fn run() {
             local_file_access::local_file_chunk,
             local_file_access::local_file_release,
             local_file_access::local_file_save,
+            lan_pair_start,
+            lan_pair_status,
+            lan_pair_cancel,
+            lan_devices,
+            lan_rpc,
+            lan_remove_device,
+            lan_rename_device,
             login::heang_login,
             project_links::project_link_open,
             project_links::skill_repository_open,

@@ -1,5 +1,6 @@
 import type { PhoneSubAgent, PhoneSubAgents, SubAgentAction, SubAgentWrite } from '@/core/remoteWire';
-import { authAccount, type AuthGuard } from '@/features/account/runtime/authScope';
+import type { AuthGuard } from '@/features/account/runtime/authScope';
+import { phoneGuard } from './deviceLink';
 import { S, update } from '@/state/store';
 import { phoneRpc } from './phoneRpc';
 
@@ -41,7 +42,7 @@ function failure(error: unknown) {
 }
 
 function available(device: string) {
-  if (!authAccount()()) throw new Error('请先登录后管理手机子代理');
+  if (!phoneGuard()()) throw new Error('请先登录后管理手机子代理');
   const phone = S.agents[device];
   if (!phone?.real || phone.kind !== 'phone') throw new Error('请选择真实配对手机，示例手机不能同步子代理');
   if (phone.status !== 'online') throw new Error('手机离线，请打开手机 App 并连接后重试');
@@ -67,7 +68,7 @@ function parse(reply: PhoneSubAgents): Pick<SubagentSnapshot, 'items' | 'groups'
 async function exchange(device: string, method: string, payload: SubAgentWrite | SubAgentAction | Record<string, never>) {
   available(device);
   if (phoneSubagents(device).busy) throw new Error('正在同步手机子代理，请等待当前操作完成');
-  const previous = phoneSubagents(device), current = authAccount();
+  const previous = phoneSubagents(device), current = phoneGuard();
   const entry: Entry = { ...previous, busy: true, error: '', current };
   update(() => entries.set(device, entry));
   try {

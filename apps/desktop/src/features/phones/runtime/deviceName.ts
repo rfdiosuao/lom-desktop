@@ -1,11 +1,12 @@
 import { phoneRpc } from './phoneRpc';
 import type { DeviceName } from '@/core/remoteWire';
 import { S } from '@/state/store';
-import { authAccount, type AuthGuard } from '@/features/account/runtime/authScope';
+import type { AuthGuard } from '@/features/account/runtime/authScope';
+import { phoneGuard } from './deviceLink';
 const active = new Map<string, { promise: Promise<void>; isCurrent: AuthGuard }>();
 /** Serialize per device so a background refresh cannot overwrite a newer rename. */
 export async function syncPhoneName(id: string, name: string): Promise<void> {
-  const isCurrent = authAccount();
+  const isCurrent = phoneGuard();
   const previous = active.get(id);
   if (previous?.isCurrent()) { try { await previous.promise; } catch { /* The newer name must still be attempted. */ } }
   if (!isCurrent() || S.agents[id]?.name !== name) throw new Error('设备名称或账号已更新，请重新同步');

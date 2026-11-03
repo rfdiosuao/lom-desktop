@@ -1,4 +1,3 @@
-import { authAccount } from '@/features/account/runtime/authScope';
 import { expandContextFiles } from '@/shared/lib/contextFiles';
 import { publicationPolicy } from '@/features/settings/runtime/preferences';
 import { audit } from '@/features/settings/runtime/audit';
@@ -8,7 +7,7 @@ import { phoneMessages, type PhoneRow } from './phoneMessages';
 import { savePhoneCache } from './phoneCache';
 import { taskFinished } from '@/app/sound';
 import { phoneRpc } from './phoneRpc';
-import { linkGuard, STALE_LINK } from './deviceLink';
+import { lanMode, linkGuard, phoneGuard, STALE_LINK } from './deviceLink';
 import { ensurePhoneModel, syncPhoneModel } from './phoneModel';
 import { phoneOnScreen, pollPause } from './phonePace';
 import { S, update } from '@/state/store';
@@ -53,7 +52,7 @@ async function chatSend(c: Conv, request: Record<string, string>, current?: () =
 }
 
 export async function sendPhone(c: Conv, text: string, attachments: DraftAttachment[] = [], current?: () => boolean) {
-  const authenticated = authAccount(), device = c.owner;
+  const authenticated = phoneGuard(), device = c.owner;
   const valid = () => authenticated() && S.convs.includes(c) && c.owner === device && (!current || current());
   const check = () => { if (!valid()) throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务'); };
   check();
@@ -140,7 +139,7 @@ export async function watchPhone(c: Conv) {
       let changed: boolean;
       try { changed = await refreshPhoneChat(c); failures = 0; }
       catch (e) {
-        if (account !== S.account?.id || S.cloud !== 'signed-in' || (e instanceof Error && e.message === STALE_LINK)) break;
+        if ((!lanMode() && S.cloud !== 'signed-in') || account !== S.account?.id || (e instanceof Error && e.message === STALE_LINK)) break;
         if (!failures++) {
           update(() => { c.phoneRunStatus = 'unknown'; c.messages.push({ id: crypto.randomUUID(), type: 'system', at: Date.now(), text: '连接中断，手机执行状态未知。可以重试同步，任务不会自动重发。' }); });
           toastError('同步手机会话失败', e);
@@ -153,7 +152,7 @@ export async function watchPhone(c: Conv) {
       if (!S.running[c.id]) break;
       wait = changed ? FAST : Math.min(Math.round(wait * 1.5), SLOW);
       await pollPause(c, phoneOnScreen(c) ? wait : AWAY);
-    } while (S.cloud === 'signed-in' && account === S.account?.id);
+    } while ((lanMode() || S.cloud === 'signed-in') && account === S.account?.id);
   } finally { watching.delete(c.id); }
 }
 

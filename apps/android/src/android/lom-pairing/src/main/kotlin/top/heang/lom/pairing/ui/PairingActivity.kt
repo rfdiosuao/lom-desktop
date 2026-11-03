@@ -29,7 +29,7 @@ import top.heang.lom.pairing.cloud.LomPairing
 
 class PairingViewModel(host: PairingHost?) : ViewModel() {
     val controller = PairingController(host?.createPairingGateway() ?: UnavailablePairingGateway,
-        host?.pairingAllowedHosts ?: emptySet(), viewModelScope)
+        host?.pairingAllowedHosts ?: emptySet(), viewModelScope, allowLan = host?.pairingAllowsLan ?: false)
     var started = false
 }
 
@@ -37,7 +37,7 @@ class PairingActivity : ComponentActivity() {
     companion object { const val MODE = "top.heang.lom.pairing.MODE" }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (!LomPairing.CLOUD_ENABLED) { intent.data = null; finish(); return }
+        if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) { intent.data = null; finish(); return }
         // Pairing details are transient: exclude screenshots and recents previews.
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val model = ViewModelProvider(this, object : ViewModelProvider.Factory {

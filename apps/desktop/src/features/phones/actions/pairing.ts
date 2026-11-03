@@ -4,7 +4,7 @@ import { CloudError, signIn } from '@/features/account/runtime/cloud';
 import { loadPlans } from '@/features/account/runtime/plans';
 import { phones } from '@/state/selectors';
 import { inShell } from '@/core/platform';
-import { abortPairing, confirmationCode, pairingStatus, startPairing, syncDevices, verifyProof } from '../runtime/devices';
+import { abortPairing, confirmationCode, lanMode, pairingStatus, startPairing, syncDevices, verifyProof } from '../runtime/devices';
 import { S, update } from '@/state/store';
 import { navigate } from '@/app/navigation';
 import { openModal } from '@/shared/overlays/controller';
@@ -33,6 +33,16 @@ async function begin() {
   const m = modal();
   if (!m) return;
   if (!inShell()) { set({ stage: 'error', error: '添加手机需要在麓鸣桌面应用中进行（浏览器开发模式无法生成配对密钥）。' }); return; }
+  if (lanMode()) {
+    set({ stage: 'loading', error: '', warn: '', sas: '', deviceName: '' });
+    try {
+      const session = await startPairing();
+      if (modal() !== m) { void abortPairing(session.pairingId).catch(e => console.warn('作废局域网配对会话失败', e)); return; }
+      current = { id: session.pairingId, checked: false };
+      set({ stage: 'waiting', pairingId: session.pairingId, code: '', qrSvg: session.qrSvg, expires: session.expiresAt });
+    } catch (e) { set({ stage: 'error', error: `无法生成配对二维码：${message(e)}` }); }
+    return;
+  }
   if (S.cloud !== 'signed-in') { set({ stage: 'signin' }); return; }
   set({ stage: 'loading', error: '', warn: '', sas: '', deviceName: '' });
   // 订阅的手机台数（A03 §2.2）：已满就不生成二维码和配对码，服务端也会拒绝
@@ -53,7 +63,7 @@ async function begin() {
 
 /** 每秒调用一次：轮询云端会话状态（R01 §2.8 第一版范围） */
 export async function pairTick() {
-  const cur = current;
+  const cur = current, lan = lanMode();
   if (!cur || ticking || !modal()) return;
   ticking = true;
   try {
@@ -61,19 +71,19 @@ export async function pairTick() {
     if (current !== cur) return;
     set({ warn: '' });
     const deviceName = st.device_info?.name || st.device_info?.model || '手机';
-    if (st.state === 'claimed' && st.method === 'qr' && !cur.checked && st.device_keys && st.key_proof) {
+    if (st.state === 'claimed' && (lan || (st.method === 'qr' && st.key_proof)) && !cur.checked && st.device_keys) {
       cur.checked = true;
-      const ok = await verifyProof(cur.id, st.device_keys, st.key_proof);
+      const ok = lan ? true : await verifyProof(cur.id, st.device_keys, st.key_proof!);
       set(ok ? { stage: 'scanned', deviceName } : { stage: 'error', error: '配对校验失败，请刷新二维码重试。' });
       if (!ok) current = null;
-    } else if (st.state === 'claimed' && st.method === 'code' && modal()?.props.stage !== 'sas' && st.device_keys) {
+    } else if (!lan && st.state === 'claimed' && st.method === 'code' && modal()?.props.stage !== 'sas' && st.device_keys) {
       set({ stage: 'sas', deviceName, sas: await confirmationCode(cur.id, st.device_keys) });
     } else if (st.state === 'confirmed') {
       current = null;
       await syncDevices();
       update(s => { if (st.device_id) s.lit[st.device_id] = true; });
-      let modelSync = '已配对';
-      if (st.device_id && st.device_keys) {
+      let modelSync = lan ? '局域网已连接' : '已配对';
+      if (!lan && st.device_id && st.device_keys) {
         try {
           await invoke('remote_pin', { deviceId: st.device_id, keys: st.device_keys });
           // The phone establishes its relay after credential persistence.

@@ -137,6 +137,18 @@ pub fn remote_pin(device_id: String, keys: String) -> Result<(), String> {
     .set_password(&keys)
     .map_err(|_| "remote.trust_store".into())
 }
+pub(crate) fn forget(device_id: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(
+        "org.lom.community.desktop",
+        &format!("paired-device:{device_id}"),
+    )
+    .map_err(|_| "remote.trust_store")?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err("remote.trust_store".into()),
+    }
+}
+
 #[tauri::command]
 pub fn remote_seal(device_id: String, id: String, text: String) -> Result<Envelope, String> {
     let s = pairing::stored()?;
