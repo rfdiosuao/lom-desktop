@@ -1,3 +1,4 @@
+import { AttachmentThumbnail } from './AttachmentThumbnail';
 import { normalizeConvId } from '@/state/selectors';
 import { downloadChatAttachment } from '@/features/phones/runtime/phoneFiles';
 import { turtleDisplayText } from '../runtime/turtlePrompt';
@@ -46,7 +47,7 @@ export function UserMessage({ m, ctxId }: { m: Msg; ctxId: string }) {
       <div className="msg__bubble">{m.source === 'schedule' && <div className="msg__schedule-source"><Icon name="clock" />由定时任务发送</div>}
         {(m.source === 'feishu' || m.source === 'wechat') && <div className="msg__schedule-source"><span className={`msg__channel-icon msg__channel-icon--${m.source}`} aria-hidden="true" />来自{channelName(m.source)}</div>}
         {m.source === 'personal' && <div className="msg__schedule-source"><Icon name="sparkles" />由个人助理派发</div>}{displayText}
-        {!!m.attachments?.length && <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>{m.attachments.map((a, i) => <span key={i} className="attach">{a.preview ? <img className="attach__thumb" src={a.preview} alt="" /> : <Icon name={a.ic || 'file'} />}{a.name}{a.phoneFile && <Btn label={downloading ? '下载中…' : '下载'} size="sm" disabled={downloading} onClick={async () => {
+        {!!m.attachments?.length && <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>{m.attachments.map((a, i) => <span key={i} className="attach"><AttachmentThumbnail attachment={a} />{a.name}{a.phoneFile && <Btn label={downloading ? '下载中…' : '下载'} size="sm" disabled={downloading} onClick={async () => {
           setDownloading(true); try { if (await downloadChatAttachment(a.phoneFile!)) toast('附件已保存到电脑'); }
           catch (e) { toastError('下载附件失败', e); } finally { setDownloading(false); }
         }} />}</span>)}</div>}

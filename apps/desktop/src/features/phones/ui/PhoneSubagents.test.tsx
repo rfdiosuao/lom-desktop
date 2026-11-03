@@ -15,7 +15,7 @@ const reply = { items: JSON.stringify([row]), groups: JSON.stringify([{ id: 'pho
 let host: HTMLDivElement, root: Root, n = 0;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
-  vi.resetAllMocks(); Object.assign(S, initialState()); S.account = { id: `sub-ui-${++n}` } as typeof S.account; S.cloud = 'signed-in';
+  vi.resetAllMocks(); Object.assign(S, initialState(true)); S.account = { id: `sub-ui-${++n}` } as typeof S.account; S.cloud = 'signed-in';
   S.agents.dev_a = { ...S.agents.p1, id: 'dev_a', kind: 'phone', real: true, status: 'online' }; S.phoneId = 'dev_a';
   m.rpc.mockResolvedValue(reply); host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });

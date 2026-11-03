@@ -1,3 +1,4 @@
+import { profileRules } from '@/features/capabilities/runtime/profiles';
 /* ===== 总指挥的身份与规则：每个电脑任务创建时写进核心的 preset_rules =====
  * 只以麓鸣 Lom 的身份工作；上游核心自带的内部技能不进入 Agent 上下文。 */
 
@@ -12,11 +13,11 @@ export const LOM_IDENTITY = [
 ].join('\n');
 
 const VISION = {
-  in: '- 看图：用户附带的图片以文件路径给你。有 ViewImage 工具时用它直接看图；没有 ViewImage（当前模型不能看图）时调用 lom_view_image，传入图片的绝对路径和你想问的问题，再根据返回的描述回答。不要回答"我没有看图能力"。',
+  in: '- 看图：用户附带的图片以文件路径给你。有 ViewImage 工具时用它直接看图；没有 ViewImage、或它报告视觉不支持/未知时调用 lom_view_image，传入图片的绝对路径和你想问的问题，再根据返回的描述回答。只有实际收到图片内容或看图模型描述后才能描述画面；OCR 文字、文件路径、UI tree 不等于看到了图片。工具失败或能力未知时如实说明，不得编造画面。',
   out: '- 看图：用户附带的图片以文件路径给你。有 ViewImage 工具时用它直接看图；没有的话如实说明，并提示用户登录麓鸣账号（登录后可以用看图工具）或换一个支持视觉输入的模型。',
 };
 
 /** 新建电脑任务时的规则：身份 + 看图 + （登录后）指挥手机的规则 */
 export function taskRules(signedIn: boolean, commander = '') {
-  return [LOM_IDENTITY, '图片交付：生成或找到图片后，用 Markdown 图片格式 ![图片说明](<图片的绝对路径或 HTTPS 地址>) 在回复中展示。先确认文件存在；不要只报文件名，不要把图片语法放进代码块。支持 PNG/JPEG/WebP/GIF；图片展示本身不调用模型。', signedIn ? VISION.in : VISION.out, commander].filter(Boolean).join('\n\n');
+  return [LOM_IDENTITY, '图片交付：生成或找到图片后，用 Markdown 图片格式 ![图片说明](<图片的绝对路径或 HTTPS 地址>) 在回复中展示。先确认文件存在；不要只报文件名，不要把图片语法放进代码块。支持 PNG/JPEG/WebP/GIF；图片展示本身不调用模型。', signedIn ? VISION.in : VISION.out, commander, profileRules('pc')].filter(Boolean).join('\n\n');
 }

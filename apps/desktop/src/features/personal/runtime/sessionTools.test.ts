@@ -1,13 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { S } from '@/state/store';
 import type { Conv, Msg } from '@/state/types';
-const m = vi.hoisted(() => ({ api: vi.fn(), send: vi.fn(), phone: vi.fn(), history: vi.fn(), owned: vi.fn(() => true) }));
+const m = vi.hoisted(() => ({ api: vi.fn(), send: vi.fn(), phone: vi.fn(), refresh: vi.fn(), history: vi.fn(), owned: vi.fn(() => true) }));
 vi.mock('@/core/client', async load => ({ ...await load<typeof import('@/core/client')>(), api: m.api }));
 vi.mock('@/features/chat/runtime/tasks', () => ({ sendFromChannel: m.send }));
-vi.mock('@/features/phones/runtime/phoneChat', () => ({ sendPhone: m.phone }));
-vi.mock('@/features/chat/runtime/history', () => ({ loadHistory: m.history }));
-vi.mock('@/features/phones/runtime/phoneCommander', () => ({ scopeOwnedByAccount: m.owned }));
+vi.mock('@/features/phones/runtime/phoneChat', () => ({ sendPhone: m.phone, refreshPhoneChat: m.refresh }));
+vi.mock('@/features/chat/runtime/history', () => ({ loadHistory: m.history, convFromCore: (v: { id: string; name: string }) => ({ id: v.id, title: v.name, owner: 'pc', messages: [] }) }));
+vi.mock('@/features/phones/runtime/phoneCommander', () => ({ scopeOwnedByAccount: m.owned, commanderExtra: vi.fn(async () => ({ lom_phone_scope: 'new-scope', selected_mcp_server_ids: ['bridge'] })), COMMANDER_RULES: 'commander rules' }));
 vi.mock('@/features/settings/runtime/audit', () => ({ audit: vi.fn() }));
+vi.mock('@/features/skills/runtime/conversationSkills', () => ({ conversationSkills: vi.fn(async () => ({ enabled_skills: [] })) }));
 import { executeSessionTool } from './sessionTools';
 
 const conv = (id: string, extra: Partial<Conv> = {}): Conv => ({ id, owner: 'pc', title: id, updated: 1, messages: [], remote: true, loaded: true, ...extra } as Conv);
@@ -31,7 +32,7 @@ beforeEach(() => {
   phone = conv('phone', { owner: 'dev_1', remote: false, title: '发朋友圈', updated: 3 });
   S.convs = [pa, codex, phone, conv('side', { sideOf: 'codex', updated: 8 })];
   S.running = { pa: true };
-  m.api.mockResolvedValue({ runtime: { is_processing: false } });
+  m.api.mockImplementation((_method: string, path: string) => Promise.resolve(path.endsWith('/confirmations') ? [] : { runtime: { is_processing: false } }));
   m.send.mockResolvedValue({ id: 'u' });
 });
 
@@ -129,4 +130,54 @@ it('PA04 reused call identity with changed arguments is rejected', async () => {
   await executeSessionTool(args);
   const result = await executeSessionTool({...args,arguments:JSON.stringify({session_id:'phone',text:'different'})});
   expect(result.isError).toBe(true);expect(m.send).toHaveBeenCalledTimes(1);expect(m.phone).not.toHaveBeenCalled();
+});
+
+it('PA-SESSION-02 receipt identifies the actual target and desktop turn', async () => {
+ codex.turnId = 't-receipt';
+ expect(json(await call('session_send',{session_id:'codex',text:'fix'}))).toMatchObject({status:'accepted',title:'修复登录页',agent:'Codex CLI',turn_id:'t-receipt'});
+});
+it('PA-SESSION-02 wait sees pending approvals with bounded descriptions', async () => {
+ m.api.mockImplementation((_method: string,path: string)=>Promise.resolve(path.endsWith('/confirmations') ? Array.from({length:30},(_,i)=>({id:`p${i}`,description:'文'.repeat(5000)})) : {runtime:{is_processing:true,turn_id:'t'}}));
+ const r=json(await call('session_wait',{session_id:'codex',timeout_ms:0}));
+ expect(r).toMatchObject({status:'awaiting_approval',pending_count:30,pending_truncated:true});
+ expect(r.pending).toHaveLength(10); expect(r.pending[0].description).toHaveLength(300);
+});
+it('PA-SESSION-02 idle without terminal evidence stays unknown', async () => {
+ expect(json(await call('session_wait',{session_id:'codex',timeout_ms:0})).status).toBe('unknown');
+});
+it('PA-SESSION-02 terminal status is explicit and cannot imply goal success', async () => {
+ const {recordCompletedTurn}=await import('@/features/chat/runtime/cancel');
+ codex.turnId='terminal'; recordCompletedTurn(codex.id,'terminal','cancelled');
+ expect(json(await call('session_wait',{session_id:'codex',turn_id:'terminal',timeout_ms:0}))).toMatchObject({status:'stopped'});
+ recordCompletedTurn(codex.id,'terminal','finished');
+ expect(json(await call('session_wait',{session_id:'codex',turn_id:'terminal',timeout_ms:0}))).toMatchObject({status:'completed'});
+ codex.messages.push({id:'new',type:'user',at:10,text:'new',status:'unconfirmed'});
+ expect(json(await call('session_wait',{session_id:'codex',timeout_ms:0})).status).toBe('unknown');
+});
+it('PA-SESSION-02 phone cannot confirm an unrelated requested turn', async () => {
+ phone.phoneRunStatus='completed';
+ expect(json(await call('session_wait',{session_id:'phone',turn_id:'desktop-turn',timeout_ms:0})).status).toBe('unknown');
+});
+it('PA-SESSION-02 creates a blank task with parent model and default permission', async () => {
+ pa.providerId='provider'; pa.modelId='provider::model'; pa.workspace='/project';
+ m.api.mockResolvedValue({id:'created',name:'blank'});
+ expect(json(await call('session_create',{title:'blank'}))).toMatchObject({status:'created',session_id:'created'});
+ expect(m.api).toHaveBeenCalledWith('POST','/api/conversations',expect.objectContaining({model:{provider_id:'provider',model:'model'},extra:expect.objectContaining({workspace:'/project',session_mode:'default'})}));
+ expect(m.send).not.toHaveBeenCalled();
+});
+it('PA-SESSION-02 unknown creation outcome never retries the write', async () => {
+ pa.providerId='provider'; pa.modelId='provider::model'; m.api.mockRejectedValue(new Error('network'));
+ const c={id:'unknown-create',scope:'pa-1',name:'session_create',arguments:JSON.stringify({title:'blank'})};
+ expect((await executeSessionTool(c)).isError).toBe(true); await executeSessionTool(c);
+ expect(m.api).toHaveBeenCalledTimes(1);
+});
+
+it('PA-CATALOG-01 AC6 discovery uses the running PA scope and does not send or invoke a backend', async () => {
+  expect(json(await call('personal_capabilities', { id: 'session_create' }))).toMatchObject({ capability: { tool: 'session_create', effect: 'write' } });
+  expect(json(await call('personal_targets', { kind: 'teams' }))).toMatchObject({ source: 'desktop-loaded-snapshot', targets: [] });
+  expect(m.api).not.toHaveBeenCalled(); expect(m.send).not.toHaveBeenCalled(); expect(m.phone).not.toHaveBeenCalled();
+  m.owned.mockReturnValue(false);
+  expect((await call('personal_targets', { kind: 'teams' })).isError).toBe(true);
+  m.owned.mockReturnValue(true); S.running.pa = false;
+  expect((await call('personal_capabilities')).isError).toBe(true);
 });

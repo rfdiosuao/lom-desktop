@@ -1,6 +1,5 @@
 import { stripSettingsContext } from '@/features/settings/runtime/preferences';
 import type { Attachment, FileChange, Msg } from '@/state/types';
-import { fileStreamUrl } from '@/core/client';
 import { basename, uid } from '@/shared/lib/util';
 import { S } from '@/state/store';
 
@@ -14,6 +13,7 @@ const LABELS: Record<string, string> = {
   ToolSearch: '查找工具', WebSearch: '联网搜索', LomWebSearch: '联网搜索', LomWebFetch: '读取网页', WebFetch: '读取网页', TodoWrite: '更新计划',
 };
 
+const localizedLabels = new Set(Object.values(LABELS));
 export const toolLabel = (name: string) => LABELS[name] ?? name;
 
 /** 统一工具调用 id：流式事件和历史记录里同一次调用可能带不同前缀 */
@@ -83,6 +83,13 @@ export function toolSentence(m: Msg): string {
   return m.detail ? `${name}：${m.detail}` : name;
 }
 
+/** UI-CONTENT-01: summaries never expose arguments or unknown internal tool names. */
+export function toolSummary(m: Msg): string {
+  const raw = (m.toolName || m.tool || '').replace(/^mcp__.+?__/, '');
+  if (BRIDGE[raw]) return BRIDGE[raw]({}).replace(/[：:\s]+$/, '').replace(/\bAgent\b/g, '助理');
+  return LABELS[raw] ?? (localizedLabels.has(m.tool || '') ? m.tool! : '调用外部工具');
+}
+
 const countLines = (s: unknown) => (typeof s === 'string' && s ? s.split('\n').length : 0);
 
 /** 写文件类工具完成后对应的文件变更（用于「修改了 N 个文件」卡片） */
@@ -98,16 +105,23 @@ export const isHtml = (p: string) => /\.html?$/i.test(p);
 
 export function toolMsg(callId: string, name: string, args: Record<string, unknown>, workspace?: string): Msg {
   const body = typeof args.content === 'string' ? `${args.content.slice(0, 600)}${args.content.length > 600 ? '…' : ''}` : '';
+  const at = Date.now();
   return {
-    id: uid('m'), type: 'tool', at: Date.now(), callId, tool: toolLabel(name), detail: toolDetail(args, workspace),
+    id: uid('m'), type: 'tool', at, timing: { startedAt: at }, callId, tool: toolLabel(name), detail: toolDetail(args, workspace),
     status: 'running', output: body, toolName: name, args,
   };
 }
 
-/** 把一条文件变更并入同一轮里最近的「修改了文件」卡片；没有就新建 */
+/** 把一条文件变更并入当前这段执行过程（连续的思考、工具、文件卡片）里的「修改了文件」卡片；
+ *  正文、审批、提问、用户消息等都是边界，越过边界就新建卡片（CHAT-ACTIVITY-01 AC-10） */
 export function mergeFileChange(list: Msg[], change: FileChange) {
-  const last = [...list].reverse().find(m => m.type === 'files' || m.type === 'user');
-  if (last && last.type === 'files') {
+  let last: Msg | undefined;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i];
+    if (m.type === 'files') { last = m; break; }
+    if (m.type !== 'tool' && m.type !== 'thinking') break;
+  }
+  if (last) {
     const same = last.changes?.find(c => c.path === change.path);
     if (same) { same.add += change.add; same.del += change.del; } else last.changes?.push(change);
     return;
@@ -146,4 +160,4 @@ export function splitFilesMarker(content: string): { text: string; paths: string
 
 /** 历史记录里的附件：图片用本地文件流做缩略图（只在 Lom 自己的界面里显示，不进预览 iframe） */
 export const attachmentOfPath = (p: string): Attachment =>
-  IMAGE_EXT.test(p) ? { name: basename(p), path: p, ic: 'image', preview: fileStreamUrl(p) || undefined } : { name: basename(p), path: p, ic: 'file' };
+  IMAGE_EXT.test(p) ? { name: basename(p), path: p, ic: 'image', preview: undefined } : { name: basename(p), path: p, ic: 'file' };

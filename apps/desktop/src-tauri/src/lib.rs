@@ -9,6 +9,7 @@ mod feishu_paths;
 mod feishu_register;
 mod feishu_scope;
 mod feishu_tools;
+mod local_file_access;
 mod local_files;
 mod login;
 mod login_callback;
@@ -151,14 +152,15 @@ pub fn run() {
             personal::personal_directory,
             personal_evolution::personal_reflect,
             personal_evolution::personal_apply_learning,
+            personal_evolution::personal_memory_versions,
             close_main_window,
             preferences::login_start_enabled,
             preferences::login_start_set,
             preferences::completion_sound,
             phone_bridge::phone_bridge_config,
             phone_bridge::phone_bridge_reply,
-            local_files::local_file_info,
-            local_files::local_image_data,
+            local_file_access::local_file_info,
+            local_file_access::local_image_data,
             local_files::prepare_memory_directory,
             skill_packages::skill_stage,
             skill_packages::skill_stage_remove,
@@ -166,8 +168,9 @@ pub fn run() {
             reply_images::reply_image_generated,
             reply_images::reply_image_copy,
             reply_images::reply_image_store,
-            local_files::local_file_chunk,
-            local_files::local_file_save,
+            local_file_access::local_file_chunk,
+            local_file_access::local_file_release,
+            local_file_access::local_file_save,
             login::heang_login,
             project_links::project_link_open,
             project_links::skill_repository_open,

@@ -6,7 +6,7 @@ import { MessageList } from './MessageList';
 import type { Msg } from '@/state/types';
 
 const open = vi.fn();
-vi.mock('@/core/links', () => ({ openExternalUrl: async (...args: unknown[]) => { open(...args); } }));
+vi.mock('@/core/links', async load => ({ ...await load<typeof import('@/core/links')>(), openExternalUrl: async (...args: unknown[]) => { open(...args); } }));
 
 const output = JSON.stringify({
   success: true,

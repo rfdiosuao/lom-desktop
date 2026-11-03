@@ -4,10 +4,12 @@
 //! 只接收“扫码授权的那个人”私聊机器人的消息：同一租户里别人私聊这个机器人、或在群里 @ 它，都不会驱动助理。
 //! 凭据始终在本机钥匙串里；消息正文不写日志。
 
-use std::collections::{HashSet, VecDeque};
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::{Arc, Mutex};
+
+#[path = "feishu_listener.rs"]
+mod listener;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -102,6 +104,19 @@ pub fn allowed_api(method: &str, path: &str) -> bool {
         || path.starts_with("/open-apis/cardkit/v1/cards/")
 }
 
+/// A live child is evidence of a running listener, never proof of network/message health.
+pub(crate) fn running(state: &FeishuGateway) -> bool {
+    match state.0.lock() {
+        Ok(mut guard) => guard
+            .as_mut()
+            .is_some_and(|(child, _)| matches!(child.try_wait(), Ok(None))),
+        Err(_) => {
+            log::error!("feishu.state_failed");
+            false
+        }
+    }
+}
+
 pub(crate) fn stop(state: &FeishuGateway) {
     let old = match state.0.lock() {
         Ok(mut guard) => guard.take(),
@@ -166,94 +181,14 @@ pub async fn feishu_listen_start(
     crate::feishu_scope::invalidate(&slot);
     stop(&state);
     let generation = crate::feishu_scope::generation(&slot);
-    let mut child = command(
-        &dir,
-        &["event", "consume", "im.message.receive_v1", "--as", "bot"],
-    )?
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
-    .map_err(|e| format!("feishu.run_failed: {e}"))?;
-    let (Some(stdin), Some(stdout), Some(stderr)) =
-        (child.stdin.take(), child.stdout.take(), child.stderr.take())
-    else {
-        let _ = child.kill();
-        return Err("feishu.run_failed: pipes unavailable".into());
+    let scope = ListenEnded {
+        account,
+        assistant_id,
+        app_id,
+        generation,
+        error: None,
     };
-    let pid = child.id();
-    if let Ok(mut guard) = state.0.lock() {
-        *guard = Some((child, stdin));
-    }
-    let tail = Arc::new(Mutex::new(VecDeque::<String>::new()));
-    let err_tail = tail.clone();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            if let Ok(mut t) = err_tail.lock() {
-                t.push_back(line);
-                if t.len() > 5 {
-                    t.pop_front();
-                }
-            }
-        }
-    });
-    let result_generation = generation;
-    drop(_lifecycle);
-    std::thread::spawn(move || {
-        let mut seen = HashSet::new();
-        let mut order = VecDeque::new();
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            let Some(msg) = inbound(&line, &owner) else {
-                continue;
-            };
-            if crate::feishu_scope::generation(&slot) != generation {
-                break;
-            }
-            let msg = msg.scoped(&account, &assistant_id, &app_id, generation);
-            // 长连接可能重投：按 message_id 去重，只记最近 500 条
-            if !seen.insert(msg.message_id.clone()) {
-                continue;
-            }
-            order.push_back(msg.message_id.clone());
-            if order.len() > 500 {
-                if let Some(old) = order.pop_front() {
-                    seen.remove(&old);
-                }
-            }
-            if let Err(e) = app.emit("feishu-message", msg) {
-                log::warn!("feishu gateway: failed to notify the window: {e}");
-            }
-        }
-        // 只有自己仍是当前连接时才报告断开（被 stop / 重启替换掉的不报）
-        let gateway = state;
-        let Ok(_lifecycle) = slot.6.lock() else {
-            log::error!("feishu.state_failed");
-            return;
-        };
-        let current = gateway
-            .0
-            .lock()
-            .map(|g| g.as_ref().is_some_and(|(c, _)| c.id() == pid))
-            .unwrap_or(false);
-        if current {
-            crate::feishu_scope::invalidate(&slot);
-            stop(&gateway);
-            let error = tail.lock().ok().and_then(|t| t.back().cloned());
-            if let Err(e) = app.emit(
-                "feishu-listen-ended",
-                ListenEnded {
-                    account,
-                    assistant_id,
-                    app_id,
-                    generation,
-                    error,
-                },
-            ) {
-                log::warn!("feishu gateway: failed to notify the window: {e}");
-            }
-        }
-    });
-    Ok(result_generation)
+    listener::start(app, slot.clone(), scope, owner, &dir)
 }
 
 #[tauri::command]

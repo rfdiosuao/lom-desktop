@@ -35,8 +35,9 @@ pub struct FeishuStatus {
     pub configured: bool,
     pub app_id: Option<String>,
     pub authorized: bool,
-    /// 已能收发消息：应用已建、主人已知（一次扫码记下，或用户授权后得知）
+    /// Legacy readiness: configured and owner known; does not imply a running listener.
     pub connected: bool,
+    pub listener_running: bool,
     pub auth: Option<auth::AuthProgress>,
     pub generation: u64,
 }
@@ -121,6 +122,7 @@ pub fn parse_status(stdout: &str) -> FeishuStatus {
     FeishuStatus {
         configured: app_id.is_some(),
         connected: app_id.is_some() && authorized,
+        listener_running: false,
         authorized,
         app_id,
         auth: None,
@@ -179,24 +181,33 @@ pub async fn feishu_status(
     account: String,
     assistant_id: Option<String>,
 ) -> Result<FeishuStatus, String> {
-    let (dir, progress, generation) = if let Some(assistant) = assistant_id.as_deref() {
+    let (dir, slot) = if let Some(assistant) = assistant_id.as_deref() {
         let state = app.state::<Arc<FeishuState>>();
         let slot = state.scoped(&account, assistant)?;
         (
             crate::feishu_paths::scoped_config_dir(&app, &account, assistant)?,
-            auth::progress(&slot),
-            crate::feishu_scope::generation(&slot),
+            Some(slot),
         )
     } else {
-        (config_dir(&app, &account)?, None, 0)
+        (config_dir(&app, &account)?, None)
     };
+    let requested_generation = slot
+        .as_ref()
+        .map(|slot| crate::feishu_scope::generation(slot));
     tauri::async_runtime::spawn_blocking(move || {
         let out = command(&dir, &["auth", "status", "--json"])?
             .output()
             .map_err(|e| format!("feishu.run_failed: {e}"))?;
         let mut status = parse_status(&String::from_utf8_lossy(&out.stdout));
-        status.auth = progress;
-        status.generation = generation;
+        if let Some(slot) = slot {
+            let _lifecycle = slot.6.lock().map_err(|_| "feishu.state_failed")?;
+            if requested_generation != Some(crate::feishu_scope::generation(&slot)) {
+                return Err("feishu.binding_changed".into());
+            }
+            status.auth = auth::progress(&slot);
+            status.generation = crate::feishu_scope::generation(&slot);
+            status.listener_running = crate::feishu_gateway::running(&slot.4);
+        }
         status.connected |= status.configured && crate::feishu_register::read_owner(&dir).is_some();
         Ok(status)
     })

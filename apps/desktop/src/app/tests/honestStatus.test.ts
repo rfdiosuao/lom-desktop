@@ -1,7 +1,8 @@
+import { initialState } from '@/state/state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { S } from '@/state/store';
 import { installSkill, uninstallSkill, saveUpload, unpublish } from '@/features/skills/actions/skills';
-import { checkUpdate, exportData, setPref, togglePref } from '@/features/settings/actions/settings';
+import { checkUpdate, setPref, togglePref } from '@/features/settings/actions/settings';
 import { PENDING_PREFERENCES } from '@/shared/lib/unavailable';
 import { doSendFiles, reconnect, revokePC, saveSoul, editSub, toggleSub } from '@/features/phones/actions/phone';
 import { runSched } from '@/features/schedules/actions/schedule';
@@ -11,7 +12,7 @@ import { sim } from '@/demo/simulator';
 const { runCoreSchedule, writePhoneDocument } = vi.hoisted(() => ({ runCoreSchedule: vi.fn(), writePhoneDocument: vi.fn() }));
 vi.mock('@/features/schedules/runtime/schedules', async original => ({ ...await original<object>(), runCoreSchedule }));
 vi.mock('@/features/phones/runtime/phoneDocuments', async original => ({ ...await original<object>(), writePhoneDocument }));
-beforeEach(() => { vi.useFakeTimers(); runCoreSchedule.mockReset(); writePhoneDocument.mockReset(); });
+beforeEach(() => { Object.assign(S, initialState(true)); vi.useFakeTimers(); runCoreSchedule.mockReset(); writePhoneDocument.mockReset(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 const notExecuted = () => expect(S.toast?.text).toContain('暂未接入');
 const toastText = () => S.toast?.text;
@@ -29,8 +30,8 @@ it('D06 AC1 安装卸载不改安装列表，上传下架保留草稿及状态',
   expect(S.form.name).toBe('我的技能'); expect(S.modals[0].id).toBe('upload');
 });
 
-it('D25 检查更新打开真实更新面板；未接入的导出仍不报成功', () => {
-  checkUpdate(); expect(S.modals.at(-1)?.id).toBe('update'); exportData(); notExecuted();
+it('D25 检查更新打开真实更新面板', () => {
+  checkUpdate(); expect(S.modals.at(-1)?.id).toBe('update');
 });
 
 it('D06 AC3 文件发送、撤销、重连不伪造状态或延迟成功', () => {

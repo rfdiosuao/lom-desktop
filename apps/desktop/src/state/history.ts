@@ -1,4 +1,4 @@
-import { agentRow, logoUrl } from '@/features/settings/runtime/agents';
+import { agentRow, logoUrl } from '@/state/agentCatalog';
 import { convsOf } from '@/state/selectors';
 import { S, update } from '@/state/store';
 

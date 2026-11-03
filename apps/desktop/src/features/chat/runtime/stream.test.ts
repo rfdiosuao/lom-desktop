@@ -27,6 +27,41 @@ beforeEach(() => {
   update(s => { s.convs = [conv]; s.permission = 'ask'; s.running = {}; });
 });
 
+it('CHAT-ACTIVITY-01 AC-8 native tools and thinking freeze at their own end, not the later turn completion', () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(1_000); stream('thought', { content: '先分析' });
+    vi.setSystemTime(2_000); stream('tool_call', { call_id: 'clock', name: 'Read', status: 'running' });
+    vi.setSystemTime(3_200); stream('tool_call', { call_id: 'clock', name: 'Read', status: 'completed' });
+    vi.setSystemTime(3_500); stream('thought', { content: '整理结果' }, 'second');
+    vi.setSystemTime(5_000); stream('content', { content: '答复' }, 'answer');
+    expect(conv.messages.filter(m => m.type === 'thinking').map(m => m.timing)).toEqual([{ startedAt: 1_000, endedAt: 2_000 }, { startedAt: 3_500, endedAt: 5_000 }]);
+    vi.setSystemTime(9_000); stream('tool_call', { call_id: 'clock', status: 'completed' });
+    handleCoreEvent({ name: 'turn.completed', data: { conversation_id: 'c1', status: 'finished' } });
+    expect(conv.messages.find(m => m.callId === 'clock')?.timing).toEqual({ startedAt: 2_000, endedAt: 3_200 });
+  } finally { vi.useRealTimers(); }
+});
+
+it('CHAT-ACTIVITY-01 AC-9 turn completion cannot invent a missing tool end', () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(1_000); stream('tool_call', { call_id: 'lost-end', name: 'Read', status: 'running' });
+    vi.setSystemTime(9_000); handleCoreEvent({ name: 'turn.completed', data: { conversation_id: 'c1', status: 'finished' } });
+    expect(conv.messages.find(m => m.callId === 'lost-end')?.timing).toEqual({ startedAt: 1_000 });
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([false, true])('CHAT-ACTIVITY-01 AC-8/9 stop only timestamps tools after an actual cancel acknowledgment (%s)', async requested => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(20_000);
+  try {
+    conv.messages.push({ id: 'stop-clock', type: 'tool', at: 1_000, timing: { startedAt: 1_000 }, status: 'running' });
+    update(s => { s.running.c1 = true; });
+    api.mockImplementation(async method => ({ runtime: method === 'GET' && requested ? { is_processing: true, turn_id: 'timed-turn' } : { is_processing: false, turn_id: null } }));
+    await stopTask('c1');
+    expect(conv.messages.find(m => m.id === 'stop-clock')?.timing).toEqual(requested ? { startedAt: 1_000, endedAt: 20_000 } : { startedAt: 1_000 });
+  } finally { clock.mockRestore(); }
+});
+
 describe('D01 §2.4 lom-core 事件 → 界面', () => {
   it('D01 AC-2 流式回复、写文件、确认、完成的完整一轮', () => {
     update(() => { conv.messages.push({ id: 'u', type: 'user', at: 0, text: '做一个网站' }); });
@@ -90,7 +125,7 @@ describe('D01 §2.4 lom-core 事件 → 界面', () => {
     expect(conv.messages[0].remoteId).toBe('u9');
     // 从别处（例如定时任务）发来的消息：正文和附件分开显示
     handleCoreEvent({ name: 'message.userCreated', data: { conversation_id: 'c1', msg_id: 'u10', content: '日报\n\n[[AION_FILES]]\n/up/b.png' } });
-    expect(conv.messages.at(-1)).toMatchObject({ text: '日报', attachments: [{ name: 'b.png', ic: 'image', preview: 'stream:/up/b.png' }] });
+    expect(conv.messages.at(-1)).toMatchObject({ text: '日报', attachments: [{ name: 'b.png', ic: 'image', path: '/up/b.png' }] });
   });
 
   it('D01 不属于电脑任务的会话事件被忽略', () => {
@@ -180,4 +215,15 @@ it('PA-EVOLVE-02 successful completion triggers learning and cancellation does n
   expect(evolve).not.toHaveBeenCalled();
   handleCoreEvent({name:'turn.completed', data:{conversation_id:'c1', turn_id:'turn_1', status:'finished'}});
   expect(evolve).toHaveBeenCalledWith(conv, 'turn_1');
+});
+
+it.each([{ code: 'USER_LLM_PROVIDER_CONTEXT_TOO_LARGE', message: 'The request is too large for the model provider' }, { message: 'ContextTooLarge: limit exceeded' }, { message: 'API error: HTTP 413 Payload Too Large' }, { code: 'ContextTooLarge', message: 'rejected' }])('PA-CONTEXT-01 AC-1 stream errors retain compression recovery: %j', error => {
+  stream('error', error);
+  expect(conv.messages.at(-1)).toMatchObject({ type: 'system', recovery: 'compact', text: expect.stringContaining('压缩上下文') });
+});
+
+
+it('PA-CONTEXT-01 AC-1 wire gateway code does not invent compression recovery', () => {
+  stream('error', { code: 'USER_LLM_PROVIDER_GATEWAY_ERROR', message: 'The model provider returned an error' });
+  expect(conv.messages.at(-1)?.recovery).toBeUndefined();
 });

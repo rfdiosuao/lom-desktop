@@ -1,9 +1,10 @@
 import { authAccount } from '@/features/account/runtime/authScope';
 import { api, CoreError } from '@/core/client';
 import { saveCoreSchedule, type CoreSchedule } from '@/features/schedules/runtime/schedules';
-import { personalConversation, type PersonalAssistant } from './catalog';
+import type { PersonalAssistant } from './catalog';
+import { personalScheduleDraft, personalScheduleTarget } from './scheduleTarget';
 import { S } from '@/state/store';
-import type { Schedule } from '@/state/types';
+import { keepInvalid, readJson, writeJson } from '@/features/account/runtime/localCache';
 const defaults = [
   { id: 'daily', name: '每日复盘与学习', cron: '0 22 * * *', task: '回顾今天这位助理的真实办事记录和用户纠正，提炼有证据的经验、未完成事项与明日目标。' },
   { id: 'weekly', name: '每周整理与复盘', cron: '0 3 * * SUN', task: '整理本周日记与已有任务结果，归纳重复错误、用户偏好和可复用工作方法，生成周报。只读取已授权且真实可访问的资料。' },
@@ -19,29 +20,31 @@ export function ensureHeartbeats(a: PersonalAssistant, rebuildMissing = false): 
   flights.set(key, request); return request;
 }
 async function install(a: PersonalAssistant, key: string, current: () => boolean, rebuildMissing: boolean) {
-  const c = personalConversation(`personal:${a.id}`);
-  if (!c || c.id !== a.conversation || c.personal?.directory !== a.directory) throw new Error('默认任务的助理归属不一致');
-  const states = JSON.parse(localStorage.getItem(key) || '{}') as Record<string, string>;
+  const { conversationId } = personalScheduleTarget(a);
+  // REFACTOR-01 模块 7：记录损坏时另存原文，把服务器上没找到的默认任务都当作「待核对」，只能经用户确认后重建，避免重复创建
+  const read = readJson(key, v => (v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every(x => typeof x === 'string') ? v as Record<string, string> : undefined));
+  if (read.status === 'unavailable') throw new Error('本机存储不可用，默认任务记录待核对，未创建；请检查存储权限后重试');
+  if (read.status === 'invalid') keepInvalid(key, read.raw);
+  const states: Record<string, string> = read.status === 'ok' ? read.value : read.status === 'invalid' ? Object.fromEntries(defaults.map(t => [t.id, 'pending'])) : {};
+  const save = () => { const result = writeJson(key, states); if (result !== 'ok') console.warn('personal.heartbeat_state_unsaved', result); };
   if (defaults.every(t => states[t.id] === 'done')) return;
   const rows = await api<CoreSchedule[]>('GET', '/api/cron/jobs');
   for (const template of defaults) {
     if (!current()) throw new Error('账号已切换，未继续创建默认任务');
     const marker = `lom:personal-heartbeat:v1:${a.id}:${template.id}`;
-    if (rows.some(r => r.description === marker && r.metadata.conversation_id === c.id)) states[template.id] = 'done';
-    if (states[template.id] === 'done') { localStorage.setItem(key, JSON.stringify(states)); continue; }
+    if (rows.some(r => r.description === marker && r.metadata.conversation_id === conversationId)) states[template.id] = 'done';
+    if (states[template.id] === 'done') { save(); continue; }
     if (states[template.id] === 'pending' && !rebuildMissing) throw new Error('默认任务创建结果待核对，未重复创建；请同步后重试');
     const prompt = `${template.task}\n先按需读取本助理目录中的 SOUL.md、USER.md、TOOLS.md、AGENTS.md、MEMORY.md 和相关日记；没有真实资料就报告缺口，不编造评分、课程、历史成就或成功次数。经验仅作用于本助理；保留人格正文和安全规则，修改需保留来源与可回滚版本。现有程序尚未提供版本写入能力时，只生成待处理记录，不声称已学习。\n默认静默：结果只留在本助理会话，不发送微信、飞书、邮件或其他对外通知。不得修改任何推送开关。需要权限确认时等待用户，不能以心跳任务绕过。`;
-    const draft: Schedule = { id: '', name: template.name, prompt, exec: 'pc', freq: 'custom', cron: template.cron, scheduleDescription: marker,
-      time: '', days: [], every: 60, enabled: true, runIn: 'same', runMode: 'default', last: null, runs: [], conversationId: c.id,
-      agentConfig: { name: a.name, workspace: a.workspace, model: { provider_id: c.providerId || c.modelId?.split('::')[0], model: c.modelId?.split('::').slice(1).join('::') } } };
+    const draft = personalScheduleDraft(a, { name: template.name, prompt }, { freq: 'custom', time: '', cron: template.cron, scheduleDescription: marker });
     try { await saveCoreSchedule(draft, undefined, { personalId: a.id, beforeCreate: () => {
       if (!current()) throw new Error('账号已切换，未创建默认任务');
-      states[template.id] = 'pending'; localStorage.setItem(key, JSON.stringify(states));
+      states[template.id] = 'pending'; save();
     } }); } catch (e) {
-      if (current() && e instanceof CoreError && e.status && e.status >= 400 && e.status < 500) { delete states[template.id]; localStorage.setItem(key, JSON.stringify(states)); }
+      if (current() && e instanceof CoreError && e.status && e.status >= 400 && e.status < 500) { delete states[template.id]; save(); }
       throw e;
     }
     if (!current()) throw new Error('账号已切换，默认任务创建结果待核对');
-    states[template.id] = 'done'; localStorage.setItem(key, JSON.stringify(states));
+    states[template.id] = 'done'; save();
   }
 }

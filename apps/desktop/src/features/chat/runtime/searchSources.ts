@@ -1,4 +1,5 @@
 import type { Msg } from '@/state/types';
+import { iconHost, safeIconUrl as safeFavicon } from '@/shared/lib/siteIcons';
 
 /* ===== 联网搜索来源：从搜索工具的输出里取出网页列表 =====
  * 原生会话用 LomWebSearch；外部 Agent 经桥接调用时工具名是 lom_search（可能带 mcp__ 前缀）。
@@ -19,9 +20,6 @@ const SEARCH_TOOLS = new Set(['LomWebSearch', 'lom_search']);
 
 /** 与 links.ts / Rust web_link_open 对齐：空白、控制字符和反斜杠都不是可用地址 */
 const UNSAFE_URL = /[\s\\\u0000-\u001f\u007f]/;
-
-/** 结果里即使出现这些图标服务也不加载：来源条只请求搜索接口自己返回的 https 图标。 */
-const THIRD_PARTY_ICON_HOSTS = ['google.com', 'googleusercontent.com', 'clearbit.com', 'brandfetch.io', 'icon.horse', 'gstatic.com', 'duckduckgo.com', 'yandex.net'];
 
 const recordOf = (v: unknown): Record<string, unknown> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -62,27 +60,6 @@ function webUrl(raw: string): string | null {
 const hostOf = (url: string) => {
   try { return new URL(url).hostname.replace(/^www\./i, ''); } catch { return ''; }
 };
-
-function blockedIconHost(host: string) {
-  const h = host.toLowerCase();
-  return THIRD_PARTY_ICON_HOSTS.some(blocked => h === blocked || h.endsWith(`.${blocked}`));
-}
-
-/** 只接受结果自带的 https 图标地址，且不指向已知第三方图标服务 */
-function safeFavicon(raw: unknown): string | undefined {
-  if (typeof raw !== 'string') return undefined;
-  const value = raw.trim();
-  if (!usableUrl(value)) return undefined;
-  try {
-    const parsed = new URL(value);
-    if (!usableUrl(parsed.href)) return undefined;
-    if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) return undefined;
-    if (blockedIconHost(parsed.hostname)) return undefined;
-    return parsed.href;
-  } catch {
-    return undefined; // 图标地址无效时退回首字母色块
-  }
-}
 
 function sourceOf(entry: unknown): SearchSource | null {
   const item = recordOf(entry);
@@ -179,14 +156,21 @@ export function parseSearchOutput(output: unknown): SearchSource[] {
   return out;
 }
 
-/** 结果没带图标时用网站自己的 /favicon.ico（只限 https 站点，仍不走第三方图标服务）；加载失败界面退回首字母 */
-export function siteIcon(url: string): string | undefined {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && parsed.hostname ? `${parsed.origin}/favicon.ico` : undefined;
-  } catch {
-    return undefined; // 地址无效时没有站点图标
+/** 已完成的搜索调用（直接调用或经代理工具转调） */
+function isSearchCall(m: Msg) {
+  if (m.type !== 'tool' || m.status === 'running' || m.status === 'error') return false;
+  const proxied = isToolProxy(m.toolName) || isToolProxy(m.tool);
+  return isSearchToolName(m.toolName) || isSearchToolName(m.tool) || (proxied && isLomSearchOutput(m.output));
+}
+
+/** CHAT-ACTIVITY-01：一轮里搜索返回过的站点；只有这些站点（和白名单）的链接会自动加载图标 */
+export function searchHostsOf(items: Msg[]): Set<string> {
+  const hosts = new Set<string>();
+  for (const m of items) {
+    if (!isSearchCall(m)) continue;
+    for (const source of parseSearchOutput(m.output)) { const host = iconHost(source.url); if (host) hosts.add(host); }
   }
+  return hosts;
 }
 
 /** 一组工具调用里的来源：按调用顺序合并去重，运行中或失败的调用不展示 */
@@ -194,9 +178,7 @@ export function searchSourcesOf(items: Msg[]): SearchSource[] {
   const seen = new Set<string>();
   const out: SearchSource[] = [];
   for (const m of items) {
-    if (m.type !== 'tool' || m.status === 'running' || m.status === 'error') continue;
-    const proxied = isToolProxy(m.toolName) || isToolProxy(m.tool);
-    if (!isSearchToolName(m.toolName) && !isSearchToolName(m.tool) && !(proxied && isLomSearchOutput(m.output))) continue;
+    if (!isSearchCall(m)) continue;
     for (const source of parseSearchOutput(m.output)) {
       if (seen.has(source.url)) continue;
       seen.add(source.url);

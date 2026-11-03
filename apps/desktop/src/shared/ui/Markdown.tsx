@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { isHttpUrl, openExternalUrl } from '@/core/links';
+import { SiteIcon } from './SiteIcon';
 import { toastError } from '@/shared/overlays/controller';
 import { isInlineCodePath, isLocalPath, isOpenablePath } from '../lib/localPaths';
 import { parseMarkdown, type Block, type ListNode } from './markdownBlocks';
@@ -35,7 +36,7 @@ function trimUrl(url: string) {
 
 const externalLink = (url: string, label: ReactNode, key: string) => (
   <a key={key} className="md-link" href={url} target="_blank" rel="noopener noreferrer" title={url}
-    onClick={e => { e.preventDefault(); void openExternalUrl(url).catch(error => toastError('打开链接失败', error)); }}>{label}</a>
+    onClick={e => { e.preventDefault(); void openExternalUrl(url).catch(error => toastError('打开链接失败', error)); }}><SiteIcon url={url} />{label}</a>
 );
 
 /** 一条行内规则命中后生成节点；返回 null 表示边界不成立（如 snake_case_name 里的下划线），这段仍按正文 */

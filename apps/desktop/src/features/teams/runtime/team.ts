@@ -7,7 +7,7 @@ import { S, update } from '@/state/store';
 import type { Conv, DraftAttachment, Team, TeamMember } from '@/state/types';
 
 /* ===== OPC 团队（真实执行）=====
- * 跑在内核自带的团队模式上（见 core/coreTeam.ts）：Leader 永远是 Lom 总指挥，带手机工具；
+ * 跑在内核自带的团队模式上（见 core/coreTeam.ts）：Leader 由首个加入的电脑 Agent 担任，带团队与手机工具；
  * 成员可以是手机，也可以是在「设置 → Agents」里检测到的本机 Agent（Codex CLI、Kimi、Pi……）。
  * 本机 Agent 之间用内核的团队工具直接互发消息、分派任务；手机由 Leader 用 phone_* 工具指挥。
  * 你只和 Leader 说目标；Leader 先「开图」（摸清每个成员能做什么），再分派、检查、汇总。 */
@@ -31,7 +31,7 @@ export const specialty = (a?: AgentRow) => (a?.backend && SPECIALTY[a.backend]) 
 
 /** 成员的显示信息 */
 export function memberInfo(id: string): { name: string; kind: 'lom' | 'phone' | 'agent'; note: string; online: boolean } {
-  if (id === 'pc') return { name: 'Lom', kind: 'lom', note: '总指挥（Leader）', online: true };
+  if (id === 'pc') return { name: 'Lom', kind: 'lom', note: '内置电脑助手', online: true };
   const row = memberAgentRow(id);
   if (isAgentMember(id)) return { name: row?.name || '本机 Agent', kind: 'agent', note: specialty(row), online: !!row && row.installed && row.status !== 'missing' };
   const p = S.agents[id];
@@ -39,10 +39,12 @@ export function memberInfo(id: string): { name: string; kind: 'lom' | 'phone' | 
 }
 
 const leaderOf = (t: Team) => t.members.find(m => m.leader) ?? t.members[0];
+/** Legacy demo teams contained duplicate Lom panes sharing the Lom leader. */
+export const isLegacyLeaderAlias = (t: Team, m: TeamMember) => !m.leader && m.agent === 'pc' && leaderOf(t)?.agent === 'pc';
 
 /** Leader 的团队规则：成员名单 + 成员之间怎么协作 + 先开图再分派 */
 export function teamRules(t: Team) {
-  const roster = t.members.filter(m => !m.leader && m.agent !== 'pc').map(m => {
+  const roster = t.members.filter(m => !m.leader && !isLegacyLeaderAlias(t, m)).map(m => {
     const i = memberInfo(m.agent);
     const how = i.kind === 'phone' ? `手机，设备 ID ${m.agent}，用 phone_* 工具` : '电脑上的 Agent，团队成员，用 team_* 工具协作';
     return `- ${i.name}（角色：${m.role}；${how}；${i.note}）`;
@@ -91,7 +93,8 @@ export const phonesOf = (t: Team) => t.members.map(m => m.agent).filter(id => S.
 
 /** 在某个成员的窗格里发送：Leader 和本机 Agent → 内核团队（见 coreTeam.ts）；手机 → 这台手机的团队会话 */
 export async function sendToTeam(t: Team, m: TeamMember, text: string, atts: DraftAttachment[]): Promise<boolean> {
-  if (m.leader || m.agent === 'pc') return sendToCoreTeam(t, leaderOf(t), text, atts);
+  if (isLegacyLeaderAlias(t, m)) return sendToCoreTeam(t, leaderOf(t), text, atts);
+  if (m.leader || m.agent === 'pc') return sendToCoreTeam(t, m, text, atts);
   if (isAgentMember(m.agent)) {
     if (!memberAgentRow(m.agent)) throw new Error('这个 Agent 在本机已找不到，请到「设置 → Agents」检查');
     return sendToCoreTeam(t, m, text, atts);
@@ -126,7 +129,7 @@ export const paneIsDesktop = (key: string) => { const p = paneOf(key); return !!
 
 /** 成员窗格对应的会话 */
 export function conversationOf(t: Team, m: TeamMember): Conv | undefined {
-  const id = m.leader || m.agent === 'pc' ? t.leaderConv : t.memberConvs?.[m.mid];
+  const id = m.leader || isLegacyLeaderAlias(t, m) ? t.leaderConv : t.memberConvs?.[m.mid];
   return id ? S.convs.find(c => c.id === id) : undefined;
 }
 

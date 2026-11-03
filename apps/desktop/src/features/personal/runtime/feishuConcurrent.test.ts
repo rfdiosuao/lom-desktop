@@ -18,7 +18,7 @@ beforeEach(async()=>{
  localStorage.setItem('lom.personal.v1:owner',JSON.stringify({items:['a','b'].map(id=>({id,name:id,directory:`/${id}`,workspace:`/${id}`,conversation:id}))}));
  m.invoke.mockImplementation(async(cmd,args)=>cmd==='feishu_status'?{configured:true,connected:true,app_id:`bot_${args.assistantId}`,generation:1}:cmd==='feishu_listen_start'?1:{});
  m.send.mockImplementation(async(c)=>({id:`u_${c.id}`,type:'user',at:1}));m.stream.mockResolvedValue(undefined);
- startFeishuRelay();await restartFeishuRelay('owner','a');await restartFeishuRelay('owner','b');m.invoke.mockClear();
+ beginAuthChange(); startFeishuRelay();await restartFeishuRelay('owner','a');await restartFeishuRelay('owner','b');m.invoke.mockClear();
 });
 it('FEISHU-MULTI two bots stay online with independent queues: busy A never blocks B',async()=>{
  update(s=>{s.running.a=true;});
@@ -77,5 +77,61 @@ it('FEISHU-MULTI explicit restart awaits the invalidated background start then c
  await Promise.all([background,restarted]);
  expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'a'});
  m.handlers['feishu-message']({payload:event('a')});await vi.waitFor(()=>expect(m.send).toHaveBeenCalledTimes(1));
+ expect(m.send.mock.calls[0][0].id).toBe('a');
+});
+
+it('FEISHU-HEALTH-01 a dead native listener is recovered while the other bot continues', async () => {
+ let alive = false;
+ m.invoke.mockImplementation(async(cmd,args)=> {
+  if(cmd==='feishu_status') return {configured:true,connected:true,app_id:`bot_${args.assistantId}`,generation:1,listener_running:args.assistantId==='a'?alive:true};
+  if(cmd==='feishu_listen_start') {alive=true;return 1;} return {};
+ });
+ await syncFeishuRelay();
+ expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'a'});
+ expect(m.invoke.mock.calls.filter(c=>c[0]==='feishu_listen_start'&&c[1].assistantId==='b')).toHaveLength(0);
+});
+it('FEISHU-HEALTH-01 listener-ended retries scoped bot with backoff and ignores stale ended events', async () => {
+ m.handlers['feishu-listen-ended']({payload:event('a',0)});
+ await new Promise(resolve=>setTimeout(resolve,0));
+ expect(m.invoke.mock.calls.filter(c=>c[0]==='feishu_listen_start')).toHaveLength(0);
+ m.handlers['feishu-listen-ended']({payload:event('a')});
+ await vi.waitFor(()=>expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'a'}), {timeout:2500});
+});
+it('FEISHU-HEALTH-01 late sign-in starts both bot listeners without waiting a minute', async () => {
+ beginAuthChange(); update(s=>{s.cloud='signed-out';s.account=null;});
+ await new Promise(resolve=>setTimeout(resolve,0)); m.invoke.mockClear();
+ update(s=>{s.cloud='signed-in';s.account={id:'owner',name:'',email:''};});
+ await vi.waitFor(()=>expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'b'}));
+});
+
+it('FEISHU-HEALTH-01 successful authorization restores a bot while its panel is closed', async () => {
+ await stopFeishuRelay('owner','a'); m.invoke.mockClear();
+ m.handlers['feishu-connect']({payload:{account:'owner',assistant_id:'a',app_id:'bot_a',generation:1,stage:'auth',ok:true}});
+ await vi.waitFor(()=>expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'a'}));
+});
+
+it('FEISHU-HEALTH-01 same-account reauthentication waits for old native cleanup before starting new listeners', async () => {
+ let release!: ()=>void;
+ m.invoke.mockImplementation(async(cmd,args)=> {
+  if(cmd==='feishu_stop_account') return new Promise<void>(resolve=>{release=resolve;});
+  if(cmd==='feishu_status') return {configured:true,connected:true,app_id:`bot_${args.assistantId}`,generation:1};
+  return cmd==='feishu_listen_start'?1:{};
+ });
+ beginAuthChange(); update(s=>{s.cloud='checking';});
+ update(s=>{s.cloud='signed-in';});
+ await new Promise(resolve=>setTimeout(resolve,0));
+ expect(m.invoke.mock.calls.filter(c=>c[0]==='feishu_listen_start')).toHaveLength(0);
+ release();
+ await vi.waitFor(()=>expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start',{account:'owner',assistantId:'a'}));
+});
+
+it('FEISHU-HEALTH-01 an inbound message arriving during native startup is delivered after scope confirmation', async () => {
+ m.invoke.mockImplementation(async(cmd,args)=> {
+  if(cmd==='feishu_status') return {configured:true,connected:true,app_id:`bot_${args.assistantId}`,generation:1};
+  if(cmd==='feishu_listen_start') {m.handlers['feishu-message']({payload:event(args.assistantId)});return 1;}
+  return {};
+ });
+ await restartFeishuRelay('owner','a');
+ await vi.waitFor(()=>expect(m.send).toHaveBeenCalledTimes(1));
  expect(m.send.mock.calls[0][0].id).toBe('a');
 });

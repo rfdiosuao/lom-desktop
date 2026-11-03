@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { inShell } from '@/core/platform';
 import { openExternalUrl } from '@/core/links';
 import { confirm, toastError } from '@/shared/overlays/controller';
 import { Btn } from '@/shared/ui/Button';
-import { Icon } from '@/shared/ui/Icon';
-import { Spinner } from '@/shared/ui/Controls';
+import { Badge, Spinner } from '@/shared/ui/Controls';
 import { useStore } from '@/state/store';
 import { beginFeishuApp, beginFeishuAuth, cancelFeishu, disconnectFeishu, feishuError, onFeishuStep, revokeFeishuAuth, type FeishuPrompt, type FeishuStatus } from '../runtime/feishu';
 import type { PersonalAssistant } from '../runtime/catalog';
 import { bindFeishuAssistant, scopedFeishuStatus, claimLegacyFeishu } from '../runtime/feishuBinding';
+import { FeishuHealthStatus } from './FeishuHealthStatus';
 import { restartFeishuRelay } from '../runtime/feishuRelay';
 
 /* ===== FEISHU-01：通道连接里的飞书一栏 =====
@@ -37,7 +37,7 @@ export function FeishuConnect({ assistant }: { assistant?: PersonalAssistant }) 
   const live = useRef(scope);
   live.current = scope;
 
-  const relay = () => restartFeishuRelay(account, assistant?.id).catch(e => console.warn('feishu.relay_restart_failed', e));
+  const relay = () => restartFeishuRelay(account, assistant?.id).catch(() => console.warn('feishu.relay_restart_failed'));
 
   const refresh = async () => {
     const owner = account;
@@ -109,27 +109,27 @@ export function FeishuConnect({ assistant }: { assistant?: PersonalAssistant }) 
     onOk: () => { if (!auth() || live.current !== scope) { toastError('断开飞书失败', new Error('助理或账号已切换，请重新确认')); return; } void disconnectFeishu(account, assistant!.id).then(() => { void relay(); return refresh(); }, e => toastError('断开飞书失败', new Error(feishuError(e)))); },
   });
 
-  const head = (right: ReactNode) => (
-    <div className="pa-channel pa-channel--live"><span className="pa-channel__icon pa-channel__icon--feishu" aria-hidden="true" /><strong>飞书</strong>{right}</div>
+  // UI-AUDIT-03：与微信一栏同一结构：图标、名称、右侧状态徽标，下面是说明和操作按钮行
+  const head = (label: string, tone?: 'brand' | 'danger', spin = false) => (
+    <div className="pa-channel pa-channel--live"><span className="pa-channel__icon pa-channel__icon--feishu" aria-hidden="true" /><strong>飞书</strong><Badge text={<>{spin && <Spinner size={12} />}{label}</>} tone={tone} ic={tone === 'brand' ? 'check' : undefined} /></div>
   );
 
-  if (!inShell()) return head(<span>请在桌面应用里连接</span>);
-  if (!account) return head(<span>登录后可连接</span>);
-  if (!assistant) return head(<span>创建助理后可连接</span>);
+  if (!inShell()) return head('请在桌面应用里连接');
+  if (!account) return head('登录后可连接');
+  if (!assistant) return head('创建助理后可连接');
   switch (view.kind) {
-    case 'loading': return head(<span><Spinner size={12} /></span>);
-    case 'busy': return <>{head(<span><Spinner size={12} /></span>)}<p className="pa-muted">{view.text}</p></>;
-    case 'on': return <>{head(<span className="pa-channel__ok"><Icon name="check" />已连接</span>)}
-      <p className="pa-muted">机器人 {view.status.app_id} 已连接。在飞书里私聊它，{assistant.name}会处理消息并把回复发回飞书，切换助理不会改变绑定。</p>
-      {view.status.authorized && <p className="pa-muted">已授权访问你的飞书。{view.status.auth?.warning && `以下权限被管理员限制：${view.status.auth.warning}`}</p>}
-      {!view.status.authorized && <p className="pa-muted">想让助理以你的身份查看文档、日历、任务？可以再授权一次（可选）。</p>}
-      <div className="row">
+    case 'loading': return head('正在读取', undefined, true);
+    case 'busy': return <>{head('处理中', undefined, true)}<p className="pa-muted">{view.text}</p></>;
+    case 'on': return <>{head('机器人已配置', 'brand')}
+      <p className="pa-muted">机器人 {view.status.app_id} 绑定到{assistant.name}。{view.status.authorized ? '已授权访问你的飞书。' : '授权后，助理可以用你的身份查看飞书文档、日历和任务。'}</p>
+      {view.status.authorized && view.status.auth?.warning && <p className="pa-muted">以下权限被管理员限制：{view.status.auth.warning}</p>}
+      <FeishuHealthStatus account={account} assistantId={assistant.id} status={view.status} retry={() => relay().then(refresh)}>
         {!view.status.authorized && <Btn label="授权访问我的飞书（可选）" variant="ghost" size="sm" onClick={() => void authorize()} />}
         {view.status.authorized && <Btn label="撤销授权" variant="ghost" size="sm" onClick={() => void revokeFeishuAuth(account, assistant!.id).then(refresh, e => toastError('撤销授权失败', new Error(feishuError(e))))} />}
         <Btn label="断开" variant="ghost" size="sm" onClick={disconnect} />
-      </div></>;
-    case 'error': return <>{head(<span>{view.stage === 'auth' ? '授权失败' : '未连接'}</span>)}<p className="pa-error" role="alert">{view.text}</p><Btn label={view.stage === 'auth' ? '重试授权' : '重新扫码连接'} size="sm" onClick={() => void (view.stage === 'auth' ? authorize() : start())} /></>;
-    case 'qr': return <>{head(<span>{view.stage === 'app' ? '扫码连接' : '扫码授权'}</span>)}
+      </FeishuHealthStatus></>;
+    case 'error': return <>{head(view.stage === 'auth' ? '授权失败' : '未连接', 'danger')}<p className="pa-error" role="alert">{view.text}</p><div className="pa-channel__actions"><Btn label={view.stage === 'auth' ? '重试授权' : '重新扫码连接'} size="sm" onClick={() => void (view.stage === 'auth' ? authorize() : start())} /></div></>;
+    case 'qr': return <>{head(view.stage === 'app' ? '扫码连接' : '扫码授权')}
       <div className="pa-feishu-qr">
         <img src={qrSrc(view.prompt.qr)} alt={view.stage === 'app' ? '扫码创建飞书机器人' : '扫码授权飞书权限'} />
         <p>{view.stage === 'app'
@@ -141,9 +141,10 @@ export function FeishuConnect({ assistant }: { assistant?: PersonalAssistant }) 
           <Btn label="取消" variant="ghost" size="sm" onClick={() => void cancel()} />
         </div>
       </div></>;
-    case 'off': return <>{view.status?.legacy_app_id && <><p className="pa-muted">旧飞书机器人的归属尚未确认，请选择接收消息的助理。</p><Btn label="绑定旧机器人到此助理" size="sm" onClick={() => void claimLegacyFeishu(account, assistant.id, view.status!.legacy_app_id!).then(() => refresh().then(relay), e => toastError('绑定失败', e))} /></>}{head(<span>{view.status?.configured ? '还差授权' : '未连接'}</span>)}
-      {view.status?.configured
-        ? <Btn label="扫码授权" variant="primary" size="sm" onClick={() => void authorize()} />
-        : <Btn label="扫码连接飞书" variant="primary" size="sm" onClick={() => void start()} />}</>;
+    case 'off': return <>{head(view.status?.configured ? '还差授权' : '未连接')}
+      {view.status?.legacy_app_id && <><p className="pa-muted">旧飞书机器人的归属尚未确认，请选择接收消息的助理。</p><div className="pa-channel__actions"><Btn label="绑定旧机器人到此助理" size="sm" onClick={() => void claimLegacyFeishu(account, assistant.id, view.status!.legacy_app_id!).then(() => refresh().then(relay), e => toastError('绑定失败', e))} /></div></>}
+      <div className="pa-channel__actions">{view.status?.configured
+        ? <Btn label="扫码授权" size="sm" onClick={() => void authorize()} />
+        : <Btn label="扫码连接飞书" size="sm" onClick={() => void start()} />}</div></>;
   }
 }

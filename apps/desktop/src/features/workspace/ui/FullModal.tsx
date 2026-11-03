@@ -3,7 +3,8 @@ import { PhonePlaceholder } from '@/shared/ui/PhonePlaceholder';
 import { Modal } from '@/shared/ui/Overlay';
 import { phone } from '@/state/selectors';
 import { useStore } from '@/state/store';
-import { PreviewFrame, WsFiles } from './Workspace';
+import { Empty } from '@/shared/ui/Layout';
+import { PreviewFrame, previewReady, WsFiles } from './Workspace';
 import { WsChanges, WsPlan } from './WsActivity';
 
 /* 全屏查看：预览 / 文件 / 手机画面 */
@@ -19,7 +20,9 @@ export function FullModal() {
             ? <div style={{ width: 'min(900px,100%)', height: '100%', overflow: 'auto' }}>{s.wsTab === 'plan' ? <WsPlan /> : <WsChanges />}</div>
           : s.wsTab === 'files'
             ? <div style={{ width: 'min(900px,100%)', height: '100%', overflow: 'auto' }}><WsFiles /></div>
-            : <div style={{ width: 'min(1100px,100%)', height: '100%', display: 'flex', flexDirection: 'column' }}><PreviewFrame device="desktop" /></div>}
+            : previewReady(s)
+              ? <div style={{ width: 'min(1100px,100%)', height: '100%', display: 'flex', flexDirection: 'column' }}><PreviewFrame device="desktop" /></div>
+              : <Empty ic="globe" title="还没有可预览的作品" desc="让总指挥做一个网页、海报或文档，生成后可以在这里全屏查看。" />}
       </div>
     </Modal>
   );

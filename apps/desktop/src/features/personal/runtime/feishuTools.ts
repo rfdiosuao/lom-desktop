@@ -20,7 +20,8 @@ export interface FeishuToolHooks {
   requiresApproval?: (assistant: Conv) => boolean;
   needUserAuth?: (account: string, assistantId: string, appId: string) => Promise<void>;
 }
-const tools = new Set(['feishu_search_docs', 'feishu_read_doc', 'feishu_list_chats', 'feishu_search_chats', 'feishu_read_messages', 'feishu_search_messages', 'feishu_chat_members', 'feishu_find_people', 'feishu_send_message']);
+const writers = new Set(['feishu_send_message', 'feishu_create_doc', 'feishu_append_doc', 'feishu_send_file', 'feishu_send_image']);
+const tools = new Set([...writers, 'feishu_search_docs', 'feishu_read_doc', 'feishu_list_chats', 'feishu_search_chats', 'feishu_read_messages', 'feishu_search_messages', 'feishu_chat_members', 'feishu_find_people']);
 const prompted = new Set<string>();
 const sends = new Map<string, { args: string; result: Promise<Result> }>();
 onAuthChange(() => { prompted.clear(); sends.clear(); });
@@ -58,7 +59,7 @@ async function run(call: CommanderCall, hooks: FeishuToolHooks): Promise<Result>
       return current() ? failure('feishu.need_user_auth') : failure('feishu.account_changed');
     }
     prompted.delete(`${account}:${appId}`);
-    if (!hooks.fullAccess?.(self) && (call.name === 'feishu_send_message' || hooks.requiresApproval?.(self))) {
+    if (!hooks.fullAccess?.(self) && (writers.has(call.name) || hooks.requiresApproval?.(self))) {
       if (!hooks.approve || !await hooks.approve({ call, assistant: self, appId, arguments: args, current })) return failure('feishu.approval_required');
     }
     if (!current()) return failure('feishu.account_changed');
@@ -77,7 +78,7 @@ async function run(call: CommanderCall, hooks: FeishuToolHooks): Promise<Result>
 }
 
 export function executeFeishuTool(call: CommanderCall, hooks: FeishuToolHooks = {}): Promise<Result> {
-  if (call.name !== 'feishu_send_message') return run(call, hooks);
+  if (!writers.has(call.name)) return run(call, hooks);
   const key = `${S.account?.id}:${call.scope}:${call.id}`, previous = sends.get(key);
   if (previous) return previous.args === call.arguments ? previous.result : Promise.resolve(failure('feishu.invalid_args'));
   if (sends.size >= 128) return Promise.resolve(failure('feishu.send_capacity'));

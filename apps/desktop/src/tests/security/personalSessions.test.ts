@@ -39,3 +39,22 @@ it('PA04 removal of a target while checking runtime prevents a stale dispatch',a
   m.api.mockImplementation(async()=>{S.convs=[self];return {runtime:{is_processing:false}};});
   expect((await call('session_send')).isError).toBe(true);expect(m.send).not.toHaveBeenCalled();
 });
+
+it('PA-CATALOG-01 AC6 stopped, foreign-scope and signed-out callers cannot discover private targets', async () => {
+  const request = { id: 'catalog-security', scope: 'pa-test', name: 'personal_targets', arguments: '{"kind":"teams"}' };
+  S.teams = [{ ownerAccountId: 'owner', id: 'private-team', name: 'private-name', real: true, members: [] }] as unknown as typeof S.teams;
+  const live = await executeSessionTool(request); expect(live.content[0].text).toContain('private-name');
+  for (const setup of [() => { S.running.pa = false; }, () => { S.running.pa = true; self.personalScope = 'pa-other'; }, () => { self.personalScope = 'pa-test'; S.cloud = 'signed-out'; }]) {
+    setup(); const result = await executeSessionTool(request);
+    expect(result.isError).toBe(true); expect(result.content[0].text).not.toContain('private-name');
+  }
+  expect(m.api).not.toHaveBeenCalled(); expect(m.send).not.toHaveBeenCalled();
+});
+
+it('PA-CATALOG-01 AC7 discovery excludes other-account and unattributed legacy teams without deleting them', async () => {
+  S.teams = ['owner', 'other', undefined].map((ownerAccountId, i) => ({ ownerAccountId, id: `t${i}`, name: `name${i}`, real: true, members: [] })) as unknown as typeof S.teams;
+  const r = await executeSessionTool({ id: 'account-catalog', scope: 'pa-test', name: 'personal_targets', arguments: '{"kind":"teams"}' });
+  const data = JSON.parse(r.content[0].text);
+  expect(data.targets.map((t: { id: string }) => t.id)).toEqual(['t0']);
+  expect(S.teams).toHaveLength(3);
+});

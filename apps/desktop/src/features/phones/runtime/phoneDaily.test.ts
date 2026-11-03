@@ -12,7 +12,7 @@ const { savePhoneSchedule, phoneSchedule, changePhoneSchedule } = await import('
 beforeEach(() => { vi.resetAllMocks(); mocks.model.mockResolvedValue(undefined); });
 it('R02-02 resumes a failed upload with the same transfer identity and only accepts verified completion', async () => {
   const file: DraftAttachment = { path: '/selected/test.txt', name: 'test.txt' };
-  mocks.invoke.mockImplementation(async name => name === 'local_file_info' ? ['3', 'a'.repeat(64)] : btoa('abc'));
+  mocks.invoke.mockImplementation(async name => name === 'local_file_info' ? ['3', 'a'.repeat(64), 'read-ticket'] : btoa('abc'));
   let received = false;
   mocks.rpc.mockImplementation(async (_device, method, p) => {
     if (method === 'file.begin') return { ...p, offset: received ? '3' : '0' };
@@ -27,7 +27,7 @@ it('R02-02 resumes a failed upload with the same transfer identity and only acce
   expect(mocks.rpc.mock.calls.filter(c => c[1] === 'file.begin').every(c => c[2].id === id)).toBe(true);
 });
 it('R02-02 never claims success before phone checksum receipt', async () => {
-  mocks.invoke.mockResolvedValue(['0', 'a'.repeat(64)]);
+  mocks.invoke.mockResolvedValue(['0', 'a'.repeat(64), 'read-ticket']);
   mocks.rpc.mockResolvedValue({ offset: '0', status: 'uploading' });
   await expect(uploadPhoneFile('dev_a', { path: '/empty', name: 'empty' })).rejects.toThrow('尚未确认');
 });
@@ -35,7 +35,7 @@ it('R02-02 download is bounded and writes only after all chunks arrive', async (
   mocks.save.mockResolvedValue('/chosen/test.txt');
   mocks.rpc.mockResolvedValue({ data: btoa('abc'), next: '3' });
   await downloadPhoneFile('dev_a', { id: 'file-id', name: 'test.txt', size: '3', sha256: 'HASH', mime: 'text/plain', offset: '3', status: 'complete' });
-  expect(mocks.invoke).toHaveBeenCalledWith('local_file_save', { path: '/chosen/test.txt', data: btoa('abc'), sha256: 'HASH' });
+  expect(mocks.invoke).toHaveBeenCalledWith('local_file_save', { name: 'test.txt', data: btoa('abc'), sha256: 'HASH' });
   mocks.invoke.mockClear(); mocks.rpc.mockResolvedValue({ data: btoa('abc'), next: '900' });
   await expect(downloadPhoneFile('dev_a', { id: 'id', name: 'test', size: '3', sha256: 'HASH', mime: '', offset: '', status: '' })).rejects.toThrow('无效');
   expect(mocks.invoke).not.toHaveBeenCalled();
@@ -65,7 +65,7 @@ it('R02-02 run retry retains operation id when reply is unknown', async () => {
   expect(mocks.rpc.mock.calls[0][2].request_id).toBe(mocks.rpc.mock.calls[1][2].request_id);
 });
 it('PHONE-IMAGE-01 revoking scope after a chunk prevents further chunks and finish', async () => {
-  mocks.invoke.mockImplementation(async name => name === 'local_file_info' ? ['6', 'a'.repeat(64)] : btoa('abc'));
+  mocks.invoke.mockImplementation(async name => name === 'local_file_info' ? ['6', 'a'.repeat(64), 'read-ticket'] : btoa('abc'));
   let allowed = true;
   mocks.rpc.mockImplementation(async (_device, method) => {
     if (method === 'file.begin') return { offset: '0' };
@@ -76,7 +76,7 @@ it('PHONE-IMAGE-01 revoking scope after a chunk prevents further chunks and fini
 });
 
 it('PHONE-IMAGE-01 a checksum receipt for a different file never counts as success', async () => {
-  mocks.invoke.mockResolvedValue(['0', 'a'.repeat(64)]);
+  mocks.invoke.mockResolvedValue(['0', 'a'.repeat(64), 'read-ticket']);
   mocks.rpc.mockImplementation(async (_device, method) => method === 'file.begin' ? { offset: '0' } : { id: 'wrong', status: 'complete', sha256: 'a'.repeat(64) });
   await expect(uploadPhoneFile('dev', { path: '/a.png', name: 'a.png' })).rejects.toThrow('尚未确认');
 });

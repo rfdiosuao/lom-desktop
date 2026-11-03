@@ -1,6 +1,7 @@
 import { savePhoneSchedule, changePhoneSchedule, phoneScheduleResult } from '@/features/phones/runtime/phoneSchedules';
-import { DEFAULT_RUN_MODE, deleteCoreSchedule, runCoreSchedule, scheduleResult, saveCoreSchedule, toggleCoreSchedule } from '../runtime/schedules';
+import { DEFAULT_RUN_MODE, deleteCoreSchedule, runCoreSchedule, scheduleResult, saveCoreSchedule, syncSchedules, toggleCoreSchedule } from '../runtime/schedules';
 import { navigate } from '@/app/navigation';
+import { openAssistantOf } from '@/features/personal/runtime/panel';
 import { toastError } from '@/shared/overlays/controller';
 import { unavailable } from '@/shared/lib/unavailable';
 import { S, update } from '@/state/store';
@@ -94,7 +95,12 @@ export async function openSchedResult(id: string, index = 0) {
   if (!x?.remote) { toast('手机运行记录暂为演示', 'info'); return; }
   try {
     const conversation = await scheduleResult(id);
-    if (!conversation) { toast('暂时还没有执行会话', 'info'); return; }
+    if (conversation && openAssistantOf(conversation)) { closeModal(); return; }
+    if (!conversation || !S.convs.some(c => c.id === conversation)) {
+      // 结果入口暂不可用：说明原因，刷新任务列表后可再次查看
+      toast('这次运行的结果会话还没同步到本机，已重新同步任务列表，请稍后再点「查看」', 'info');
+      void syncSchedules(); return;
+    }
     closeModal(); navigate({ route: { name: 'chat' }, activeConv: conversation, mode: 'desktop' });
   } catch (e) { toastError('读取运行结果失败', e); }
 }

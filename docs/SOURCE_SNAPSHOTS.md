@@ -4,7 +4,7 @@ OSS-01 imports current tracked source, with a separate sanitization layer and no
 
 | Component | Snapshot | Origin/attribution |
 | --- | --- | --- |
-| Desktop | `34f5afc443e6d75c6b1462d3df75123f622a9adc` | Lom desktop client |
+| Desktop | `a94638942bbffec8fe1adbccd82c0ca717f01695` | Lom desktop client (0.3.4 sanitized snapshot; account/billing/WeChat/server/updater excluded) |
 | Core | `87906dcbed00315f4548fa8c43c483cbbdb05284` | Lom changes based on AionCore; Apache-2.0 |
 | Android | `174facc57e4a86c37297ba5896c5af4dfcf0aa08` | Lom changes based on OpenMinis; GPL-3.0 |
 | Protocol | `3b9d1b297babc45b6f3b9050f8488aaa7c6203bf` | Device contract snapshot including schema/generated bindings, MIT OR Apache-2.0 |

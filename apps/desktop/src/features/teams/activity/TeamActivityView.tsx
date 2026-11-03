@@ -1,14 +1,17 @@
+import { memberRuntimeLabel } from './memberWait';
+import { MemberWait } from '../ui/MemberWait';
+import { conversationOf } from '../runtime/team';
 import { openConv } from '@/app/navigation';
-import { buildPhoneActivity, phoneActivityLanes, teamPhoneConversations } from './phoneActivity';
+import { buildPhoneActivity, teamPhoneConversations } from './phoneActivity';
 import { useTeamPhones } from './useTeamPhones';
-import { openTeamMember } from '../actions/teams';
+import { fillTeamDraft, openTeamMember, talkToLeader } from '../actions/teams';
 import { useState } from 'react';
 import type { Team } from '@/state/types';
-import { S, update, useStore } from '@/state/store';
+import { S, useStore } from '@/state/store';
 import { coreName } from '../runtime/coreTeam';
 import { TeamEmptyState } from '../ui/TeamEmptyState';
 import { ActivityBoard } from './ActivityBoard';
-import type { BoardLane } from './ActivityBoard';
+import { boardMemberLanes } from './memberLanes';
 import { ActivityControls, defaultActivityControls } from './ActivityControls';
 import type { ActivityControlsState } from './ActivityControls';
 import { buildActivityItems, FALLBACK_LANE, filterActivityItems, laneColor, sortActivityItems } from './activityTypes';
@@ -20,28 +23,19 @@ import { useTeamActivityFeed } from './useTeamActivityFeed';
 
 const FALLBACK_NAME = '未分配 / 外部';
 
-/** 把建议填进这个成员的输入框；进入该成员会话后继续编辑。 */
-export const fillTeamDraft = (teamId: string, memberId: string, text: string) => {
-  const ckey = `team:${teamId}:${memberId}`;
-  update((s) => { s.drafts[ckey] = text; s.focusNext = `composer:${ckey}`; });
-};
-
-function lanesOf(team: Team): BoardLane[] {
-  const slots = team.core?.slots;
-  if (!slots) return [];
-  return team.members.flatMap((member) => {
-    const slotId = slots[member.mid];
-    return slotId ? [{ slotId, name: coreName(team, member), memberId: member.mid, agentId: member.agent, leader: !!member.leader }] : [];
-  });
-}
-
-export function TeamActivityView({ team }: { team: Team }) {
+/** focusMemberId：顶栏选中的成员，看板上它的一列带选中标记（TEAM-FOCUS-01）。 */
+export function TeamActivityView({ team, focusMemberId }: { team: Team; focusMemberId?: string }) {
   const state = useStore();
   useTeamPhones(team);
   const [controls, setControls] = useState<ActivityControlsState>(defaultActivityControls);
 
-  // 状态树是原地修改的，team 对象引用不会变；这里每次渲染按当前的 core.slots 重新归列。
-  const memberLanes = [...lanesOf(team), ...phoneActivityLanes(team, state)];
+  // 状态树是原地修改的，team 对象引用不会变；这里每次渲染按当前的 core.slots 重新归列，顺序跟团队成员一致。
+  const memberLanes = boardMemberLanes(team, state).map(lane => {
+    if (lane.local) return lane;
+    const member = team.members.find(m => m.mid === lane.memberId);
+    const c = member ? conversationOf(team, member) : undefined;
+    return { ...lane, status: memberRuntimeLabel(c, !!c && !!state.running[c.id]) };
+  });
   const knownSlots = new Set(memberLanes.map((lane) => lane.slotId));
   const identity: IdentityResolver = {
     nameOf: (slotId) => memberLanes.find((lane) => lane.slotId === slotId)?.name ?? slotId.slice(0, 8),
@@ -65,12 +59,14 @@ export function TeamActivityView({ team }: { team: Team }) {
   }
 
   const memberOptions = memberLanes.map((lane) => ({ slotId: lane.slotId, name: lane.name }));
+  // TEAM-FOCUS-01：看板里没有输入框，空状态直接给出和 Leader 说目标的入口
   const emptyHint = memberLanes.length === 0
-    ? { title: '团队还没有开工', desc: '切换到成员会话告诉 Leader 目标，成员之间的消息和任务会按成员显示在这里。' }
+    ? { title: '团队还没有开工', desc: '告诉 Leader 你的目标后，成员之间的消息和任务会按成员显示在这里。', action: { label: '和 Leader 说目标', onClick: () => talkToLeader(team.id) } }
     : { title: '没有符合筛选的活动' };
 
   return (
     <div className="team-activity" data-testid="team-activity-view">
+      {team.members.map(member => <MemberWait key={member.mid} c={conversationOf(team, member)} name={coreName(team, member)} />)}
       <ActivityControls value={controls} onChange={setControls} members={memberOptions} />
 
       {feed.error ? (
@@ -90,6 +86,7 @@ export function TeamActivityView({ team }: { team: Team }) {
           hasMore={feed.hasMore}
           isLoadingMore={feed.isLoadingMore}
           onLoadMore={feed.loadMore}
+          focusMemberId={focusMemberId}
           onOpenMember={memberId => openTeamMember(team.id, memberId)}
           onOpenPhone={id => { const current = S.teams.find(t => t.id === team.id); if (current && teamPhoneConversations(current, S).some(c => c.id === id)) openConv(id); }}
           emptyHint={emptyHint}

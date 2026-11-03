@@ -1,7 +1,9 @@
+import { mcpBindingBlocker } from '@/features/personal/runtime/mcpBindings';
+import { contextRecovery } from './contextRecovery';
 import { personalIdentityContext } from '@/features/personal/runtime/identity';
 import { conversationSkills } from '@/features/skills/runtime/conversationSkills';
 import { preparePersonalMemory } from '@/features/personal/runtime/context';
-import { authAccount } from '@/features/account/runtime/authScope';
+import { authAccount, onAuthChange } from '@/features/account/runtime/authScope';
 import { expandContextFiles } from '@/shared/lib/contextFiles';
 import { rosterContext, rosterDelivered } from '@/features/teams/runtime/team';
 import { effortResult, goalContext, lomSupportsEffort, pauseGoal, setTaskEffort } from './commands';
@@ -14,13 +16,13 @@ import { agentTaskExtra, takePreparedTask } from '@/features/settings/runtime/ag
 import { agentRow, usable, type AgentRow } from '@/features/settings/runtime/agents';
 import { loadConvOptions } from '@/features/settings/runtime/agentOptions';
 import { openModal, toast, toastError } from '@/shared/overlays/controller';
-import { attached, conv, coreTeamOf, currentPcModel, modelChoice, perm } from '@/state/selectors';
+import { attached, conv, convModel, coreTeamOf, currentPcModel, modelChoice, perm } from '@/state/selectors';
 import { applyTeamMode, restartCoreSession } from '@/features/teams/runtime/coreTeam';
-import { S, update } from '@/state/store';
+import { S, update, watchStore } from '@/state/store';
 import type { Attachment, Conv, DraftAttachment, Msg } from '@/state/types';
 import { uid } from '@/shared/lib/util';
 import { api, getEndpoint } from '@/core/client';
-import { hasUnconfirmedSend, isCompletedTurn, isTaskStopping, trackPendingSend } from './cancel';
+import { hasUnconfirmedSend, isCompletedTurn, isTaskStopping, sendBlocker, trackPendingSend } from './cancel';
 import { sendReceipt } from './sendReceipt';
 import { channelEnvelope, isChannel, type ChannelSource } from './channelSource';
 export { stopTask } from './cancel';
@@ -44,12 +46,6 @@ const filesOf = (atts: DraftAttachment[]) => {
   return [...new Map(files.map(file => [file.path, file])).values()];
 };
 
-/** 这条会话自己的模型：后台发送（目标自动推进、追加任务、重新生成）不能被前台正在看的另一条会话或新任务页的选择影响。
- * 只有还没记录模型的旧会话才用当前选择 */
-function modelFor(c: Conv) {
-  if (c.modelId) return modelChoice(c.modelId, c.lomTier);
-  return c.sideOf ? undefined : currentPcModel();
-}
 
 function markSent(c: Conv, message: Msg | undefined, hasOtherSends: () => boolean, turnId?: string) {
   update(s => {
@@ -69,16 +65,18 @@ const ownHistoryPending = (c: Conv, message?: Msg) =>
 const ownHistoryFiles = (c: Conv): DraftAttachment[] =>
   [c.historyContextPath, c.historyRawPath].filter((path): path is string => !!path).map(path => ({ path, kind: 'local' as const, name: c.title }));
 
-async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Msg, parentCurrent?: () => boolean) {
-  if (isTaskStopping(c.id)) { toast('停止尚未确认，请等待后重试发送', 'info'); return false; }
-  if (hasUnconfirmedSend(c.id)) { toast('上一条发送结果未确认，请重新打开任务核对记录后再发送', 'info'); return false; }
+async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Msg, parentCurrent?: () => boolean, onDispatched?: () => void) {
+  if (c.personal && S.running[c.id]) return false;
+  // 停止未确认、上一条结果未知时不能开始新的一轮：原因由会话操作记录给出
+  const blocked = mcpBindingBlocker(c) ?? sendBlocker(c.id);
+  if (blocked) { toast(blocked, 'info'); return false; }
   const current = c.personal ? authAccount() : () => true;
   const checkAccount = () => { if (!current()) throw new Error('账号已切换，未继续发送'); };
   if (!current()) return false;
   let memory: Awaited<ReturnType<typeof preparePersonalMemory>>;
   let hasOtherSends: () => boolean = () => false;
   const receipt = sendReceipt(message);
-  const selected = usableModel(c, modelFor(c));
+  const selected = usableModel(c, convModel(c));
   if (c.personal && (!selected || selected.byok || selected.unavailable)) { toast('个人助理只能使用可用的Lom账号模型', 'info'); return false; }
   const wasRunning = !!S.running[c.id];
   update(s => { s.running[c.id] = true; if (!wasRunning) c.turnId = undefined; c.updated = Date.now(); if (message) message.status = 'running'; });
@@ -88,15 +86,16 @@ async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Ms
       if (!c.agentId) {
         await ensureLomSelection(c.modelId || S.model); checkAccount();
         // D36：服务器下线或改了原模型时，Lom 任务自动改用仍可用的 Lom 模型，不让用户撞报错
-        const original = modelFor(c), selected = usableModel(c, original);
+        const original = convModel(c), selected = usableModel(c, original);
         if (wasRunning && selected?.id !== c.modelId) throw new Error('本轮仍在运行，模型配置已更新，请等本轮结束后再发送');
         if (!selected || selected.unavailable) throw new Error('所选模型不可用或旧档位不明确，请重新选择模型');
         if (selected !== original) toast(`原模型已不可用，已改用 ${selected.name}`, 'cube');
         await ensureTaskModel(c, selected); checkAccount();
       }
-      if (c.personal) await ensurePersonalBridge(c);
-      else if (!c.sideOf && (!c.agentId || c.phoneScope)) await ensureCommander(c);
-      await ensureTaskPermissions(c); checkAccount();
+      // PA-LATENCY-01：桥接刚重启过运行时，权限设置不再重启第二次
+      const restarted = c.personal ? await ensurePersonalBridge(c) : false;
+      if (!c.personal && !c.sideOf && (!c.agentId || c.phoneScope)) await ensureCommander(c);
+      await ensureTaskPermissions(c, restarted); checkAccount();
       if (parentCurrent && !parentCurrent()) throw new Error('总指挥已停止，未向成员发送任务');
       memory = await preparePersonalMemory(c); checkAccount();
       const ownHistory = ownHistoryPending(c, message);
@@ -105,7 +104,7 @@ async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Ms
       const roster = team ? rosterContext(team) : '';
       const side = sideChatContext(c);
       if (parentCurrent && !parentCurrent()) throw new Error('总指挥已停止，未向成员发送任务');
-      receipt.dispatched();
+      receipt.dispatched(); onDispatched?.();
       const sent = await api<{ turn_id?: string }>('POST', `/api/conversations/${c.id}/messages`, { content: `${publicationPolicy(c)}\n\n${roster}${goalContext(`conv:${c.id}`)}${side?.text ?? ''}${history}${personalIdentityContext(c)}${memory?.text ?? ''}${isChannel(message?.source) ? channelEnvelope(message.source) : ''}${text}`, files: filesOf([...atts, ...(ownHistory ? ownHistoryFiles(c) : [])]) });
       checkAccount();
       side?.commit();
@@ -139,7 +138,7 @@ async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Ms
       if (uncertain) s.running[c.id] = true;
       else if (!wasRunning && !isTaskStopping(c.id) && !hasOtherSends()) delete s.running[c.id];
       if (message) message.status = uncertain ? 'unconfirmed' : 'error';
-      c.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: `${uncertain ? '发送结果未确认，请重新打开任务核对记录，未自动重发' : '发送失败'}：${e instanceof Error ? e.message : String(e)}`, ic: 'info' });
+      c.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: `${uncertain ? '发送结果未确认，请重新打开任务核对记录，未自动重发' : '发送失败'}：${e instanceof Error ? e.message : String(e)}`, ...contextRecovery(e), ic: 'info' });
     });
     return false;
   }
@@ -241,19 +240,34 @@ export const continueGoal = (c: Conv) => send(c, GOAL_CONTINUE, []).then(ok => {
 
 /** 已有任务里继续发送 */
 export function sendToTask(c: Conv, text: string, atts: DraftAttachment[], parentCurrent?: () => boolean) {
-  if (hasUnconfirmedSend(c.id)) { toast('上一条发送结果未确认，请重新打开任务核对记录后再发送', 'info'); return Promise.resolve(false); }
-  if (isTaskStopping(c.id)) { toast('停止尚未确认，请等待后重试发送', 'info'); return Promise.resolve(false); }
+  if (c.personal && S.running[c.id]) return Promise.resolve(false);
+  const blocked = mcpBindingBlocker(c) ?? sendBlocker(c.id);
+  if (blocked) { toast(blocked, 'info'); return Promise.resolve(false); }
   const message = userMsg(text, atts.map(a => ({ name: a.name, ic: a.ic as Attachment['ic'], preview: a.preview, path: a.path, kind: a.kind, historyId: a.historyId, historyPaths: a.historyPaths })));
   update(() => { c.messages.push(message); });
   return send(c, text, atts, message, parentCurrent);
 }
 
 /** FEISHU-02 / PA04：飞书、微信发来的消息或个人助理派的活送进会话；发送成功返回这条用户消息（用来跟踪回复），否则返回 null */
-export async function sendFromChannel(c: Conv, text: string, source: ChannelSource, parentCurrent?: () => boolean) {
-  if (hasUnconfirmedSend(c.id) || isTaskStopping(c.id) || (parentCurrent && !parentCurrent())) return null;
+export async function sendFromChannel(c: Conv, text: string, source: ChannelSource, parentCurrent?: () => boolean, onDispatched?: () => void) {
+  const auth = source === 'personal' ? () => true : authAccount();
+  const valid = () => auth() && S.convs.includes(c) && (!parentCurrent || parentCurrent());
+  // Recheck in this stack after every wake: two channels may wake together.
+  // send() claims running synchronously, before its first asynchronous preflight.
+  while (source !== 'personal' && valid() && S.running[c.id] && !sendBlocker(c.id)) {
+    await new Promise<void>(resolve => {
+      let stop = () => {}, stopAuth = () => {};
+      const check = () => {
+        if (!valid() || !S.running[c.id] || sendBlocker(c.id)) { stop(); stopAuth(); resolve(); }
+      };
+      stop = watchStore(check); stopAuth = onAuthChange(check); check();
+    });
+  }
+  if (!valid()) return null;
+  if (sendBlocker(c.id) || (parentCurrent && !parentCurrent())) return null;
   const message: Msg = { ...userMsg(text, []), source };
   update(() => { c.messages.push(message); });
-  return await send(c, text, [], message, parentCurrent) ? message : null;
+  return await send(c, text, [], message, parentCurrent, onDispatched) ? message : null;
 }
 
 /** Retry the selected failed snapshot without duplicating its user bubble or changing a fresh draft. */
@@ -372,22 +386,6 @@ export async function applyModelToTask(id: string, selectedId: string) {
   }
   catch (e) { toastError('切换模型失败，仍保留原模型', e); return false; }
   finally { modelChanges.delete(id); }
-}
-
-/** 导出为 Markdown（保存到下载目录由浏览器 / 外壳负责） */
-export function exportMarkdown(c: Conv) {
-  const lines = [`# ${c.title}`, ''];
-  for (const m of c.messages) {
-    if (m.type === 'user') lines.push(`**我**：${m.text ?? ''}`, '');
-    else if (m.type === 'assistant') lines.push(`**总指挥**：${m.text ?? ''}`, '');
-    else if (m.type === 'tool') lines.push(`> ${m.tool} · ${m.detail ?? ''}`, '');
-  }
-  const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${c.title}.md`;
-  a.click();
-  URL.revokeObjectURL(a.href);
 }
 
 /* D36：运行中选的模型 / 推理强度，在这一轮结束后执行 */

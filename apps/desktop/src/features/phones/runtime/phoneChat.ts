@@ -1,3 +1,4 @@
+import { authAccount } from '@/features/account/runtime/authScope';
 import { expandContextFiles } from '@/shared/lib/contextFiles';
 import { publicationPolicy } from '@/features/settings/runtime/preferences';
 import { audit } from '@/features/settings/runtime/audit';
@@ -7,7 +8,9 @@ import { phoneMessages, type PhoneRow } from './phoneMessages';
 import { savePhoneCache } from './phoneCache';
 import { taskFinished } from '@/app/sound';
 import { phoneRpc } from './phoneRpc';
+import { linkGuard, STALE_LINK } from './deviceLink';
 import { ensurePhoneModel, syncPhoneModel } from './phoneModel';
+import { phoneOnScreen, pollPause } from './phonePace';
 import { S, update } from '@/state/store';
 import type { Conv, Msg, DraftAttachment } from '@/state/types';
 
@@ -21,8 +24,9 @@ const sending = new Set<string>();
 const rows = new Map<string, PhoneRow[]>();
 /** The streaming reply and the row before it may still change; everything earlier is settled. */
 const TAIL = 2;
-/** Poll pacing while the phone is replying: start at 1 s, back off to 4 s while nothing changes, 8 s when not on screen. */
-const FAST = 1000, SLOW = 4000, AWAY = 8000;
+/** Poll pacing while the phone is replying: start at 0.5 s, back off to 1.5 s while nothing changes, 8 s when not on screen
+ *  (PHONE-POLL-01: on screen = the open chat, or a member conversation of the team page being shown; see phonePace). */
+const FAST = 500, SLOW = 1500, AWAY = 8000;
 /** Signature of each phone's first session-list page; an unchanged first page means nothing to re-sync. */
 const listSig = new Map<string, string>();
 
@@ -35,19 +39,24 @@ async function chatSend(c: Conv, request: Record<string, string>, current?: () =
   const { policy, ...body } = request;
   const payload = { ...body, text: policy ? `${policy}\n\n${request.text}` : request.text };
   try {
-    if (current && !current()) throw new Error('总指挥已停止，未向手机发送任务');
+    if (current && !current()) throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务');
     return await phoneRpc<{ session_id: string }>(c.owner, 'chat.send', payload);
   }
   catch (e) {
     // The phone lost its model config (reinstall, data cleared): push it again once, then retry the same request id.
     if (!(e instanceof Error) || e.message !== 'chat.model_missing') throw e;
+    if (current && !current()) throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务');
     await syncPhoneModel(c.owner, true);
-    if (current && !current()) throw new Error('总指挥已停止，未向手机重新发送任务');
+    if (current && !current()) throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务');
     return phoneRpc<{ session_id: string }>(c.owner, 'chat.send', payload);
   }
 }
 
 export async function sendPhone(c: Conv, text: string, attachments: DraftAttachment[] = [], current?: () => boolean) {
+  const authenticated = authAccount(), device = c.owner;
+  const valid = () => authenticated() && S.convs.includes(c) && c.owner === device && (!current || current());
+  const check = () => { if (!valid()) throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务'); };
+  check();
   if (sending.has(c.id)) throw new Error('正在发送，请稍候');
   sending.add(c.id);
   try {
@@ -55,17 +64,19 @@ export async function sendPhone(c: Conv, text: string, attachments: DraftAttachm
     const previous = c.phonePending;
     if (previous && previous.text !== text) throw new Error('上一条消息结果尚未确认，请先重试原消息，避免重复执行');
     const ids: string[] = [];
-    if (!previous) for (const a of expandContextFiles(attachments)) ids.push(await uploadPhoneFile(c.owner, a));
+    if (!previous) for (const a of expandContextFiles(attachments)) { check(); ids.push(await uploadPhoneFile(c.owner, a, check)); check(); }
     const request = previous || { client_id: crypto.randomUUID(), session_id: c.phoneSession || '', text, policy: publicationPolicy(), files: JSON.stringify(ids) };
+    check();
     await ensurePhoneModel(c.owner);
-    if (current && !current()) throw new Error('总指挥已停止，未向手机发送任务');
+    check();
     c.phonePending = request;
     await savePhoneCache();
-    if (current && !current()) {
-      if (!previous) { delete c.phonePending; await savePhoneCache(); }
-      throw new Error('总指挥已停止，未向手机发送任务');
+    if (!valid()) {
+      if (!previous && authenticated() && S.convs.includes(c)) { delete c.phonePending; await savePhoneCache(); }
+      throw new Error('账号、会话已变化或总指挥已停止，未继续向手机发送任务');
     }
-    const reply = await chatSend(c, request, current);
+    const reply = await chatSend(c, request, valid);
+    check();
     delete c.phonePending;
     update(s => { c.phoneSession = reply.session_id; c.phoneRunStatus = 'accepted'; s.running[c.id] = true; c.updated = Date.now(); });
     try { await savePhoneCache(); }
@@ -89,6 +100,7 @@ async function readRows(c: Conv, from: number) {
 /** Re-reads the phone conversation; returns whether anything visible changed. `full` re-reads the whole history. */
 export async function refreshPhoneChat(c: Conv, full = false): Promise<boolean> {
   if (!c.phoneSession) return false;
+  const current = linkGuard(c.owner);
   const known = rows.get(c.id);
   let from = !full && known ? Math.max(0, known.length - TAIL) : 0;
   let { snapshot, fetched } = await readRows(c, from);
@@ -97,6 +109,8 @@ export async function refreshPhoneChat(c: Conv, full = false): Promise<boolean> 
     from = 0;
     ({ snapshot, fetched } = await readRows(c, 0));
   }
+  // REFACTOR-01 模块 2：读取期间解绑、换账号或手机重新上线，旧回执不写回
+  if (!current()) throw new Error(STALE_LINK);
   const settled = from ? (known ?? []).slice(0, from) : [];
   const changed = !known || known.length !== settled.length + fetched.length || JSON.stringify(known.slice(from)) !== JSON.stringify(fetched);
   if (changed) rows.set(c.id, [...settled, ...fetched]);
@@ -126,7 +140,7 @@ export async function watchPhone(c: Conv) {
       let changed: boolean;
       try { changed = await refreshPhoneChat(c); failures = 0; }
       catch (e) {
-        if (account !== S.account?.id || S.cloud !== 'signed-in') break;
+        if (account !== S.account?.id || S.cloud !== 'signed-in' || (e instanceof Error && e.message === STALE_LINK)) break;
         if (!failures++) {
           update(() => { c.phoneRunStatus = 'unknown'; c.messages.push({ id: crypto.randomUUID(), type: 'system', at: Date.now(), text: '连接中断，手机执行状态未知。可以重试同步，任务不会自动重发。' }); });
           toastError('同步手机会话失败', e);
@@ -138,7 +152,7 @@ export async function watchPhone(c: Conv) {
       }
       if (!S.running[c.id]) break;
       wait = changed ? FAST : Math.min(Math.round(wait * 1.5), SLOW);
-      await sleep(S.activeConv === c.id && !document.hidden ? wait : AWAY);
+      await pollPause(c, phoneOnScreen(c) ? wait : AWAY);
     } while (S.cloud === 'signed-in' && account === S.account?.id);
   } finally { watching.delete(c.id); }
 }
@@ -155,7 +169,9 @@ const signature = (page: ListPage) => JSON.stringify([page.total, page.items.map
  *  so any new, renamed or updated session moves onto it). Returns whether the list was re-synced. */
 export async function syncPhoneHistory(device: string, quick = false): Promise<boolean> {
   let offset = 0;
+  const current = linkGuard(device), fresh = () => { if (!current()) throw new Error(STALE_LINK); };
   let page = await phoneRpc<ListPage>(device, 'chat.list', { offset });
+  fresh();
   const sig = signature(page);
   if (quick && listSig.get(device) === sig) return false;
   const seen = new Set<string>();
@@ -175,6 +191,7 @@ export async function syncPhoneHistory(device: string, quick = false): Promise<b
     if (page.next <= offset) throw new Error('手机会话列表分页异常');
     offset = page.next;
     page = await phoneRpc<ListPage>(device, 'chat.list', { offset });
+    fresh();
   } while (true);
   update(s => {
     // 手机上已删除的会话：一并清掉运行态，不留下永远转圈的 Logo

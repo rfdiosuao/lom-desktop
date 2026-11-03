@@ -1,10 +1,12 @@
 //! Bounded reads for user-selected attachment paths; encrypted transport is handled by remote RPC.
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha2::{Digest, Sha256};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::Write;
+#[cfg(test)]
+use std::io::{Read, Seek, SeekFrom};
 
 /// Validate image headers before exposing the existing bounded file transport to Agents.
-#[tauri::command]
+#[cfg(test)]
 pub fn local_image_data(path: String) -> Result<String, String> {
     let p = std::path::Path::new(&path);
     if !p.is_absolute() {
@@ -48,7 +50,7 @@ pub fn local_image_data(path: String) -> Result<String, String> {
 }
 
 const MAX: u64 = 100 * 1024 * 1024;
-#[tauri::command]
+#[cfg(test)]
 pub fn local_file_info(path: String) -> Result<(String, String), String> {
     let mut file = std::fs::File::open(path).map_err(|_| "file.open_failed")?;
     let meta = file.metadata().map_err(|_| "file.stat_failed")?;
@@ -66,7 +68,7 @@ pub fn local_file_info(path: String) -> Result<(String, String), String> {
     }
     Ok((meta.len().to_string(), format!("{:x}", hash.finalize())))
 }
-#[tauri::command]
+#[cfg(test)]
 pub fn local_file_chunk(path: String, offset: u64) -> Result<String, String> {
     let mut file = std::fs::File::open(path).map_err(|_| "file.open_failed")?;
     let meta = file.metadata().map_err(|_| "file.stat_failed")?;
@@ -80,12 +82,14 @@ pub fn local_file_chunk(path: String, offset: u64) -> Result<String, String> {
         .map_err(|_| "file.read_failed")?;
     Ok(STANDARD.encode(bytes))
 }
-#[tauri::command]
 pub fn local_file_save(path: String, data: String, sha256: String) -> Result<(), String> {
     if data.len() > (MAX.div_ceil(3) * 4) as usize {
         return Err("file.too_large".into());
     }
     let bytes = STANDARD.decode(data).map_err(|_| "file.invalid_base64")?;
+    if bytes.len() as u64 > MAX {
+        return Err("file.too_large".into());
+    }
     if format!("{:x}", Sha256::digest(&bytes)) != sha256 {
         return Err("file.integrity_failed".into());
     }

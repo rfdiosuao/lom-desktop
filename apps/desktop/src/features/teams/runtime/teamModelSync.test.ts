@@ -33,3 +33,33 @@ it('MODEL-SYNC-01 failed team config sync does not dispatch a message', async ()
   expect(c.messages.at(-1)?.text).toContain('offline');
   expect(mocks.api.mock.calls.some(x => x[1] === '/api/teams/sync-core/messages')).toBe(false);
 });
+it('REFACTOR-01-M1 AC-3 team send whose reply is lost after dispatch is unconfirmed, not reported as failed', async () => {
+  mocks.api.mockImplementation(async (_method, path) => {
+    if (path === '/api/teams/sync-core/messages') throw new Error('socket hang up');
+    if (path === `/api/conversations/${c.id}`) return { id: c.id, model: { provider_id: 'cloud', model: 'new' }, extra: { lom_tier: 'pro' } };
+    return {};
+  });
+  expect(await sendToCoreTeam(t, t.members[0], 'hello', [])).toBe(false);
+  expect(c.messages.find(x => x.type === 'user')?.status).toBe('unconfirmed');
+  expect(c.messages.at(-1)?.text).toContain('发送结果未确认');
+  expect(c.messages.at(-1)?.text).not.toContain('发送失败');
+});
+it('REFACTOR-01-M1 AC-3 a 4xx rejection after dispatch is still a definite failure', async () => {
+  mocks.api.mockImplementation(async (_method, path) => {
+    if (path === '/api/teams/sync-core/messages') throw Object.assign(new Error('bad request'), { status: 400 });
+    if (path === `/api/conversations/${c.id}`) return { id: c.id, model: { provider_id: 'cloud', model: 'new' }, extra: { lom_tier: 'pro' } };
+    return {};
+  });
+  expect(await sendToCoreTeam(t, t.members[0], 'hello', [])).toBe(false);
+  expect(c.messages.find(x => x.type === 'user')?.status).toBe('error');
+  expect(c.messages.at(-1)?.text).toContain('发送失败');
+});
+it('REFACTOR-01-M1 AC-2 team send does not start while the leader stop is unconfirmed', async () => {
+  const { beginStop, endStop } = await import('@/features/chat/runtime/turnLedger');
+  beginStop(c.id);
+  try {
+    await expect(sendToCoreTeam(t, t.members[0], 'hello', [])).rejects.toThrow('停止尚未确认');
+    expect(mocks.api.mock.calls.some(x => x[1] === '/api/teams/sync-core/messages')).toBe(false);
+    expect(c.messages).toEqual([]);
+  } finally { endStop(c.id); }
+});

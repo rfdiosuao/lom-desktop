@@ -1,17 +1,12 @@
-import { personalCoreMode, personalFullAccess } from '@/features/personal/runtime/permissions';
+import { personalFullAccess } from '@/features/personal/runtime/permissions';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { S, update } from '@/state/store';
+import { effectiveMode, installAffected, installBlockers, permissionPlan } from './permissionPlan';
 import { api } from '@/core/client';
-import { coreTeamOf, nativeFullAccess, perm } from '@/state/selectors';
+import { nativeFullAccess } from '@/state/selectors';
 import type { Conv } from '@/state/types';
 
-/** Installation restrictions also cover arbitrary commands; parsing shell text is not a security boundary. */
-export function effectiveMode(permission: string, install = S.prefs.allowInstall): string {
-  if (permission === 'full') return 'yolo';
-  const chosen = perm(permission).coreMode;
-  if (permission === 'readonly' || install === 'deny') return 'default';
-  return install === 'ask' && chosen === 'yolo' ? 'default' : chosen;
-}
+export { effectiveMode } from './permissionPlan';
 export async function syncStartupPreference() {
   if (!isTauri()) return;
   const value = await invoke<boolean>('login_start_enabled');
@@ -24,15 +19,19 @@ async function resetApprovals(id: string) {
   if (info.runtime?.is_processing) throw new Error('任务正在执行，未更改权限');
   await api('POST', `/api/conversations/${id}/runtime/${info.runtime?.has_task ? 'restart' : 'ensure'}`, {});
 }
-export async function ensureTaskPermissions(c: Conv) {
-  if (c.agentId) return;
-  const policy = c.sideOf ? 'side:readonly' : c.personal ? `personal:${personalCoreMode(c)}` : `${S.prefs.allowInstall}:${S.permission}`;
-  const mode = c.sideOf ? 'default' : c.personal ? personalCoreMode(c) : effectiveMode(S.permission);
-  // Old runtimes may remember "always allow". Recreate once before applying restrictive settings.
-  if (mode !== 'yolo' && applied.get(c.id) !== policy) await resetApprovals(c.id);
-  // Creating a conversation does not start its agent. Ensure also restores an
-  // unloaded runtime without restarting an existing one or clearing approvals.
-  else await api('POST', `/api/conversations/${c.id}/runtime/ensure`, {});
+/** `restarted`：调用方刚在本次发送里重启过这个运行时（PA-LATENCY-01），旧的「总是允许」已经清掉，不再重启第二次 */
+export async function ensureTaskPermissions(c: Conv, restarted = false) {
+  const plan = permissionPlan(c);
+  if (!plan) return;
+  const { policy, mode } = plan;
+  // 刚重启过：运行时已就绪且没有旧许可，直接设置模式
+  if (!restarted) {
+    // Old runtimes may remember "always allow". Recreate once before applying restrictive settings.
+    if (mode !== 'yolo' && applied.get(c.id) !== policy) await resetApprovals(c.id);
+    // Creating a conversation does not start its agent. Ensure also restores an
+    // unloaded runtime without restarting an existing one or clearing approvals.
+    else await api('POST', `/api/conversations/${c.id}/runtime/ensure`, {});
+  }
   await api('PUT', `/api/conversations/${c.id}/config-options/mode`, { value: mode });
   applied.set(c.id, policy);
 }
@@ -49,13 +48,15 @@ export async function savePreference(name: string, value: string | number | bool
     }
     if (name === 'allowInstall') {
       if (!['ask', 'allow', 'deny'].includes(String(value))) throw new Error('无效权限');
-      if (Object.values(S.running).some(Boolean)) throw new Error('请先停止正在执行的任务，再调整命令权限');
+      // REFACTOR-01 模块 4：只有受这项设置影响的任务在运行时才拒绝；手机、外部 Agent、个人助理、侧边聊天不受影响
+      if (installBlockers().length) throw new Error('请先停止正在执行的任务，再调整命令权限');
       // Saved only after existing desktop runtimes acknowledge the policy. Every send reapplies it too.
-      for (const t of S.teams) if (t.core) await api('POST', `/api/teams/${t.core.id}/session-mode`, { mode: effectiveMode(S.permission, value) });
-      for (const c of S.convs.filter(c => c.remote && !c.agentId && !coreTeamOf(c.id))) {
+      for (const t of S.teams) if (t.core) await api('POST', `/api/teams/${t.core.id}/session-mode`, { mode: effectiveMode(S.permission, String(value)) });
+      for (const c of installAffected(String(value))) {
+        const plan = permissionPlan(c, String(value))!;
         await resetApprovals(c.id);
-        await api('PUT', `/api/conversations/${c.id}/config-options/mode`, { value: c.sideOf ? 'default' : c.personal ? personalCoreMode(c) : effectiveMode(S.permission, value) });
-        applied.set(c.id, `${value}:${S.permission}`);
+        await api('PUT', `/api/conversations/${c.id}/config-options/mode`, { value: plan.mode });
+        applied.set(c.id, plan.policy);
       }
     }
     update(s => { s.prefs[name] = value; });

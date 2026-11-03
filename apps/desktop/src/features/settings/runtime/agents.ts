@@ -1,6 +1,9 @@
-import { api, getEndpoint } from '@/core/client';
+import { agentRow } from '@/state/agentCatalog';
+export { agentRow, logoUrl } from '@/state/agentCatalog';
+import { api } from '@/core/client';
 import { S, update } from '@/state/store';
 import { cachedOptions, choiceName, effortOption, modelOption } from './agentOptions';
+import { canPin } from './agentState';
 import type { Conv } from '@/state/types';
 
 /* ===== 其他 Agent（Codex CLI、Claude Code、Pi……）：由核心检测本机已安装的 CLI =====
@@ -16,8 +19,7 @@ export interface AgentRow {
 
 /** 核心内置的原生 Agent 就是 Lom 本身，不单独列出 */
 const isLom = (a: AgentRow) => a.agent_source === 'internal';
-export const usable = (a?: AgentRow) => !!a && a.installed && a.enabled && a.status !== 'missing' && a.status !== 'offline';
-export const logoUrl = (icon?: string) => (icon && icon.startsWith('/') && getEndpoint() ? getEndpoint()!.url + icon : icon || '');
+export const usable = (a?: AgentRow) => !!a && canPin(a);
 
 /** 核心里同一个 Agent 可能有两条（ACP 接入和网关接入）。Lom 用 ACP 启动外部 Agent，同名只留一条：优先 ACP 那条 */
 export function dedupeAgents(rows: AgentRow[]): AgentRow[] {
@@ -50,7 +52,6 @@ export async function testAgent(id: string) {
   return row;
 }
 
-export const agentRow = (id?: string) => (id ? S.agentCatalog?.find(a => a.id === id) : undefined);
 
 /** 切换器里的 Agent：用户添加过、且核心仍然认识的 */
 export const pinnedAgents = () => S.agentPins.map(id => agentRow(id)).filter((a): a is AgentRow => !!a);

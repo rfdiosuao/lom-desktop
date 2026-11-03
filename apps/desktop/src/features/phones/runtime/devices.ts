@@ -1,4 +1,5 @@
 import { syncPhoneName } from './deviceName';
+import { dropLink, observeDevice } from './deviceLink';
 import { syncDeviceStatus } from './deviceStatus';
 import { DeviceTransitions } from './deviceTransitions';
 import { toast } from '@/shared/overlays/controller';
@@ -78,6 +79,7 @@ function addPhone(s: AppState, id: string) {
 }
 
 export function dropPhone(s: AppState, id: string) {
+  dropLink(id);
   s.phoneOrder = s.phoneOrder.filter(x => x !== id);
   delete s.lit[id];
   delete s.agents[id];
@@ -101,6 +103,7 @@ export function applyDevices(list: CloudDevice[]) {
       };
       if (!d.online) { next.battery = undefined; next.network = undefined; }
       s.agents[d.id] = next;
+      observeDevice(d.id, !!d.online);
       if (!s.phoneOrder.includes(d.id)) addPhone(s, d.id);
     }
     for (const id of [...s.phoneOrder]) if (s.agents[id]?.real && !ids.has(id)) dropPhone(s, id);
@@ -111,23 +114,48 @@ export function applyDevices(list: CloudDevice[]) {
 }
 
 /** 刷新手机列表与在线状态；未登录时移除所有真实手机（只影响界面，云端绑定不变） */
+let syncing: { current: () => boolean; promise: Promise<void> } | undefined;
 export async function syncDevices() {
   syncDeviceAccount();
-  if (S.cloud !== 'signed-in') {
-    transitions.observe(undefined, [], false);
-    return;
-  }
-  try {
-    const isCurrent = authAccount();
-    const list = await listDevices();
-    if (isCurrent()) { applyDevices(list); for (const d of list) if (d.online) { void syncDeviceStatus(d.id); void syncPhoneName(d.id, d.name).catch(() => { /* Old/offline APK: retry next refresh, never claim synced. */ }); } }
-  } catch (e) {
-    /* 后台刷新：网络暂时不通时保留上一次的列表，下个周期再试 */
-    console.warn('读取手机列表失败', e);
-  }
+  if (S.cloud !== 'signed-in') { transitions.observe(undefined, [], false); return; }
+  if (syncing?.current()) return syncing.promise;
+  const current = authAccount();
+  const entry = { current, promise: Promise.resolve() };
+  entry.promise = (async () => {
+    try {
+      const list = await listDevices();
+      if (!current()) return;
+      applyDevices(list);
+      for (const d of list) if (d.online) {
+        void syncDeviceStatus(d.id);
+        void syncPhoneName(d.id, d.name).catch(() => { /* Old/offline APK: retry next refresh, never claim synced. */ });
+      }
+    } catch (e) {
+      // Keep the last snapshot; an explicit recovery or the next poll may retry.
+      console.warn('读取手机列表失败', e);
+    }
+  })().finally(() => { if (syncing === entry) syncing = undefined; });
+  syncing = entry;
+  return entry.promise;
 }
-
-/** 每 15 秒刷新一次在线状态（R01 §2.8 第一版范围：电脑端轮询） */
+/** If a wake event joined an old request, make one fresh attempt after it settles. */
+export async function refreshDevicesNow() {
+  const current = authAccount(), pending = syncing?.current();
+  await syncDevices();
+  if (pending && current()) await syncDevices();
+}
+let deviceTimer:ReturnType<typeof setInterval>|undefined;
+const refreshOnWake=()=>{if(!document.hidden)void refreshDevicesNow();};
+/** Poll normally, and refresh immediately when the desktop resumes or regains its network. */
 export function startDevicesTimer() {
-  window.setInterval(() => { void syncDevices(); }, 15_000);
+  if(deviceTimer)return;
+  deviceTimer=window.setInterval(()=>{void syncDevices();},15000);
+  window.addEventListener('online',refreshOnWake);
+  document.addEventListener('visibilitychange',refreshOnWake);
+}
+export function stopDevicesTimer() {
+  if(deviceTimer!==undefined)clearInterval(deviceTimer);
+  deviceTimer=undefined;
+  window.removeEventListener('online',refreshOnWake);
+  document.removeEventListener('visibilitychange',refreshOnWake);
 }

@@ -8,7 +8,7 @@ import { useStore } from '@/state/store';
 /* ===== 中栏左上角的 Agent 切换器（替代原来的后退 / 前进）=====
  * 新任务页：选择接下来用哪个 Agent；已有任务：显示它的 Agent，切换会回到新任务页。手机模式不显示。 */
 
-export function AgentSwitch() {
+export function AgentSwitch({ compact = false }: { compact?: boolean }) {
   const s = useStore();
   useEffect(() => { if (s.conn === 'ready' && !s.agentCatalog) void loadAgents(); }, [s.conn, s.agentCatalog]);
   const c = s.route.name === 'chat' ? conv(s.activeConv) : undefined;
@@ -18,10 +18,10 @@ export function AgentSwitch() {
   const name = id ? a?.name || c?.agentName || '其他 Agent' : 'Lom';
   const logo = id ? logoUrl(a?.icon) : '/logo.png';
   return (
-    <button type="button" className="agent-switch" aria-haspopup="menu" aria-label={`当前 Agent：${name}。点击切换`}
+    <button type="button" className={`agent-switch${compact ? ' agent-switch--compact' : ''}`} title={name} aria-haspopup="menu" aria-label={`当前 Agent：${name}。点击切换`}
       onClick={e => openMenu('agentSwitch', e.currentTarget, { key: 'agsw' })}>
       {logo ? <img className="agent-switch__logo" src={logo} alt="" /> : <Icon name="cube" />}
-      <span className="agent-switch__name">{name}</span>
+      {!compact && <span className="agent-switch__name">{name}</span>}
       <Icon name="chevron" />
     </button>
   );

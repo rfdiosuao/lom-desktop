@@ -1,6 +1,8 @@
-import { resolveLomId } from '@/features/account/runtime/modelBinding';
-import { LOM_PROVIDER_NAME } from '@/features/account/runtime/builtin';
+import { resolveLomId } from '@/core/modelBinding';
+import { LOM_PROVIDER_NAME } from '@/core/builtin';
 import { S } from './store';
+import { describeCron, zoneName } from '@/shared/lib/cronText';
+import { fmtTime } from '@/shared/lib/util';
 import type { Agent, Conv, ModelOption, Schedule } from './types';
 
 /* ===== 读取器：从状态树派生数据，不修改状态 ===== */
@@ -30,6 +32,8 @@ export const convsOf = (owner: string) => S.convs.filter(c => c.owner === owner)
 export const team = (id?: string) => S.teams.find(t => t.id === id);
 /** 这个会话属于哪个跑在内核团队模式上的 OPC 团队（Leader 或本机 Agent 成员） */
 export const coreTeamOf = (convId?: string) => (convId ? S.teams.find(t => t.core && (t.leaderConv === convId || Object.values(t.memberConvs || {}).includes(convId))) : undefined);
+/** 手机状态说明：示例手机不显示真实在线状态（UI-AUDIT-02 UI-01） */
+export const phoneStatusText = (a: Agent) => (!a.real ? '示例 · 不执行任务' : a.status === 'online' ? '在线' : '离线');
 export const personaOf = (a: Agent) => (a.kind === 'phone' ? a.real ? (a.soulConfigured === undefined ? '人格待同步' : a.soulConfigured ? '已配置人格' : '未配置人格') : a.persona || '未配置人格' : a.persona);
 
 const LOM_TIERS = [
@@ -93,6 +97,20 @@ export const currentPcModel = (): ModelOption | undefined => {
 };
 export const modelName = (id: string) => model(id)?.name ?? '选择模型';
 
+/** 会话自己的模型：输入框按钮、模型菜单和发送共用这一份（带会话 lomTier）。
+ *  后台发送不受前台另一条会话或新任务页的选择影响；只有还没记录模型的旧会话才用当前选择（UI-AUDIT-02 UI-03） */
+export function convModel(c: Conv): ModelOption | undefined {
+  if (c.modelId) return modelChoice(c.modelId, c.lomTier);
+  return c.sideOf ? undefined : currentPcModel();
+}
+/** 会话模型的按钮文字：失效时保留原模型名并提示重新选择，不静默显示成别的模型 */
+export function convModelLabel(c: Conv): string {
+  const m = convModel(c);
+  if (m && !m.unavailable) return m.name;
+  const original = m?.name ?? (c.lomTier ? LOM_TIERS.find(t => t.tier === c.lomTier)?.name : c.modelId && phoneModelLabel(c.modelId));
+  return original ? `${original} · 需重新选择` : '选择模型';
+}
+
 /** 当前积分；未登录时为 null */
 export const quotaLeft = () => S.points?.total ?? null;
 
@@ -115,14 +133,35 @@ export const attached = (key?: string): string[] => {
 };
 
 export const freqText = (s: Schedule) => {
-  if (s.freq === 'custom') return `${s.scheduleDescription || s.cron || '自定义时间'}${s.timezone ? ` · ${s.timezone}` : ''}`;
-  const every = Number(s.every);
   /* 任务的时区和本机不同时标出来，避免把北京时间 9 点看成本地 9 点 */
-  const tz = s.timezone && s.timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone ? ` · ${s.timezone}` : '';
+  const foreign = !!s.timezone && s.timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (s.freq === 'custom') {
+    // UI-AUDIT-02 UI-06：自定义表达式优先给自然语言；解释不了保留原值并标注需核对，原始 cron 见 scheduleDetail
+    const human = s.scheduleDescription || (s.cron ? describeCron(s.cron) : null);
+    if (human) return `${human}${foreign ? `（${zoneName(s.timezone!)}）` : ''}`;
+    return s.cron ? `${s.cron}${s.timezone ? ` · ${s.timezone}` : ''}（需核对）` : '自定义时间';
+  }
+  const every = Number(s.every);
+  const tz = foreign ? ` · ${s.timezone}` : '';
   if (s.freq === 'daily') return `每天 ${s.time}${tz}`;
   if (s.freq === 'weekly') return `每周${s.days.map(d => '日一二三四五六'[d]).join('、')} ${s.time}${tz}`;
   if (s.freq === 'interval') return `每 ${every >= 60 && every % 60 === 0 ? `${every / 60} 小时` : `${every} 分钟`}`;
   return s.time || '一次';
 };
 
+/* UI-AUDIT-02 UI-07：技能商店和定时任务页用不到作品工作区，默认不占位；用户在这些页手动展开后记住偏好 */
+const WORKSPACE_OPTIONAL = new Set(['skillhub', 'schedule', 'phone-schedule']);
+export const workspaceOptional = (route = S.route.name) => WORKSPACE_OPTIONAL.has(route);
+export const rightHidden = (s: Pick<typeof S, 'route' | 'layout'> = S) =>
+  s.route.name === 'settings' || (workspaceOptional(s.route.name) ? !s.layout.rightOnPages : s.layout.rightCollapsed);
+
 export const installedOn = (id: string) => Object.entries(S.installed).filter(([, ids]) => ids.includes(id)).map(([a]) => a);
+
+/** 核心返回的下次执行时间（next_run）；暂停或未知时为空 */
+export const nextRunText = (s: Schedule) => {
+  const next = s.enabled && s.nextRun ? new Date(s.nextRun) : null;
+  return next ? `下次 ${next.getMonth() + 1}月${next.getDate()}日 ${fmtTime(next.getTime())}` : '';
+};
+/** 定时任务的补充信息：原始 cron 与时区，加上下次执行时间；用于悬停提示 */
+export const scheduleDetail = (s: Schedule) =>
+  [s.cron ? `cron ${s.cron}${s.timezone ? ` · ${s.timezone}` : ''}` : '', nextRunText(s)].filter(Boolean).join(' · ');

@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 vi.mock('@/shared/overlays/controller', () => ({ toast: vi.fn(), toastError: vi.fn() }));
 import { S, update } from '@/state/store';
 import { api } from '@/core/client';
+import { toast } from '@/shared/overlays/controller';
 import { addAssistant, loadAssistants, storeAssistant } from './catalog';
 import { requestPermissionTier, permissionTier, applyPersonalPermission } from './permissions';
 vi.mock('@/core/client', async load => ({ ...await load<typeof import('@/core/client')>(), api: vi.fn(async () => ({})) }));
@@ -55,6 +56,18 @@ it('PA-PERM-01 persists a deferred failure without retrying on every state updat
   await requestPermissionTier(a, 'ask'); vi.mocked(api).mockRejectedValueOnce(new Error('offline'));
   update(s => { delete s.running.c; }); await vi.waitFor(() => expect(loadAssistants().items[0].permissionError).toContain('personal.permission_apply_failed'));
   update(); update(); expect(api).toHaveBeenCalledTimes(1); expect(permissionTier(loadAssistants().items[0])).toBe('routine');
+});
+it('UI-AUDIT-03 AC-9 未设档位的旧助理迁移后提示一次，提示指向「助理权限」', async () => {
+  const legacy = await addAssistant('A'); legacy.conversation = 'c'; delete legacy.permission; delete legacy.permissionMigrated; storeAssistant(legacy);
+  await applyPersonalPermission(legacy);
+  expect(toast).toHaveBeenCalledExactlyOnceWith('已改为「常用操作自动」，可在「助理权限」里调整', 'shield');
+  expect(permissionTier(loadAssistants().items[0])).toBe('routine');
+  await applyPersonalPermission(legacy);
+  expect(toast).toHaveBeenCalledOnce();
+  // 用户自己选过档位的旧助理不提示
+  const chosen = await addAssistant('B'); chosen.conversation = 'd'; chosen.permission = 'ask'; delete chosen.permissionMigrated; storeAssistant(chosen);
+  await applyPersonalPermission(chosen);
+  expect(toast).toHaveBeenCalledOnce();
 });
 it('PA-PERM-01 unknown persisted tier cannot silently grant automatic reads', async () => {
   const a = await addAssistant('A'); a.permission = 'untrusted' as never;

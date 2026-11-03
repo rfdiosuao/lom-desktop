@@ -1,3 +1,4 @@
+import { lockPersonalConfiguration, personalConfigUpdating } from './configurationLock';
 import { api } from '@/core/client';
 import { authAccount, onAuthChange } from '@/features/account/runtime/authScope';
 import { S, update, watchStore } from '@/state/store';
@@ -8,7 +9,6 @@ export type PermissionTier = 'ask' | 'routine' | 'full';
 export const permissionTier = (a: PersonalAssistant): PermissionTier => a.permission === undefined ? 'routine' : ['ask', 'routine', 'full'].includes(a.permission) ? a.permission : 'ask';
 export const permissionLabels: Record<PermissionTier, string> = { ask: '每次询问', routine: '常用操作自动', full: '完全访问' };
 const deferred = new Map<string, () => void>();
-const applying = new Set<string>();
 function owned(a: PersonalAssistant) {
   const owner = accountId(), saved = loadAssistants(owner).items.find(x => x.id === a.id && x.directory === a.directory && x.conversation === a.conversation);
   if (!saved) throw new Error('账号没有这位助理或会话归属已变化');
@@ -18,9 +18,8 @@ function owned(a: PersonalAssistant) {
 export async function applyPersonalPermission(a: PersonalAssistant) {
   const { owner, saved } = owned(a), current = authAccount();
   if (saved.conversation && S.running[saved.conversation]) { schedule(saved, owner); return; }
-  const id = `${owner}:${saved.id}`;
-  if (applying.has(id)) throw new Error('personal.permission_apply_failed: 权限正在更新，请稍后重试');
-  applying.add(id);
+  const id = saved.conversation ?? `${owner}:${saved.id}`;
+  const release = lockPersonalConfiguration(id);
   const target = saved.permissionPending ?? permissionTier(saved);
   try {
     if (saved.conversation && saved.permissionPending) {
@@ -41,7 +40,7 @@ export async function applyPersonalPermission(a: PersonalAssistant) {
     const migrated = !latest.permissionMigrated && a.permission === undefined;
     latest.permissionMigrated = true; storeAssistant(latest, owner); Object.assign(a, latest);
     delete a.permissionPending; delete a.permissionError;
-    if (migrated) toast('已改为常用操作自动，可在助理设置里调整', 'shield');
+    if (migrated) toast('已改为「常用操作自动」，可在「助理权限」里调整', 'shield');
     update();
   } catch (e) {
     if (!current()) throw new Error('账号已切换，权限更新结果未应用到本机配置');
@@ -49,13 +48,17 @@ export async function applyPersonalPermission(a: PersonalAssistant) {
     delete latest.permissionPending; latest.permissionError = 'personal.permission_apply_failed：核心未确认权限更新，保留原档位';
     storeAssistant(latest, owner); update();
     throw new Error(latest.permissionError, { cause: e });
-  } finally { applying.delete(id); }
+  } finally {
+    // A core-busy result just queued this operation. Do not immediately wake its
+    // watcher again via our own unlock notification; retain the existing next-state retry.
+    release(!deferred.has(`${owner}:${saved.id}`));
+  }
 }
 function schedule(a: PersonalAssistant, owner: string) {
   const current = authAccount(), id = `${owner}:${a.id}`;
   deferred.set(id, () => {
     if (!current()) { deferred.delete(id); return; }
-    if (a.conversation && S.running[a.conversation]) return;
+    if (a.conversation && (S.running[a.conversation] || personalConfigUpdating(a.conversation))) return;
     deferred.delete(id);
     void applyPersonalPermission(a).catch(e => toastError('权限档位更新失败', e));
   });
@@ -65,7 +68,7 @@ onAuthChange(() => { deferred.clear(); });
 export async function requestPermissionTier(a: PersonalAssistant, tier: PermissionTier) {
   if (!['ask', 'routine', 'full'].includes(tier)) throw new Error('无效权限档位');
   const { owner, saved } = owned(a);
-  if (applying.has(`${owner}:${saved.id}`)) throw new Error('权限正在更新，请稍后重试');
+  if (personalConfigUpdating(saved.conversation ?? `${owner}:${saved.id}`)) throw new Error('助理配置正在更新，请稍后重试');
   saved.permissionPending = tier; storeAssistant(saved, owner);
   if (saved.conversation && S.running[saved.conversation]) { schedule(saved, owner); update(); return; }
   await applyPersonalPermission(saved);

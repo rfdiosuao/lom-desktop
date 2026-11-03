@@ -1,9 +1,14 @@
 # Desktop source changes
 
-## Unreleased
+## 0.3.4 — 2026-11-02
 
-- Windows 使用 Lom 自己的顶栏和最小化 / 最大化 / 关闭按钮，不再显示系统深色标题栏；保留拖动、双击最大化和边缘缩放。
-- 启动 lom-core 时不再创建可见控制台窗口，避免打开桌面应用时额外弹出终端。
+Community source snapshot synced from the commercial desktop 0.3.4 and sanitized before import:
+
+- Branded Mac DMG drag-to-install layout.
+- Personal Agent custom image avatars with crop, zoom, preview and fallback.
+- Unified searchable plugin / skill / agent catalog.
+- Team leader defaults, workbench file browser, cleaner first-run state, chat activity timing and context recovery.
+- No account, billing, model gateway, phone pairing relay, commercial server, deployment assets or automatic update endpoint is included.
 
 ## 0.1.6 — 2026-10-18
 

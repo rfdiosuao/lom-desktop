@@ -1,4 +1,6 @@
+import { Markdown } from '@/shared/ui/Markdown';
 import { cardNavigation, type CardNavigation } from './cardNavigation';
+import { CardOpen } from './CardOpen';
 import { useRef, useState } from 'react';
 import { Badge } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
@@ -53,7 +55,7 @@ export function TaskCard({ task, identity, navigation }: Props) {
       )}
 
       {description.length > 0 && (
-        <div ref={descRef} className="act-card__body act-card__body--desc" style={expanded ? undefined : clampStyle(2)}>{description}</div>
+        <div ref={descRef} className="act-card__body act-card__body--desc msg__text" style={expanded ? undefined : clampStyle(2)}><Markdown text={description} /></div>
       )}
 
       <footer className="act-card__foot">
@@ -62,6 +64,7 @@ export function TaskCard({ task, identity, navigation }: Props) {
             {expanded ? '收起' : '展开'}
           </button>
         )}
+        <CardOpen navigation={navigation} />
         <time className="act-card__time" title={time.full}>{time.label}</time>
       </footer>
     </article>

@@ -33,10 +33,11 @@ export const closeModal = (force?: unknown) => {
 };
 export const topModal = () => S.modals[S.modals.length - 1];
 
-export const confirm = (p: { title: string; desc?: string; okText?: string; danger?: boolean; onOk: () => void }) =>
+export const confirm = (p: { title: string; desc?: string; okText?: string; cancelText?: string; danger?: boolean; onOk: () => void }) =>
   openModal('confirm', { okText: '确定', ...p });
 
-export const prompt = (p: { title: string; label: string; value?: string; placeholder?: string; okText?: string; extra?: ReactNode; onOk: (v: string) => void }) => {
+/** validate 返回错误文案时弹窗保持打开，输入与其他草稿保留 */
+export const prompt = (p: { title: string; label: string; value?: string; placeholder?: string; okText?: string; extra?: ReactNode; validate?: (v: string) => string | undefined; onOk: (v: string) => void }) => {
   S.form = { value: p.value ?? '' };
   openModal('prompt', { okText: '保存', ...p });
 };

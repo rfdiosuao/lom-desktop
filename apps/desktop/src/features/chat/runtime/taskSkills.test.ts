@@ -6,12 +6,20 @@ vi.mock('@/core/client', () => ({ api: vi.fn(), getEndpoint: () => null }));
 beforeEach(() => {
   vi.resetAllMocks();
   S.cloud = 'signed-out'; S.account = null; S.model = 'own::fixture'; S.agentPick = '';
+  S.convs = []; S.running = {}; S.effortPick = '';
   S.providers = [{ id: 'own', name: 'Own', platform: 'openai', base_url: '', models: ['fixture'], enabled: true, created_at: 1 }];
   vi.mocked(api).mockImplementation(async (method, path, body: any) => {
     if (path === '/api/skills') return [{ name: 'local-writer', source: 'custom' }];
     if (method === 'POST' && path === '/api/conversations') return { id: 'new-skill-task', type: 'aionrs', model: body.model, extra: body.extra };
     return { model: { provider_id: 'own', model: 'fixture' }, runtime: {}, turn_id: 'turn' };
   });
+});
+it.each(['none', ''])('EFFORT-02 AC-1 new task creation preserves effort %s and sends the prompt once', async effort => {
+  S.effortPick = effort;
+  expect(await startDesktopTask('respond quickly', [], { agent: null })).toBe('new-skill-task');
+  await vi.waitFor(() => expect(vi.mocked(api).mock.calls.filter(([method, path]) => method === 'POST' && path.endsWith('/messages'))).toHaveLength(1));
+  const create = vi.mocked(api).mock.calls.find(([method, path]) => method === 'POST' && path === '/api/conversations');
+  expect((create?.[2] as { extra: { reasoning_effort?: string } }).extra.reasoning_effort).toBe(effort || undefined);
 });
 it('D09 ordinary new Lom tasks include the actual local personal skill in the creation request', async () => {
   expect(await startDesktopTask('use my installed skill', [], { agent: null })).toBe('new-skill-task');

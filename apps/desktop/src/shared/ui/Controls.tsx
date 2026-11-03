@@ -7,12 +7,13 @@ import { Icon } from './Icon';
 
 export interface SegOption<V extends string> { value: V; label?: string; ic?: string; title?: string; addon?: ReactNode; }
 
-/* 分段控件；选项可带 addon（嵌在同一个胶囊里的小按钮，例如「手机」里的「+」） */
-export function Seg<V extends string>({ options, value, onChange, variant, block }: {
-  options: SegOption<V>[]; value: V; onChange: (v: V) => void; variant?: 'brand'; block?: boolean;
+/* 分段控件；选项可带 addon（嵌在同一个胶囊里的小按钮，例如「手机」里的「+」）。
+ * label 是这组选项的无障碍名称；size="sm" 与 --h-sm 按钮同高 */
+export function Seg<V extends string>({ options, value, onChange, variant, block, label, size }: {
+  options: SegOption<V>[]; value: V; onChange: (v: V) => void; variant?: 'brand'; block?: boolean; label?: string; size?: 'sm';
 }) {
   return (
-    <div className={cx('seg', variant && `seg--${variant}`, block && 'seg--block')} role="radiogroup">
+    <div className={cx('seg', variant && `seg--${variant}`, size && `seg--${size}`, block && 'seg--block')} role="radiogroup" aria-label={label ? t(label) : undefined}>
       {options.map(o => {
         const on = o.value === value;
         const opt = (

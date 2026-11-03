@@ -1,3 +1,4 @@
+import { profileRules } from '@/features/capabilities/runtime/profiles';
 import { api, getEndpoint } from '@/core/client';
 import { acpExtra, type AgentRow } from './agents';
 import { EXCLUDED_AUTO_SKILLS } from './agentRules';
@@ -16,10 +17,11 @@ function pickedEffort(a: AgentRow) {
 
 /** Warm only the selected Codex conversation; never send a prompt or change its model. */
 export function agentTaskExtra(a: AgentRow, folder: string) {
-  const effort = pickedEffort(a);
+  const effort = pickedEffort(a), rules = profileRules(`ag:${a.id}`);
   return { ...acpExtra(a), ...(folder ? { workspace: folder } : {}),
     session_mode: perm(S.permission).coreMode === 'yolo' ? 'yolo' : 'default',
     exclude_auto_inject_skills: EXCLUDED_AUTO_SKILLS,
+    ...(rules ? { preset_context: rules } : {}),
     ...(effort ? { thought_level: effort } : {}),
     ...(S.agentModelPick[a.id] ? { current_model_id: S.agentModelPick[a.id] } : {}) };
 }
@@ -46,7 +48,9 @@ function dispose(p: Prepared) {
 /** Called on composer focus. The returned disposer retires only this preparation. */
 export function prepareAgentTask(a: AgentRow, folder: string): () => void {
   if (a.backend !== 'codex' || !getEndpoint()) return () => {};
-  const extra = agentTaskExtra(a, folder), key = JSON.stringify(extra);
+  let extra: ReturnType<typeof agentTaskExtra>;
+  try { extra = agentTaskExtra(a, folder); } catch { console.warn('agent.warmup_profile_unavailable'); return () => {}; } // Normal creation reports the configuration error.
+  const key = JSON.stringify(extra);
   if (prepared) dispose(prepared);
   const p: Prepared = { key, endpoint: getEndpoint(), account: S.account?.id,
     created: Promise.resolve(null), claimed: false, disposed: false };

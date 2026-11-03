@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { S } from '@/state/store';
 const mock = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('@/core/client', () => ({ api: mock.api, getEndpoint: () => null }));
-vi.mock('./cancel', () => ({ stopTask: vi.fn(), trackPendingSend: () => () => false, isTaskStopping: () => false, hasUnconfirmedSend: () => false, isCompletedTurn: () => false }));
+vi.mock('./cancel', () => ({ stopTask: vi.fn(), trackPendingSend: () => () => false, isTaskStopping: () => false, hasUnconfirmedSend: () => false, isCompletedTurn: () => false, sendBlocker: () => undefined }));
 import { openSideChat, closeSideChat, SIDE_CONTEXT_OPEN } from './sideChat';
 import { stopTask } from './cancel';
 import { ensureTaskPermissions } from '@/features/settings/runtime/preferences';

@@ -11,10 +11,13 @@ export interface Tier {
   tier: number; name: string; enabled: boolean; web_search?: boolean;
   price_month?: number | null; price_quarter?: number | null; price_year?: number | null;
   daily_points?: number; models?: ModelKey[]; max_phones?: number; discount_pct?: number;
+  /** 这一档可以经爱猹收购买（SUB-AICHASHOU-01） */
+  aichashou?: boolean;
 }
 export interface PlanInfo { tier: number | null; name: string; ends_at: number | null; models: ModelKey[]; max_phones: number; discount_pct: number; daily_points: number }
-export interface Plans { tiers: Tier[]; free: PlanInfo; online_payment: boolean }
-export interface Subscription { plan: PlanInfo; next_tier: number | null; next_days: number | null }
+/** `aichashou`：服务端已接入爱猹收，可以在线购买积分（PAY-AICHASHOU-01） */
+export interface Plans { tiers: Tier[]; free: PlanInfo; online_payment: boolean; aichashou?: boolean }
+export interface Subscription { plan: PlanInfo; next_tier: number | null; next_days: number | null; points?: NonNullable<typeof S.points> }
 
 export const MODEL_NAMES: Record<ModelKey, string> = { pro: 'Lom Pro', max: 'Lom Max', mini: 'Lom Mini' };
 
@@ -34,8 +37,9 @@ export function loadPlans(): Promise<void> {
       ]);
       if (!isCurrent()) return;
       update(s => {
-        s.plans = { tiers: [...plans.tiers].sort((a, b) => a.tier - b.tier), free: plans.free, online_payment: plans.online_payment };
+        s.plans = { tiers: [...plans.tiers].sort((a, b) => a.tier - b.tier), free: plans.free, online_payment: plans.online_payment, aichashou: !!plans.aichashou };
         s.subscription = { plan: sub.plan, next_tier: sub.next_tier, next_days: sub.next_days };
+        if (sub.points) s.points = sub.points;
         s.plansError = '';
       });
     } catch (e) {

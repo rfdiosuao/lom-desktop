@@ -11,6 +11,7 @@ fn feishu_status_distinguishes_unconfigured_bot_only_and_authorized() {
             authorized: false,
             auth: None,
             generation: 0,
+            listener_running: false,
             connected: false
         }
     );
@@ -23,6 +24,7 @@ fn feishu_status_distinguishes_unconfigured_bot_only_and_authorized() {
             authorized: false,
             auth: None,
             generation: 0,
+            listener_running: false,
             connected: false
         }
     );
@@ -37,6 +39,7 @@ fn feishu_status_distinguishes_unconfigured_bot_only_and_authorized() {
             authorized: false,
             auth: None,
             generation: 0,
+            listener_running: false,
             connected: false
         }
     );
@@ -62,4 +65,14 @@ fn feishu_reads_the_authorization_link_and_device_code() {
         None
     );
     assert_eq!(parse_login_start(r#"{"ok":false}"#), None);
+}
+
+#[test]
+fn feishu_health_01_authorization_never_proves_listener_health() {
+    let status = parse_status(r#"{"appId":"cli_a1","identity":"user"}"#);
+    assert!(status.authorized && status.connected);
+    assert!(!status.listener_running);
+    assert!(!crate::feishu_gateway::running(
+        &crate::feishu_gateway::FeishuGateway::default()
+    ));
 }

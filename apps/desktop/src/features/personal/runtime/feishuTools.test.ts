@@ -66,3 +66,26 @@ it('FEISHU-MULTI missing native scoped generation never falls back to account cr
  expect((await executeFeishuTool(call())).isError).toBe(true);
  expect(m.invoke.mock.calls.some(c=>c[0]==='feishu_tool_execute')).toBe(false);
 });
+it.each(['feishu_create_doc', 'feishu_append_doc', 'feishu_send_file', 'feishu_send_image'])('FEISHU-DELIVERY-01 AC1 writers require approval and retain unknown outcomes: %s', async name => {
+ const c = call(name, { title: 'Report', content: 'body', path: '/tmp/report.pdf', chat_id: 'oc_test' });
+ expect((await executeFeishuTool(c)).isError).toBe(true);
+ const approved = { ...c, id: crypto.randomUUID() }, approve = vi.fn().mockResolvedValue(true);
+ m.invoke.mockImplementation(async cmd => { if(cmd==='feishu_status') return {app_id:'cli_a',authorized:true,generation:1}; throw Error('feishu.outcome_unknown'); });
+ await executeFeishuTool(approved,{approve}); await executeFeishuTool(approved,{approve});
+ expect(approve).toHaveBeenCalledTimes(1);
+ expect(m.invoke.mock.calls.filter(([cmd])=>cmd==='feishu_tool_execute')).toHaveLength(1);
+});
+it('FEISHU-DELIVERY-01 AC1 approved file parameters remain owner bound and changed replay is rejected', async () => {
+ const c = call('feishu_send_file', { chat_id: 'oc_test', path: '/Users/owner/Desktop/report.md' });
+ const approve = vi.fn().mockResolvedValue(true);
+ expect((await executeFeishuTool(c, { approve })).isError).toBe(false);
+ expect(approve).toHaveBeenCalledWith(expect.objectContaining({ arguments: { chat_id: 'oc_test', path: '/Users/owner/Desktop/report.md' } }));
+ expect((await executeFeishuTool({ ...c, arguments: JSON.stringify({ chat_id: 'oc_other', path: '/private/report.md' }) }, { approve })).isError).toBe(true);
+ expect(m.invoke.mock.calls.filter(([cmd])=>cmd==='feishu_tool_execute')).toHaveLength(1);
+});
+it('FEISHU-DELIVERY-01 AC1 binding invalidation during approval prevents local file delivery', async () => {
+ const approve = vi.fn(async () => { S.running = {}; return true; });
+ const r = await executeFeishuTool(call('feishu_send_image', { chat_id: 'oc_test', path: '/Users/owner/Desktop/image.png' }), { approve });
+ expect(r.isError).toBe(true);
+ expect(m.invoke.mock.calls.some(([cmd])=>cmd==='feishu_tool_execute')).toBe(false);
+});

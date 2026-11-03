@@ -7,7 +7,7 @@ import { update } from '@/state/store';
  * 可选再授权：让助理以你的身份使用文档、表格、日历、任务等。
  * 凭据只在本机钥匙串里，每位个人助理各自独立。 */
 
-export interface FeishuStatus { legacy_app_id?: string; generation: number; configured: boolean; app_id?: string | null; authorized: boolean; connected?: boolean; auth?: FeishuAuthProgress | null }
+export interface FeishuStatus { legacy_app_id?: string; generation: number; configured: boolean; app_id?: string | null; authorized: boolean; connected?: boolean; listener_running?: boolean; auth?: FeishuAuthProgress | null }
 export interface FeishuAuthProgress { account: string; assistant_id: string; app_id?: string; generation: number; pending: boolean; prompt?: FeishuPrompt | null; error?: string | null; warning?: string | null }
 export interface FeishuPrompt { generation?: number; url: string; qr: string }
 export interface FeishuStep { stage: 'app' | 'auth'; account: string; assistant_id: string; app_id?: string; generation: number; ok: boolean; error?: string | null; warning?: string | null }

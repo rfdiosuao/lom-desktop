@@ -1,0 +1,19 @@
+/* ===== OPC 团队：列表、成员选择、顶栏控件（UI-AUDIT-04）=====
+ * 只用 tokens.css 的令牌；看板样式见 activity/teamActivity.css。 */
+
+/* 团队列表 */
+.team-card__meta{font-size:var(--fs-sm)}
+.team-card--new{display:flex;align-items:center;justify-content:center;min-height:150px;border-style:dashed;color:var(--muted)}
+.team-tip__head{margin-bottom:6px}
+.team-tip__desc{font-size:var(--fs-md);line-height:1.6}
+
+/* 新建团队 / 管理成员 */
+.picker-row__name{font-size:var(--fs-lg)}
+.picker-row__sub{font-size:var(--fs-sm)}
+.picker__legend{display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-sm)}
+.picker__legend .icon{color:var(--crown)}
+.member-row__name{margin-bottom:4px;font-size:var(--fs-md);font-weight:600}
+
+/* 顶栏：成员标签、按钮、分段控件、图标按钮统一为 --h-sm 高 */
+.team__bar .chip--tab{min-height:var(--h-sm);padding-top:2px;padding-bottom:2px}
+.team__bar .ibtn{width:var(--h-sm);height:var(--h-sm)}

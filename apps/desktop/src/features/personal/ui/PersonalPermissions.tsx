@@ -1,3 +1,4 @@
+import { personalConfigUpdating } from '../runtime/configurationLock';
 import { useState } from 'react';
 import { useStore } from '@/state/store';
 import { loadAssistants, type PersonalAssistant } from '../runtime/catalog';
@@ -15,10 +16,10 @@ export function PersonalPermissions({ assistant }: { assistant: PersonalAssistan
     finally { setBusy(false); }
   };
   return <section className="pa-section"><h2>助理权限</h2>
-    <select className="pa-permission-select" aria-label="助理权限档位" value={a.permissionPending ?? permissionTier(a)} disabled={busy || s.cloud !== 'signed-in'} onChange={e => void change(e.target.value as PermissionTier)}>
+    <select className="pa-permission-select" aria-label="助理权限档位" value={a.permissionPending ?? permissionTier(a)} disabled={busy || personalConfigUpdating(a.conversation) || s.cloud !== 'signed-in'} onChange={e => void change(e.target.value as PermissionTier)}>
       {(Object.keys(permissionLabels) as PermissionTier[]).map(tier => <option key={tier} value={tier}>{permissionLabels[tier]}</option>)}
     </select>
-    {a.permissionPending && <p role="status">本轮结束后生效；当前：{permissionLabels[permissionTier(a)]}</p>}
+    {a.permissionPending && <p className="pa-muted pa-status-line" role="status">本轮结束后生效；当前：{permissionLabels[permissionTier(a)]}</p>}
     <p className="pa-muted">{permissionTier(a) === 'full' ? '完全访问已开启：此助理不再逐项询问 Lom 操作权限。系统权限和第三方首次登录仍需完成。' : '常用操作自动允许只读操作；文件写入、执行命令仍需询问。切换完全访问后直接执行，无需逐项确认。'}</p>
     {(error || a.permissionError) && <p className="pa-error" role="alert">{error || a.permissionError}</p>}
   </section>;

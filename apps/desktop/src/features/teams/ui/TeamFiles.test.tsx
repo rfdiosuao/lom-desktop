@@ -18,7 +18,7 @@ let root: Root, host: HTMLDivElement;
 const tree = [{ name: '封面.png', full_path: '/home/me/Projects/团队/封面.png', is_dir: false }];
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState());
+  Object.assign(S, initialState(true));
   S.homeDir = '/home/me'; S.folder = '/work';
   S.teams[0].folder = '~/Projects/团队';
   m.api.mockReset();

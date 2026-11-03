@@ -1,30 +1,9 @@
-import { authRevision } from '@/features/account/runtime/authScope';
-import { S } from '@/state/store';
-import type { Conv } from '@/state/types';
+import { captureDelegation, invalidateDelegations, settleDelegations, trackDelegation } from '@/features/chat/runtime/turnLedger';
 
-const generations = new Map<string, number>();
-const admissions = new Map<string, Set<Promise<boolean>>>();
+/* 成员派发的代次和在途派发由会话操作记录统一持有（REFACTOR-01 模块 1）；这里保留原有对外名称。 */
 
 /** Called synchronously when stopping begins, before any cancellation requests. */
-export function invalidateDelegations(parent: string) {
-  generations.set(parent, (generations.get(parent) || 0) + 1);
-}
-
-export function captureDelegation(parent: Conv) {
-  const expected = generations.get(parent.id), currentAccount = authRevision(), account = S.account?.id;
-  return () => generations.get(parent.id) === expected && currentAccount() && S.account?.id === account && S.convs.includes(parent);
-}
+export { invalidateDelegations, captureDelegation, trackDelegation };
 
 /** Keep stop unconfirmed until in-flight admissions and any late cleanup have settled. */
-export function trackDelegation<T>(parent: string, work: Promise<T>): Promise<T> {
-  const pending = admissions.get(parent) || new Set<Promise<boolean>>();
-  const settled = work.then(() => true, () => false);
-  pending.add(settled); admissions.set(parent, pending);
-  void settled.then(() => { pending.delete(settled); if (!pending.size) admissions.delete(parent); });
-  return work;
-}
-
-export async function stopDelegationAdmissions(parent: string) {
-  const results = await Promise.all([...(admissions.get(parent) || [])]);
-  return { stopped: 0, failed: results.filter(ok => !ok).length };
-}
+export const stopDelegationAdmissions = settleDelegations;

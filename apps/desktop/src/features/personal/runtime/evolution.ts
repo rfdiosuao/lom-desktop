@@ -54,8 +54,17 @@ export function evolvePersonalTurn(c: Conv, turn: string): Promise<void> {
   return pending;
 }
 
+/** PA-LATENCY-01：发送前最多等上一轮学习这么久；学习调用可能要几十秒，不能挡住下一条消息 */
+export const LEARNING_WAIT_MS = 300;
+
+/** 等上一轮学习写完文档，最多 `LEARNING_WAIT_MS`。超时就先发送：学习队列照常进行，
+ * 改动的文档会因记忆版本变化（PA03）在之后的发送里带上。 */
 export async function waitPersonalLearning(c: Conv) {
-  if (c.personal) await queues.get(`${S.account?.id}:${c.id}`);
+  const pending = c.personal ? queues.get(`${S.account?.id}:${c.id}`) : undefined;
+  if (!pending) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([pending, new Promise<void>(resolve => { timer = setTimeout(resolve, LEARNING_WAIT_MS); })]);
+  clearTimeout(timer);
 }
 
 const quiet = (error: unknown) => /learning_schema|learning_evidence/.test(error instanceof Error ? error.message : String(error));

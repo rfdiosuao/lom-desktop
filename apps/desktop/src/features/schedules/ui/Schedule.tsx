@@ -10,7 +10,7 @@ import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Badge, Seg, Toggle } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { DemoNote, Empty, ListRow, PageHead, Search, SyncState } from '@/shared/ui/Layout';
-import { agent, freqText, phone } from '@/state/selectors';
+import { agent, freqText, phone, scheduleDetail } from '@/state/selectors';
 import { update, useStore } from '@/state/store';
 import { ago } from '@/shared/lib/util';
 import { Page } from '@/shared/ui/Page';
@@ -43,7 +43,7 @@ export function SchedulePage() {
               titleExtra={<>{x.auto && <Badge text="总指挥自动创建" tone="info" ic="eye" />}{!x.remote && !x.phoneTask && <Badge text="演示" />}{!x.enabled && <Badge text="已暂停" />}</>}
               sub={x.prompt}
               meta={<>
-                <div className="sched-meta" style={{ justifyContent: 'flex-end' }}><Icon name="repeat" />{freqText(x)}</div>
+                <div className="sched-meta" style={{ justifyContent: 'flex-end' }} title={scheduleDetail(x) || undefined}><Icon name="repeat" />{freqText(x)}</div>
                 <div className="sched-meta" style={{ justifyContent: 'flex-end' }}><Icon name={x.runIn === 'same' ? 'message' : 'plus'} />{x.runIn === 'same' ? '原窗口继续' : '新开窗口'} · {x.last ? `上次 ${ago(x.last)}` : '未运行'}</div>
               </>}
               actions={<>

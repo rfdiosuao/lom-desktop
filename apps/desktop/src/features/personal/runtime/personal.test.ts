@@ -53,6 +53,16 @@ describe('PA02 personal assistants', () => {
     expect(vi.mocked(api).mock.calls.filter(x => x[0] === 'POST' && x[1] === '/api/conversations')).toHaveLength(1);
     expect(loadAssistants().items[0].conversation).toBe('conv-a');
   });
+  it('PA-AVATAR-01 restores the saved custom avatar when reopening a personal conversation', async () => {
+    const image = 'data:image/jpeg;base64,AAAA', a = await addAssistant('小麓', '03', image);
+    vi.mocked(api).mockImplementation(async (method, path, body: any) => {
+      if (method === 'POST' && path === '/api/conversations') return { id: 'conv-avatar', type: 'aionrs', extra: body.extra, model: { provider_id: 'cloud', model: 'pro' } } as never;
+      if (method === 'GET') return { id: 'conv-avatar', type: 'aionrs', extra: { lom_personal: a.id, lom_personal_directory: a.directory }, model: { provider_id: 'cloud', model: 'pro' } } as never;
+      return '' as never;
+    });
+    await ensureConversation(a);
+    expect(S.convs.find(x => x.id === 'conv-avatar')?.personal).toMatchObject({ id: a.id, avatar: '03', image });
+  });
   it('PA02 preserves external document changes instead of overwriting them', async () => {
     const a = await addAssistant('小麓'); vi.mocked(api).mockResolvedValue('outside change');
     await expect(saveDocument(a, 'SOUL.md', 'old', 'new')).rejects.toThrow('已被修改');
@@ -128,4 +138,16 @@ it('PA-IDENTITY new Personal sessions use shared Lom identity and upstream auto-
   expect(body.extra.preset_rules).toContain('只以麓鸣 Lom 的身份');
   expect(body.extra.exclude_auto_inject_skills).toContain('aionui-config');
   expect(body.extra.preset_rules).toContain('先调用 session_list');
+});
+
+it('PA-CRON-01 new Personal sessions preserve the selected logical Max tier',async()=>{
+  const a=await addAssistant('Max helper');S.model='lom-max';
+  vi.mocked(api).mockImplementation(async (method,path,body:any)=>{
+    if(method==='POST'&&path==='/api/conversations') return {id:'max-new',type:'aionrs',extra:body.extra,model:body.model} as never;
+    return {} as never;
+  });
+  await ensureConversation(a);
+  expect(api).toHaveBeenCalledWith('POST','/api/conversations',expect.objectContaining({
+    model:{provider_id:'cloud',model:'max'},extra:expect.objectContaining({lom_tier:'max'})
+  }));
 });

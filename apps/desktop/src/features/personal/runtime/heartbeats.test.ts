@@ -36,3 +36,13 @@ it('PA-HEARTBEAT explicitly confirmed recovery may recreate a missing unknown jo
  vi.mocked(saveCoreSchedule).mockImplementationOnce(async (_f,_id,scope)=>{scope?.beforeCreate?.();throw new Error('timeout');});
  await expect(ensureHeartbeats(a)).rejects.toThrow('timeout');await ensureHeartbeats(a,true);expect(saveCoreSchedule).toHaveBeenCalledTimes(4);
 });
+
+it('PA-CRON-01 two assistants reconcile their default jobs independently',async()=>{
+ const b={id:'pa_b',name:'B',directory:'/b',workspace:'/b',conversation:'conv-b'};storeAssistant(b);
+ S.convs.push({...S.convs[0],id:'conv-b',personal:{id:b.id,name:b.name,directory:b.directory}});
+ await Promise.all([ensureHeartbeats(a),ensureHeartbeats(b)]);
+ await Promise.all([ensureHeartbeats(a),ensureHeartbeats(b)]);
+ const jobs=vi.mocked(saveCoreSchedule).mock.calls;
+ expect(jobs).toHaveLength(6);
+ for(const owner of [a,b])expect(jobs.filter(([job,,scope])=>job.conversationId===owner.conversation&&scope?.personalId===owner.id)).toHaveLength(3);
+});

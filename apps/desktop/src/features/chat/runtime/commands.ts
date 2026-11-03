@@ -5,7 +5,6 @@ import { pendingSends } from './cancel';
 import { setConvOption, effortOption } from '@/features/settings/runtime/agentOptions';
 import { S, update } from '@/state/store';
 import type { Conv } from '@/state/types';
-import { uid } from '@/shared/lib/util';
 import type { CoreConversation } from '@/core/types';
 
 /* ===== 输入框 / 命令背后的真实操作：压缩、归档、推理强度、目标 =====
@@ -16,34 +15,8 @@ import type { CoreConversation } from '@/core/types';
 
 const idle = (c: Conv) => !S.running[c.id] && !pendingSends.has(c.id);
 
-/* ---------- 压缩上下文 ---------- */
-export async function compactTask(c: Conv) {
-  if (!c.remote) throw new Error('只有电脑上的任务可以压缩');
-  if (!idle(c)) throw new Error('任务还在执行，等这一轮结束再压缩');
-  if (c.agentId) {
-    // lom-core SlashCommandItem { command, description }（aionui-api-types agent_build_extra.rs）
-    const cmds = await api<{ command: string }[]>('GET', `/api/conversations/${c.id}/slash-commands`).catch(() => []);
-    if (!cmds.some(x => x.command.replace(/^\//, '') === 'compact')) throw new Error(`${c.agentName || '这个 Agent'} 没有提供压缩上下文的命令`);
-  }
-  update(s => { s.running[c.id] = true; c.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: '正在压缩上下文…', ic: 'refresh' }); });
-  try {
-    const res = await api<{ turn_id?: string }>('POST', `/api/conversations/${c.id}/messages`, { content: '/compact', files: [] });
-    if (res?.turn_id) update(() => { c.turnId = res.turn_id; });
-  } catch (e) {
-    update(s => { delete s.running[c.id]; });
-    throw e;
-  }
-}
-
-/** 引擎压缩后的回复翻成一句中文（实时和历史都用） */
-export function compactNotice(text?: string): string | null {
-  if (!text) return null;
-  if (/^Context is already compact/i.test(text)) return '上下文已经很精简，不需要压缩';
-  const m = /^Context compacted[^\n]*?(\d+)\s+messages?\s+summar/i.exec(text);
-  if (m) return `已压缩上下文：前面 ${m[1]} 条消息整理成了摘要，后面的对话更省额度`;
-  if (/^Context compacted/i.test(text)) return '已压缩上下文';
-  return null;
-}
+/* ---------- 压缩上下文：状态与契约在 compaction.ts（REFACTOR-01 模块 3） ---------- */
+export { compactNotice, compactTask } from './compaction';
 
 /* ---------- 归档 ---------- */
 export async function archiveTask(c: Conv) {
@@ -75,7 +48,7 @@ export async function restoreTask(id: string) {
 }
 
 /* ---------- 推理强度 ---------- */
-export const EFFORTS: [string, string][] = [['', '默认'], ['low', '低'], ['medium', '中'], ['high', '高']];
+export const EFFORTS: [string, string][] = [['', '默认'], ['none', '不思考'], ['low', '低'], ['medium', '中'], ['high', '高']];
 export const effortName = (v?: string) => EFFORTS.find(([k]) => k === (v || ''))?.[1] || v || '默认';
 
 /** 外部 Agent 的 confirmation 口径：只有 observed 能说已生效；

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/core/client';
 import type { ActivityCursor, ActivityDirection, ActivityKind, ActivityPage, TeamMailboxMessage, TeamTask } from './activityTypes';
 import { subscribeActivity, subscribeActivityReconnect } from './activityEvents';
+import { activityErrorText } from './activityErrors';
 
 /* D33 团队活动流：一个游标翻两种内容（消息 + 任务）。
  * 返回的条目按 id 存两张表，合并/去重发生在这里；方向、内容和团队变化时重置游标重新取第一页。
@@ -78,7 +79,8 @@ export function useTeamActivityFeed(
       setHasMore(hasMoreRef.current);
       setError('');
     } catch (e) {
-      if (epoch === epochRef.current) setError(e instanceof Error ? e.message : String(e));
+      // UI-AUDIT-04：界面只显示友好原因和固定错误码，原始报错留在控制台
+      if (epoch === epochRef.current) { console.warn('team.activity_load_failed', e); setError(activityErrorText(e)); }
     } finally {
       if (epoch === epochRef.current) {
         setIsLoading(false);

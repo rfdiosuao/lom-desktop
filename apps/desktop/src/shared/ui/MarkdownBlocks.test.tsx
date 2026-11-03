@@ -124,7 +124,11 @@ describe('CW06 行内格式', () => {
 
   it('CW06 http(s) 链接可点击且带 noopener；文字里的格式照常渲染', () => {
     const out = html('看 [**官网**](https://example.com/a?b=1) 和 [维基](https://zh.wikipedia.org/wiki/Foo_(bar))');
-    expect(out).toContain('<a class="md-link" href="https://example.com/a?b=1" target="_blank" rel="noopener noreferrer" title="https://example.com/a?b=1"><b>官网</b></a>');
+    const host = document.createElement('div'); host.innerHTML = out;
+    const link = host.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('https://example.com/a?b=1');
+    expect(link.getAttribute('target')).toBe('_blank'); expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.querySelector('b')?.textContent).toBe('官网');
     expect(out).toContain('href="https://zh.wikipedia.org/wiki/Foo_(bar)"');
   });
 
@@ -178,7 +182,12 @@ describe('CW06 围栏与列表', () => {
 describe('CW06 不可信内容', () => {
   it('CW06 新增的块和行内规则都不会让 HTML 变成元素', () => {
     const out = html('> <script>1</script>\n\n| <b>x</b> |\n| - |\n| y |\n\n[<img src=x>](https://a.com) *<i>z</i>* ~~<u>w</u>~~');
-    expect(out).not.toMatch(/<(script|img|u)\b/);
+    expect(out).not.toMatch(/<(script|u)\b/);
+    const host = document.createElement('div'); host.innerHTML = out;
+    // 普通链接不自动请求站点图标（CHAT-ACTIVITY-01 AC-5），链接文字里的 HTML 也不会变成图片
+    expect(host.querySelectorAll('img')).toHaveLength(0);
+    expect(host.querySelector('a .site-icon .icon')).not.toBeNull();
+    expect(host.querySelector('a')?.textContent).toBe('<img src=x>');
     expect(out).not.toContain('<b>x</b>');
     expect(out).toContain('&lt;script&gt;');
   });

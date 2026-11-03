@@ -28,6 +28,7 @@ pub struct LearningRequest {
     reply: String,
     evidence: String,
     proposals: String,
+    expected_version: Option<u64>,
 }
 #[tauri::command]
 pub async fn personal_apply_learning(
@@ -40,14 +41,52 @@ pub async fn personal_apply_learning(
         if root.to_string_lossy() != request.directory {
             return Err("personal.learning_identity".into());
         }
-        crate::personal_learning::apply(
+        crate::personal_learning::apply_checked(
             &root,
             &request.turn,
             &request.user,
             &request.reply,
             &request.evidence,
             &request.proposals,
+            request.expected_version,
         )
+    })
+    .await
+    .map_err(|_| "personal.learning_worker".to_string())?
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VersionRequest {
+    account: String,
+    id: String,
+    #[serde(rename = "name")]
+    _name: String,
+    directory: String,
+    expected_version: Option<u64>,
+    rollback: Option<u64>,
+}
+#[tauri::command]
+pub async fn personal_memory_versions(
+    app: tauri::AppHandle,
+    request: VersionRequest,
+) -> Result<serde_json::Value, String> {
+    let base = app.path().app_data_dir().map_err(|_| "personal.data_dir")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = crate::personal::existing_directory(&base, &request.account, &request.id)?;
+        if root.to_string_lossy() != request.directory {
+            return Err("personal.learning_identity".into());
+        }
+        if let Some(target) = request.rollback {
+            let expected = request
+                .expected_version
+                .ok_or("personal.learning_conflict")?;
+            let version = crate::personal_learning::restore(&root, expected, target)?;
+            Ok(serde_json::json!(version))
+        } else {
+            serde_json::to_value(crate::personal_learning::versions(&root)?)
+                .map_err(|_| "personal.learning_storage".into())
+        }
     })
     .await
     .map_err(|_| "personal.learning_worker".to_string())?

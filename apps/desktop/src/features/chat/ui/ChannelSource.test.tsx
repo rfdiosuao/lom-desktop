@@ -5,7 +5,7 @@ import { mapHistory } from '../runtime/history';
 import { channelEnvelope, channelOf } from '../runtime/channelSource';
 import { stripSettingsContext, publicationPolicy } from '@/features/settings/runtime/preferences';
 import type { Conv, Msg } from '@/state/types';
-import type { CoreMessage } from '@/core/types';
+import type { CoreConversation, CoreMessage } from '@/core/types';
 import { UserMessage } from './UserMessage';
 vi.mock('../actions/message', () => ({ resendEditedMessage: vi.fn(), retryFailedMessage: vi.fn(), checkUnconfirmedMessage: vi.fn() }));
 
@@ -43,4 +43,13 @@ it('FEISHU-02 PA04 the chat shows 来自飞书 / 来自微信 / 由个人助理�
   expect(host.textContent).not.toContain('来自');
   expect(host.querySelector('[aria-label="编辑消息"]')).not.toBeNull();
   await act(async () => root.unmount()); host.remove();
+});
+
+it('WECHAT-01 restores the WeChat conversation origin before loading messages',async()=>{
+ const {convFromCore}=await import('../runtime/history');
+ const c=convFromCore({id:'wx',type:'aionrs',name:'助理',created_at:1,modified_at:1,extra:{lom_wechat_origin:true}} as CoreConversation);
+ expect(c.wechatOrigin).toBe(true);
+ const raw=channelEnvelope('wechat')+'查看文件';
+ const [message]=mapHistory([{id:'m',msg_id:'m',type:'text',position:'right',created_at:2,content:{content:raw}}] as unknown as CoreMessage[],c).messages;
+ expect(message).toMatchObject({source:'wechat',text:'查看文件'});
 });

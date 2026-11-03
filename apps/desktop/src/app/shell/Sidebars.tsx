@@ -1,4 +1,5 @@
 import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
+import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { ImportedHistoryRows } from '@/features/history/ui/ImportedHistoryRows';
 import { beginConversationDrag, refreshHistory } from '@/features/history/runtime/historyImport';
 import { HistoryHeader } from '@/features/chat/ui/HistoryHeader';
@@ -23,7 +24,7 @@ import { Search } from '@/shared/ui/Layout';
 import { agentRow, loadAgents, logoUrl } from '@/features/settings/runtime/agents';
 import { convsOf, phone } from '@/state/selectors';
 import { S, update, useStore } from '@/state/store';
-import { useEffect } from 'react';
+import { useEffect, type MouseEvent } from 'react';
 import type { Conv } from '@/state/types';
 import { cx } from '@/shared/lib/util';
 
@@ -48,7 +49,7 @@ function ModeSwitch() {
   const s = useStore();
   return (
     <div className="mode-switch">
-      <Seg variant="brand" block value={s.mode} onChange={setMode} options={[
+      <Seg label="设备模式" block value={s.mode} onChange={setMode} options={[
         { value: 'desktop', label: '电脑', ic: 'monitor' },
         { value: 'phone', label: '手机', ic: 'phone', addon: <IconBtn ic="plus" label="添加手机（扫码配对）" onClick={pair} size="sm" className="seg__addon" /> },
       ]} />
@@ -83,12 +84,18 @@ function ConvLogo({ c }: { c: Conv }) {
   return <HistoryIcon src={src} name={c.title} lom={!c.agentId} running={!!S.running[c.id]} />;
 }
 
+/** TEAM-MENU-01：右键打开这一行的菜单，菜单贴着这一行出现（与「⋯」是同一个菜单） */
+const rowMenu = (menu: 'conv' | 'team', id: string) => (e: MouseEvent<HTMLElement>) => {
+  e.preventDefault();
+  openMenu(menu, e.currentTarget, { id, key: `${menu}${id}` });
+};
+
 function ConvRow({ c }: { c: Conv }) {
   const s = useStore();
   const active = s.route.name === 'chat' && s.activeConv === c.id;
   return (
-    <div draggable onDragStart={e => beginConversationDrag(e.dataTransfer, c.id)} className={cx('conv', active && 'is-active')} style={c.owner === 'pc' ? { paddingLeft: 4 } : undefined}>
-      <button type="button" className={cx('conv__name', c.owner === 'pc' && 'conv__name--desktop')} onClick={() => openConv(c.id)} title={c.title}>{c.owner === 'pc' && <ConvLogo c={c} />}<span className="conv__title">{c.title}</span></button>
+    <div draggable onDragStart={e => beginConversationDrag(e.dataTransfer, c.id)} onContextMenu={rowMenu('conv', c.id)} className={cx('conv', active && 'is-active')} style={c.owner === 'pc' ? { paddingLeft: 4 } : undefined}>
+      <button type="button" className={cx('conv__name', c.owner === 'pc' && 'conv__name--desktop')} onClick={() => openConv(c.id)} title={c.title}>{c.owner === 'pc' && <ConvLogo c={c} />}<span className="conv__title">{c.title}{c.wechatOrigin && <small className="muted"> · 来自微信</small>}</span></button>
       {c.owner !== 'pc' && s.running[c.id] && <span className="conv__state" role="status" aria-label="正在运行"><Spinner size={12} /></span>}
       {c.pinned && c.owner !== 'pc' && <IconBtn ic="pin" label="取消置顶" onClick={() => pinConv(c.id)} size="sm" className="is-pinned" />}
       <IconBtn ic="more" label="会话选项" onClick={e => openMenu('conv', e.currentTarget, { id: c.id, key: `conv${c.id}`, align: 'end' })} size="sm" />
@@ -115,13 +122,18 @@ export function DesktopSidebar() {
         <div className="sidebar__section">
           <NavItem label="新的任务" ic="plus" onClick={newTask} active={r === 'home'} trail={<Kbd k="⌘N" />} />
           <NavItem label="定时任务" ic="clock" onClick={() => go('schedule')} active={r === 'schedule'} trail={s.schedules.filter(x => x.enabled).length} />
-          <NavItem label="skillhub" ic="grid" onClick={() => go('skillhub')} active={r === 'skillhub'} />
+          <NavItem label="插件 · 技能 · 智能体" ic="grid" onClick={() => go('skillhub')} active={r === 'skillhub'} />
           <NavItem label="OPC团队" ic="people" onClick={() => go('teams')} active={r === 'teams'} />
         </div>
         {s.teams.length > 0 && (
           <div className="sidebar__section">
             <div className="sidebar__label"><span>{t('我的团队')}</span><IconBtn ic="plus" label="新建团队" onClick={newTeam} size="sm" /></div>
-            {s.teams.map(t => <NavItem key={t.id} label={t.name} ic="people" size="sm" onClick={() => go('team', t.id)} active={r === 'team' && s.route.id === t.id} trail={String(t.members.length)} />)}
+            {s.teams.map(t => (
+              <div key={t.id} className="team-row">
+                <NavItem label={t.name} title={t.name} ic="people" size="sm" onClick={() => go('team', t.id)} onContextMenu={rowMenu('team', t.id)} active={r === 'team' && s.route.id === t.id} trail={String(t.members.length)} />
+                <IconBtn ic="more" label="团队选项" onClick={e => openMenu('team', e.currentTarget, { id: t.id, key: `team${t.id}`, align: 'end' })} size="sm" />
+              </div>
+            ))}
           </div>
         )}
         <div className="sidebar__section">
@@ -139,6 +151,7 @@ export function DesktopSidebar() {
 export function PhoneSidebar() {
   const s = useStore();
   const p = phone();
+  if (!p) return <aside className="sidebar" aria-label="侧边栏"><SidebarTop /><Brand /><ModeSwitch /><div className="sidebar__body"><NoPhone /></div><SidebarFoot /></aside>;
   const r = s.route.name;
   const list = convsOf(p.id).filter(c => !s.q.conv || c.title.includes(s.q.conv));
   const day = 24 * 3600e3, today0 = new Date().setHours(0, 0, 0, 0);

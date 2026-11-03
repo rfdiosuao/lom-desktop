@@ -1,0 +1,30 @@
+import { beforeEach, expect, it } from 'vitest';
+import { S } from '@/state/store';
+import { profileRules, readProfile, saveProfile } from './profiles';
+import { agentTaskExtra } from '@/features/settings/runtime/agentWarmup';
+import { taskRules } from '@/features/settings/runtime/agentRules';
+import { withPersonalProfile } from './personalProfile';
+beforeEach(() => { localStorage.clear(); S.cloud='signed-in'; S.account={id:'a',name:'A',email:''}; });
+it('HUB-01 profiles reach native and external new-task rules, preserve permissions, and restore previous configuration', () => {
+  const original = {name:'审查',rules:'检查失败重试'};
+  saveProfile('pc',original,JSON.stringify(readProfile('pc')));
+  expect(taskRules(true)).toContain(original.rules);
+  saveProfile('ag:ext',original,JSON.stringify(readProfile('ag:ext')));
+  const a = {id:'ext',name:'External',backend:'codex',installed:true,status:'online',enabled:true,agent_type:'acp',agent_source:'builtin'} as const;
+  const extra = agentTaskExtra(a,'/work');
+  expect(extra.preset_context).toContain(original.rules);
+  saveProfile('ag:ext',{name:'开发',rules:'实现界面'},JSON.stringify(readProfile('ag:ext')));
+  const saved=readProfile('ag:ext');
+  saveProfile('ag:ext',saved.previous!,JSON.stringify(saved));
+  expect(profileRules('ag:ext')).toContain(original.rules);
+  expect(agentTaskExtra(a,'/work').session_mode).toBe(extra.session_mode);
+});
+it('HUB-01 personal template preserves surrounding user rules and only removes its managed section', () => {
+  const original='用户的自定义规则\n';
+  const first=withPersonalProfile(original,{name:'审查',rules:'检查测试'});
+  expect(first).toContain(original);
+  const second=withPersonalProfile(first,{name:'开发',rules:'实现功能'});
+  expect(second).not.toContain('检查测试');
+  expect(withPersonalProfile(second,null)).toBe(original);
+  expect(()=>withPersonalProfile('<!-- LOM_PROFESSIONAL_PROFILE_START -->broken',null)).toThrow('不完整');
+});

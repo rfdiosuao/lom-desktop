@@ -97,3 +97,16 @@ it('FEISHU-ISOLATE a disconnected binding stops streaming and never sends fallba
   await done;
   expect(calls()).toHaveLength(count);
 });
+
+it('FEISHU-HEALTH-01 a final card failure uses text fallback and a failed fallback rejects instead of reporting success', async () => {
+ m.invoke.mockImplementation(async (_cmd: string, a: Call) => {
+  if (a.path === '/open-apis/cardkit/v1/cards') return {card_id:'card_1'};
+  if (a.path.endsWith('/settings')) throw new Error('private raw CLI data');
+  if (a.body?.msg_type === 'text') throw new Error('private reply failure');
+  return {};
+ });
+ const done = streamReply({account:'owner',assistantId:'pa_a',appId:'cli_a',generation:1},'om_1',conv,sent,1);
+ const failed = expect(done).rejects.toThrow('private reply failure');
+ await tick(); say('answer'); update(s=>{delete s.running.c1;});
+ await failed;
+});

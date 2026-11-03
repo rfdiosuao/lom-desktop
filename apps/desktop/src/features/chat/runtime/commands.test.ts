@@ -106,6 +106,19 @@ it('audit: a never-started runtime uses ensure, not restart', async () => {
   expect(S.convs[0].effort).toBe(core.state.extra.reasoning_effort);
 });
 
+it('EFFORT-02 AC-2 explicit none survives core readback; returning to default clears the override', async () => {
+  const core = installCore({ runtime: { has_task: true }, extra: { reasoning_effort: 'high' } });
+  expect(await setTaskEffort(S.convs[0], 'none')).toBe('next_turn');
+  expect(core.state.extra.reasoning_effort).toBe('none');
+  expect(S.convs[0].effort).toBe('none');
+  expect(effortResult('next_turn', 'none').text).toContain('不思考');
+  expect(core.calls.some(c => c.path.endsWith('/runtime/restart'))).toBe(true);
+  expect(await setTaskEffort(S.convs[0], '')).toBe('next_turn');
+  expect(core.calls.filter(c => c.method === 'PATCH').at(-1)?.body).toEqual({ extra: { reasoning_effort: null } });
+  expect(core.state.extra.reasoning_effort).toBeUndefined();
+  expect(S.convs[0].effort).toBeUndefined();
+});
+
 it('audit: runtime failure rolls the core value back and only then shows the old value', async () => {
   const core = installCore({ runtime: { has_task: true }, extra: { reasoning_effort: 'low' } }, { failRuntime: true });
   S.convs[0].effort = 'low';

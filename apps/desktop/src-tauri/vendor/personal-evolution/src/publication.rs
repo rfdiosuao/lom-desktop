@@ -24,6 +24,7 @@ impl Evolution {
         }
         let name = match target {
             Target::User => "USER.md",
+            Target::Memory => "MEMORY.md",
             Target::Tools => "TOOLS.md",
             Target::WorkMethods => "AGENTS.md",
             Target::SoulAdjustment => "SOUL.md",
