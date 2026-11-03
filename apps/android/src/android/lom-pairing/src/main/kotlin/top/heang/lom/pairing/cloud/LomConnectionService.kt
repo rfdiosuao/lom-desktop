@@ -21,7 +21,7 @@ class LomConnectionService : Service() {
             if (enabled) start(context) else context.stopService(Intent(context, LomConnectionService::class.java))
         }
         fun start(context: Context) {
-            if (!LomPairing.CLOUD_ENABLED) return
+            if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return
             if (!enabled(context)) return
             try { context.startForegroundService(Intent(context, LomConnectionService::class.java)) }
             catch (e: Exception) {

@@ -1,4 +1,5 @@
-import { authAccount } from '@/features/account/runtime/authScope';
+import { authAccount, authRevision, type AuthGuard } from '@/features/account/runtime/authScope';
+import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
 import { S } from '@/state/store';
 
 /* ===== REFACTOR-01 模块 2（#280）：每个账号 / 设备一条连接记录 =====
@@ -11,10 +12,14 @@ interface Link { generation: number; online: boolean; rpc: RpcState; rpcAt?: num
 
 const links = new Map<string, Link>();
 let owner: string | undefined;
+/** Community builds pair over the LAN while signed out of the cloud. */
+export const lanMode = () => !cloudConfigured() && S.cloud !== 'signed-in';
+/** LAN devices have no account session; revision still invalidates work on an explicit sign-in attempt. */
+export const phoneGuard = (): AuthGuard => lanMode() ? authRevision() : authAccount();
 
 /** 账号变化时整体作废：旧账号的设备记录一条都不保留 */
 function scope() {
-  const next = S.cloud === 'signed-in' ? S.account?.id : undefined;
+  const next = S.cloud === 'signed-in' ? S.account?.id : lanMode() ? 'lan' : undefined;
   if (owner !== next) { owner = next; links.clear(); }
   return owner;
 }
@@ -42,7 +47,7 @@ export function dropLink(id: string) { scope(); links.delete(id); }
 
 /** 取得当前连接的守卫：账号、登录周期、设备记录和代次都没变才算数 */
 export function linkGuard(id: string): () => boolean {
-  const authenticated = authAccount(), account = scope(), row = link(id), generation = row.generation;
+  const authenticated = lanMode() ? () => true : authAccount(), account = scope(), row = link(id), generation = row.generation;
   return () => authenticated() && scope() === account && links.get(id) === row && row.generation === generation;
 }
 

@@ -1,11 +1,12 @@
 import { syncPhoneName } from './deviceName';
-import { dropLink, observeDevice } from './deviceLink';
+import { dropLink, lanMode, observeDevice } from './deviceLink';
 import { syncDeviceStatus } from './deviceStatus';
 import { DeviceTransitions } from './deviceTransitions';
 import { toast } from '@/shared/overlays/controller';
 const transitions = new DeviceTransitions();
 import { invoke } from '@tauri-apps/api/core';
 import type { AppState } from '@/state/state';
+export { lanMode } from './deviceLink';
 import { S, update } from '@/state/store';
 import type { Agent } from '@/state/types';
 import { cloud } from '@/features/account/runtime/cloud';
@@ -16,6 +17,9 @@ import { restoreLegacyDeviceMembers, saveDeviceAccount, syncDeviceAccount } from
  * psk 和安装私钥只在桌面外壳（Rust）里；这里拿到的是二维码 SVG、确认码和核对结果。 */
 
 export interface PairingSession { pairingId: string; manualCode: string; expiresAt: number; qrSvg: string; }
+interface LanDevice { id: string; name: string; model: string; os: string; app_version: string; keys: string; online: boolean; last_seen_at: number; }
+interface LanStart { pairingId: string; qrSvg: string; expiresAt: number; }
+interface LanStatus { state: string; device_id?: string | null; device_name?: string | null; device_keys?: string | null; }
 export interface DeviceInfo { name: string; model: string; os: string; app_version: string; }
 export interface PairingStatus {
   state: 'open' | 'claimed' | 'verified' | 'confirmed' | 'cancelled' | 'expired' | 'failed';
@@ -28,32 +32,53 @@ interface Identity { installId: string; keys: string; name: string; }
 interface Created { pairing_id: string; claim_token: string; manual_code: string; expires_at: number; host: string; }
 
 export async function startPairing(): Promise<PairingSession> {
+  if (lanMode()) {
+    const r = await invoke<LanStart>('lan_pair_start');
+    return { pairingId: r.pairingId, manualCode: '', expiresAt: r.expiresAt * 1000, qrSvg: r.qrSvg };
+  }
   const id = await invoke<Identity>('pairing_identity');
   const c = await cloud<Created>('POST', '/v1/pairing/sessions', { install_id: id.installId, desktop_name: id.name, desktop_keys: id.keys });
   const qrSvg = await invoke<string>('pairing_qr', { host: c.host, pairingId: c.pairing_id, claimToken: c.claim_token });
   return { pairingId: c.pairing_id, manualCode: c.manual_code, expiresAt: c.expires_at * 1000, qrSvg };
 }
 
-export const pairingStatus = (id: string) => cloud<PairingStatus>('GET', `/v1/pairing/sessions/${encodeURIComponent(id)}`);
+export async function pairingStatus(id: string): Promise<PairingStatus> {
+  if (lanMode()) {
+    const r = await invoke<LanStatus>('lan_pair_status', { pairingId: id });
+    return { state: r.state as PairingStatus['state'], method: 'qr', device_keys: r.device_keys ?? null,
+      device_info: r.device_name ? { name: r.device_name, model: '', os: '', app_version: '' } : null,
+      key_proof: null, device_id: r.device_id ?? null };
+  }
+  return cloud<PairingStatus>('GET', `/v1/pairing/sessions/${encodeURIComponent(id)}`);
+}
 
 /** 扫码路径：用本机 psk 核对 key_proof，并把结果告诉云端（失败时会话作废） */
 export async function verifyProof(id: string, deviceKeys: string, keyProof: string): Promise<boolean> {
+  if (lanMode()) return true;
   const ok = await invoke<boolean>('pairing_check_proof', { pairingId: id, deviceKeys, keyProof });
   await cloud('POST', `/v1/pairing/sessions/${encodeURIComponent(id)}/verify`, { ok });
   return ok;
 }
 
-export const confirmationCode = (id: string, deviceKeys: string) => invoke<string>('pairing_sas', { pairingId: id, deviceKeys });
+export const confirmationCode = (id: string, deviceKeys: string) => lanMode() ? Promise.resolve('') : invoke<string>('pairing_sas', { pairingId: id, deviceKeys });
 
 /** 刷新或关闭弹窗：作废云端会话并丢弃 psk */
 export async function abortPairing(id: string) {
+  if (lanMode()) { await invoke('lan_pair_cancel', { pairingId: id }); return; }
   try { await invoke('pairing_forget'); } finally {
     await cloud('DELETE', `/v1/pairing/sessions/${encodeURIComponent(id)}`);
   }
 }
 
-export const listDevices = () => cloud<CloudDevice[]>('GET', '/v1/devices');
+export async function listDevices(): Promise<CloudDevice[]> {
+  if (lanMode()) {
+    const rows = await invoke<LanDevice[]>('lan_devices');
+    return rows.map(d => ({ id: d.id, name: d.name, keys: d.keys, info: { name: d.name, model: d.model, os: d.os, app_version: d.app_version }, paired_at: d.last_seen_at, last_seen_at: d.last_seen_at, online: d.online }));
+  }
+  return cloud<CloudDevice[]>('GET', '/v1/devices');
+}
 export async function removeDevice(id: string) {
+  if (lanMode()) { await invoke('lan_remove_device', { deviceId: id }); return; }
   const isCurrent = authAccount();
   if (!isCurrent()) throw new Error('请先登录');
   await cloud('DELETE', `/v1/devices/${encodeURIComponent(id)}`);
@@ -62,6 +87,7 @@ export async function removeDevice(id: string) {
 export async function renameDevice(id: string, value: string) {
   const name = value.trim();
   if (!name || name.length > 100 || /[\x00-\x1f]/.test(name)) throw new Error('名称需为 1–100 个有效字符');
+  if (lanMode()) { await invoke('lan_rename_device', { deviceId: id, name }); update(s => { if (s.agents[id]) s.agents[id].name = name; }); return true; }
   const isCurrent = authAccount();
   if (!isCurrent()) throw new Error('请先登录');
   await cloud('PATCH', `/v1/devices/${encodeURIComponent(id)}`, { name });
@@ -90,8 +116,8 @@ export function dropPhone(s: AppState, id: string) {
 
 export function applyDevices(list: CloudDevice[]) {
   syncDeviceAccount();
-  if (S.cloud !== 'signed-in' || !S.account) return;
-  const messages=transitions.observe(S.cloud === 'signed-in' ? S.account?.id : undefined,list,!!S.prefs.notify);
+  if (!lanMode() && (S.cloud !== 'signed-in' || !S.account)) return;
+  const messages=transitions.observe(lanMode() ? 'lan' : S.cloud === 'signed-in' ? S.account?.id : undefined,list,!!S.prefs.notify);
   update(s => {
     const ids = new Set(list.map(d => d.id));
     for (const d of list) {
@@ -117,9 +143,9 @@ export function applyDevices(list: CloudDevice[]) {
 let syncing: { current: () => boolean; promise: Promise<void> } | undefined;
 export async function syncDevices() {
   syncDeviceAccount();
-  if (S.cloud !== 'signed-in') { transitions.observe(undefined, [], false); return; }
+  if (!lanMode() && S.cloud !== 'signed-in') { transitions.observe(undefined, [], false); return; }
   if (syncing?.current()) return syncing.promise;
-  const current = authAccount();
+  const current = lanMode() ? () => true : authAccount();
   const entry = { current, promise: Promise.resolve() };
   entry.promise = (async () => {
     try {

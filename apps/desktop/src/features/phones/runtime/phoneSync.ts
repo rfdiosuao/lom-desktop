@@ -4,17 +4,19 @@ import { loadPhoneCache } from './phoneCache';
 import { S, update } from '@/state/store';
 import { syncPhoneHistory, watchPhone } from './phoneChat';
 import { syncPhoneDocuments } from './phoneDocuments';
+import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
 
 /* 连接代次、在线、同步完成由 deviceLink 持有（REFACTOR-01 模块 2）；这里只管同步节奏和退避 */
 interface Slot { quick:number; full:number; retry:number; attempts:number; error:string; }
 const slots=new Map<string,Slot>(), busy=new Set<string>();
 let account:string|undefined, selected='';
+const lan=()=>!cloudConfigured()&&S.cloud!=='signed-in';
 const slot=(id:string)=>{let s=slots.get(id);if(!s){s={quick:0,full:0,retry:0,attempts:0,error:''};slots.set(id,s);}return s;};
 export const phoneSyncError=(id:string)=>slots.get(id)?.error || '';
-const online=(id:string)=>S.cloud==='signed-in'&&!!S.agents[id]?.real&&S.agents[id].status==='online';
+const online=(id:string)=>(S.cloud==='signed-in'||lan())&&!!S.agents[id]?.real&&S.agents[id].status==='online';
 function reset(s:Slot){s.quick=0;s.full=0;s.retry=0;s.attempts=0;s.error='';}
 function prepare() {
-  const next=S.cloud==='signed-in'?S.account?.id:undefined;
+  const next=S.cloud==='signed-in'?S.account?.id:lan()?'lan':undefined;
   if(account!==next){account=next;slots.clear();selected='';}
   try{loadPhoneCache();}catch(e){slot(S.phoneId).error=e instanceof Error?e.message:'本地缓存读取失败';}
   if(selected!==S.phoneId){selected=S.phoneId;const s=slot(selected);s.quick=0;s.full=0;}

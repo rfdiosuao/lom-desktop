@@ -1,5 +1,15 @@
 # Desktop source changes
 
+## 0.3.5 — 2026-11-03
+
+Community LAN pairing, without the commercial account, cloud relay or pairing service:
+
+- The desktop hosts a one-time QR session on a private IPv4 interface; the phone proves possession of the scanned one-time secret and the desktop pins its X25519/Ed25519 identity.
+- Paired phones exchange the existing signed encrypted envelopes over local HTTP. Device tokens are hashed at rest, expire after 90 days, and can be renamed or removed from the phone list.
+- Android accepts only private `10/8`, `192.168/16` and `172.16/12` IPv4 hosts with a high port, and only when the community LAN build enables it. Cloud pairing and relay stay disabled.
+- Phone chat, history cache, documents, subagents and commander authorization now use a local LAN scope while signed out.
+- Adds an isolated `pairing-check` preview APK module for pairing validation without the PRoot/rclone native toolchain.
+
 ## 0.3.4 — 2026-11-02
 
 Community source snapshot synced from the commercial desktop 0.3.4 and sanitized before import:

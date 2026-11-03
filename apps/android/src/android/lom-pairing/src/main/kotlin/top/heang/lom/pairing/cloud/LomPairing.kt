@@ -22,6 +22,7 @@ class LomPairing private constructor(context: Context) : PairingHost {
         /** The only cloud host this build trusts; a scanned QR cannot add hosts (R01 §5.5). */
         const val HOST = "example.invalid"
         const val CLOUD_ENABLED = false
+        const val LAN_ENABLED = true
 
         @Volatile private var instance: LomPairing? = null
         fun get(context: Context): LomPairing = instance ?: synchronized(this) {
@@ -50,17 +51,18 @@ class LomPairing private constructor(context: Context) : PairingHost {
     fun backgroundEnabled() = LomConnectionService.enabled(app)
     fun setBackgroundEnabled(enabled: Boolean) = LomConnectionService.setEnabled(app, enabled)
     fun start() {
-        if (!CLOUD_ENABLED) return // Public build never restores cloud credentials.
+        if (!CLOUD_ENABLED && !LAN_ENABLED) return
         scope.launch { relay.start() }
         if (paired.value != null) LomConnectionService.start(app)
     }
 
     override val pairingAllowedHosts: Set<String> = emptySet()
+    override val pairingAllowsLan: Boolean = LAN_ENABLED
 
     /** Identity creation touches Keystore and disk, so it happens on the IO dispatcher. */
     override fun createPairingGateway(): PairingGateway = object : PairingGateway {
         private suspend fun inner() = withContext(Dispatchers.IO) {
-            check(CLOUD_ENABLED) { "Cloud pairing is unavailable in the public build" }
+            check(CLOUD_ENABLED || LAN_ENABLED) { "Pairing is unavailable" }
             cloud
         }
         override suspend fun claim(input: PairingInput): PairingChallenge = inner().claim(input)
@@ -71,8 +73,9 @@ class LomPairing private constructor(context: Context) : PairingHost {
     /** Unpair from this phone. Fails (instead of pretending) when the cloud cannot be reached,
      * so the desktop never keeps showing a phone that believes it is unpaired. */
     suspend fun unpair() {
-        if (!CLOUD_ENABLED) { store.clear(); return }
+        if (!CLOUD_ENABLED && !LAN_ENABLED) { store.clear(); return }
         val state = store.load() ?: return
+        if (isLanHost(state.host)) { store.clear(); return }
         try {
             api.unpairSelf(state)
         } catch (e: CancellationException) { throw e
@@ -80,6 +83,14 @@ class LomPairing private constructor(context: Context) : PairingHost {
             if (e.code != "relay.device_revoked") throw e
         }
         store.clear()
+    }
+
+    private fun isLanHost(host: String): Boolean {
+        val parts = host.split(":")
+        if (parts.size != 2 || (parts[1].toIntOrNull() ?: return false) !in 1024..65535) return false
+        val o = parts[0].split(".").mapNotNull { it.toIntOrNull() }
+        if (o.size != 4 || o.any { it !in 0..255 }) return false
+        return o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && o[1] in 16..31)
     }
 }
 

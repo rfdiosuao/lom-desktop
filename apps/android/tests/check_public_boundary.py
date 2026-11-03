@@ -24,21 +24,22 @@ class PublicBoundary(unittest.TestCase):
         for tag in ['provider', 'service', 'receiver']:
             self.assertEqual([], list(app.findall(tag)))
         activity = next(x for x in app.findall('activity') if x.attrib['{http://schemas.android.com/apk/res/android}name'].endswith('PairingActivity'))
-        self.assertEqual('false', activity.attrib['{http://schemas.android.com/apk/res/android}enabled'])
+        self.assertEqual('true', activity.attrib['{http://schemas.android.com/apk/res/android}enabled'])
         self.assertEqual('false', activity.attrib['{http://schemas.android.com/apk/res/android}exported'])
         self.assertEqual([], list(activity.findall('intent-filter')))
 
     def test_ui_and_network_paths_fail_closed_before_effects(self):
         pairing = self.source('cloud/LomPairing.kt')
         self.assertIn('const val CLOUD_ENABLED = false', pairing)
+        self.assertIn('const val LAN_ENABLED = true', pairing)
         self.assertIn('pairingAllowedHosts: Set<String> = emptySet()', pairing)
         for name, guard, effect in [
-            ('cloud/LomPairing.kt', 'if (!CLOUD_ENABLED) return', 'scope.launch { relay.start() }'),
-            ('cloud/LomRelay.kt', 'if (!LomPairing.CLOUD_ENABLED) return', 'if (started) return'),
-            ('cloud/LomConnectionService.kt', 'if (!LomPairing.CLOUD_ENABLED) return', 'context.startForegroundService'),
-            ('cloud/HttpPairingApi.kt', 'if (!LomPairing.CLOUD_ENABLED) throw', 'val request = Request.Builder()'),
-            ('ui/LomConnectionButton.kt', 'if (!LomPairing.CLOUD_ENABLED) return', 'val context = LocalContext.current'),
-            ('ui/PairingActivity.kt', 'if (!LomPairing.CLOUD_ENABLED)', 'val model = ViewModelProvider'),
+            ('cloud/LomPairing.kt', 'if (!CLOUD_ENABLED && !LAN_ENABLED) return', 'scope.launch { relay.start() }'),
+            ('cloud/LomRelay.kt', 'if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return', 'if (started) return'),
+            ('cloud/LomConnectionService.kt', 'if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return', 'context.startForegroundService'),
+            ('cloud/HttpPairingApi.kt', 'if (!LomPairing.CLOUD_ENABLED && !(LomPairing.LAN_ENABLED && lanHost(host))) throw', 'val request = Request.Builder()'),
+            ('ui/LomConnectionButton.kt', 'if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED) return', 'val context = LocalContext.current'),
+            ('ui/PairingActivity.kt', 'if (!LomPairing.CLOUD_ENABLED && !LomPairing.LAN_ENABLED)', 'val model = ViewModelProvider'),
         ]:
             text = self.source(name)
             self.assertLess(text.index(guard), text.index(effect), name)

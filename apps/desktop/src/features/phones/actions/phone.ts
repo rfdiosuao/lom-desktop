@@ -1,4 +1,3 @@
-import { authAccount } from '@/features/account/runtime/authScope';
 import { syncPhoneNow, phoneSyncError } from '../runtime/phoneSync';
 import { phoneDocument, syncPhoneDocuments, writePhoneDocument } from '../runtime/phoneDocuments';
 import { dropPhone, removeDevice, renameDevice, refreshDevicesNow } from '../runtime/devices';
@@ -8,6 +7,7 @@ import { uid } from '@/shared/lib/util';
 import { closeModal, confirm, openModal, prompt, toast, toastError, topModal } from '@/shared/overlays/controller';
 
 import { unavailable } from '@/shared/lib/unavailable';
+import { phoneGuard } from '../runtime/deviceLink';
 
 const isReal = (id?: string) => !!agent(id || S.phoneId)?.real;
 
@@ -90,7 +90,7 @@ export const doSendFiles = (_phoneId: string) => unavailable('向手机传送文
 export const manageDevice = (id: string) => openModal('device', { id });
 export async function reconnect(id: string) {
   if (!isReal(id)) { toast('这是示例手机，无法建立真实连接。请使用配对新手机。', 'info'); return; }
-  const current=authAccount();
+  const current=phoneGuard();
   if(!current()){toast('请先登录后恢复手机连接','info');return;}
   try {
     await refreshDevicesNow();if(!current())return;

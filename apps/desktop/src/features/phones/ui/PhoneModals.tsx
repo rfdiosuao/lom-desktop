@@ -1,4 +1,5 @@
 import { cloudConfigured, CLOUD_UNAVAILABLE } from '@/features/account/runtime/serviceConfig';
+import { lanMode } from '../runtime/devices';
 import { PhoneFilesModal } from './PhoneFiles';
 import { closeModal } from '@/shared/overlays/controller';
 import { gotoPhonePage, openSettings } from '@/app/navigation';
@@ -74,12 +75,13 @@ export function PairModal({ p }: { p: P }) {
     const t = window.setInterval(() => { void pairTick(); }, 1000);
     return () => { window.clearInterval(t); pairClosed(); };
   }, []);
-  if (!cloudConfigured()) return <Modal title="手机连接暂不可用" desc={CLOUD_UNAVAILABLE} foot={<Btn label="关闭" onClick={closeModal} />} />;
+  const lan = lanMode();
+  if (!cloudConfigured() && !lan) return <Modal title="手机连接暂不可用" desc={CLOUD_UNAVAILABLE} foot={<Btn label="关闭" onClick={closeModal} />} />;
   const stage = String(p.stage);
   if (stage === 'done') {
     const a = agent(String(p.newId));
     return (
-      <Modal title={null} foot={<><span className="modal__foot-note"><Icon name="shield" />手机只连接麓鸣云端，不需要同一个 Wi-Fi</span><Btn label="完成" variant="primary" onClick={closeModal} /></>}>
+      <Modal title={null} foot={<><span className="modal__foot-note"><Icon name="shield" />{lan ? '局域网直连，不经过麓鸣云端' : '手机只连接麓鸣云端，不需要同一个 Wi-Fi'}</span><Btn label="完成" variant="primary" onClick={closeModal} /></>}>
         <div className="pair" style={{ paddingTop: 26 }}>
           <div className="pair__done"><Icon name="check" /></div>
           {p.warn ? <p className="section__hint">{String(p.warn)}</p> : null}
@@ -96,7 +98,7 @@ export function PairModal({ p }: { p: P }) {
       <div className="pair" style={{ paddingTop: 20 }}>
         <div className="pair__symbol"><Icon name="phone" /><span className="pair__plus"><Icon name="plus" /></span></div>
         <h2 className="modal__title">添加手机</h2>
-        <p className="modal__desc">连接手机，创建它的独立 Agent · 不需要同一个 Wi-Fi</p>
+        <p className="modal__desc">连接手机，创建它的独立 Agent · {lan ? '电脑和手机需要在同一局域网' : '不需要同一个 Wi-Fi'}</p>
         {stage === 'signin' && <>
           <p style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text-2)', marginTop: 18 }}>手机会加入你的麓鸣账户，请先登录 HEANG 账号。</p>
           <Btn label="登录 HEANG 账号" ic="user" variant="primary" onClick={() => void pairSignedIn()} />
@@ -116,7 +118,7 @@ export function PairModal({ p }: { p: P }) {
           <Btn label="重新生成" ic="refresh" variant="secondary" onClick={() => void pairRefresh()} />
         </>}
         {(waiting || stage === 'scanned' || stage === 'sas') && <>
-          <div style={{ marginTop: 16 }}><Tabs items={[{ value: 'qr', label: '扫码连接' }, { value: 'code', label: '配对码连接' }]} value={String(p.tab)} onChange={pairTab} fill /></div>
+          <div style={{ marginTop: 16 }}><Tabs items={lan ? [{ value: 'qr', label: '局域网扫码' }] : [{ value: 'qr', label: '扫码连接' }, { value: 'code', label: '配对码连接' }]} value={String(p.tab)} onChange={pairTab} fill /></div>
           {stage === 'sas' ? <>
             <p style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text-2)', marginTop: 14 }}><b>{String(p.deviceName)}</b> 输入了配对码。请确认手机上显示的确认码与下面一致，然后在手机上点「确认连接」</p>
             <div className="code-display">{String(p.sas).replace(/^(\d{3})(\d{3})$/, '$1 $2')}</div>
@@ -125,7 +127,7 @@ export function PairModal({ p }: { p: P }) {
             <p style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text-2)', marginTop: 14 }}><b>{String(p.deviceName)}</b> 已扫码，配对信息核对通过<br />请在手机上点「确认连接」</p>
           ) : qr ? <>
             <div className="qr qr--live"><img className="qr__img" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(String(p.qrSvg))}`} alt="配对二维码" /></div>
-            <p style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text-2)', marginTop: 14 }}>在手机端打开 <b>Lom</b>，点首页右上角的连接图标，选「扫一扫」<br />在手机上点「确认连接」即可完成</p>
+            <p style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text-2)', marginTop: 14 }}>在手机端打开 <b>Lom</b>，点首页右上角的连接图标，选「扫一扫」<br />{lan ? '电脑和手机需在同一局域网，然后在手机上点「确认连接」' : '在手机上点「确认连接」即可完成'}</p>
           </> : <>
             <div className="code-display">{String(p.code)}</div>
             <Btn label="复制配对码" ic="copy" variant="link" size="sm" onClick={() => { void navigator.clipboard?.writeText(String(p.code)); toast('配对码已复制'); }} />

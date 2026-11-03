@@ -15,7 +15,7 @@ object PairingParser {
         return PairingInput.Manual(code.chunked(4).joinToString("-"))
     }
 
-    fun qr(raw: String, allowedHosts: Set<String>): PairingInput.Qr {
+    fun qr(raw: String, allowedHosts: Set<String>, allowLan: Boolean = false): PairingInput.Qr {
         if (raw.length > 2048) fail()
         val uri = try { URI(raw) } catch (_: Exception) { fail() }
         if (uri.scheme != "lom" || uri.rawAuthority != "pair" ||
@@ -32,12 +32,23 @@ object PairingParser {
             Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(hostBytes)).toString()
         } catch (_: Exception) { fail() }
-        if (!host.matches(Regex("[a-z0-9]+(?:[.-][a-z0-9]+)*")) || host !in allowedHosts) fail()
+        val lan = allowLan && isLanHost(host)
+        if (!lan && (!host.matches(Regex("[a-z0-9]+(?:[.-][a-z0-9]+)*")) || host !in allowedHosts)) fail()
         for ((key, length) in mapOf("p" to 16, "t" to 32, "k" to 32, "f" to 16)) {
             if (decode(fields.getValue(key)).size != length) fail()
         }
         return PairingInput.Qr(host, fields.getValue("p"), fields.getValue("t"),
             fields.getValue("k"), fields.getValue("f"))
+    }
+
+    private fun isLanHost(host: String): Boolean {
+        val parts = host.split(":")
+        if (parts.size != 2) return false
+        val port = parts[1].toIntOrNull() ?: return false
+        if (port !in 1024..65535) return false
+        val o = parts[0].split(".").mapNotNull { it.toIntOrNull() }
+        if (o.size != 4 || o.any { it !in 0..255 }) return false
+        return o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && o[1] in 16..31)
     }
 
     private fun decode(raw: String): ByteArray {

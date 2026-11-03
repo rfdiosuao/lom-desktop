@@ -1,7 +1,7 @@
 import { DIAGNOSTIC_TOOLS } from '@/features/personal/runtime/managementCatalog';
 import { CAPABILITY_TOOLS, executeCapabilityTool } from '@/features/personal/runtime/capabilityTools';
 import { personalDiagnosticTool } from '@/features/personal/runtime/diagnosticTools';
-import { authAccount } from '@/features/account/runtime/authScope';
+import { lanMode, phoneGuard } from './deviceLink';
 import { sendPhoneImage } from './phoneImage';
 import { delegatedTasks } from '@/features/teams/runtime/delegations';
 import { captureDelegation, trackDelegation } from '@/features/teams/runtime/delegationLifecycle';
@@ -29,6 +29,7 @@ import { executeSessionTool } from '@/features/personal/runtime/sessionTools';
 import type { CoreConversation } from '@/core/types';
 const ready = new Map<string, string>();
 const accounts = new Map<string, string>();
+const ownerKey = () => lanMode() ? 'lan' : S.account?.id;
 let listening: Promise<unknown> | undefined;
 const textResult = (value: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 export function startCommander() {
@@ -41,8 +42,8 @@ export function startCommander() {
 /** Disabled globally; loaded only by the conversation's selected MCP-id snapshot. */
 async function register(scope: string): Promise<string> {
   await startCommander();
-  const account = S.account?.id;
-  if (S.cloud !== 'signed-in' || !account) throw new Error('请先登录后连接手机');
+  const account = ownerKey(), authenticated = phoneGuard();
+  if (!account || (!lanMode() && S.cloud !== 'signed-in')) throw new Error('请先登录后连接手机');
   const existing = ready.get(scope); if (existing && accounts.get(scope) === account) return existing;
   const bridge = await invoke<CommanderConfig>('phone_bridge_config', { scope });
   const row = await api<{ id: string; enabled: boolean }>('POST', '/api/mcp/servers', {
@@ -50,7 +51,7 @@ async function register(scope: string): Promise<string> {
     transport: { type: 'http', url: bridge.url, headers: { Authorization: `Bearer ${bridge.token}` } },
   });
   if (row.enabled) await api('POST', `/api/mcp/servers/${row.id}/toggle`, {});
-  if (S.account?.id !== account) throw new Error('账号已切换，已停止连接');
+  if (!authenticated() || ownerKey() !== account) throw new Error('账号已切换，已停止连接');
   ready.set(scope, row.id); accounts.set(scope, account); return row.id;
 }
 export async function commanderExtra() {
@@ -70,7 +71,7 @@ const upgradeTried = new Set<string>();
 /** PA04：每次运行登记一次；早期建的助理会话没有调度工具时，就地补上（核心重建 MCP 快照）。
  * 返回 true 表示刚重启了这个会话的运行时（PA-LATENCY-01：权限设置据此不再重启第二次） */
 export async function ensurePersonalBridge(c: Conv): Promise<boolean> {
-  if (c.personalScope && ready.has(c.personalScope) && accounts.get(c.personalScope) === S.account?.id) { await startCommander(); return false; }
+  if (c.personalScope && ready.has(c.personalScope) && accounts.get(c.personalScope) === ownerKey()) { await startCommander(); return false; }
   if (!c.personalScope) {
     if (upgradeTried.has(c.id)) return false;
     upgradeTried.add(c.id);
@@ -87,10 +88,10 @@ export async function ensurePersonalBridge(c: Conv): Promise<boolean> {
   return true;
 }
 /** 这个 scope 是在当前账号下登记的 */
-export const scopeOwnedByAccount = (scope: string) => !!S.account?.id && accounts.get(scope) === S.account.id;
+export const scopeOwnedByAccount = (scope: string) => { const owner = ownerKey(); return !!owner && accounts.get(scope) === owner; };
 /** OPC 团队 Leader 用：确认这个 scope 的手机工具在本次运行里已登记。返回 true = 刚重新登记，Leader 的运行时要重启才连得上 */
 export async function ensurePhoneBridge(scope: string): Promise<boolean> {
-  if (ready.has(scope) && accounts.get(scope) === S.account?.id) { await startCommander(); return false; }
+  if (ready.has(scope) && accounts.get(scope) === ownerKey()) { await startCommander(); return false; }
   await register(scope);
   return true;
 }
@@ -101,7 +102,7 @@ export async function ensureCommander(c: Conv) {
     if (authorized(c).length) throw new Error('此旧会话没有手机工具，请新建电脑任务并勾选手机后继续。');
     return;
   }
-  if (ready.has(c.phoneScope) && accounts.get(c.phoneScope) === S.account?.id) { await startCommander(); return; }
+  if (ready.has(c.phoneScope) && accounts.get(c.phoneScope) === ownerKey()) { await startCommander(); return; }
   await register(c.phoneScope);
   try {
     const state = await api<{ runtime?: { has_task: boolean } }>('GET', `/api/conversations/${c.id}`);
@@ -112,7 +113,7 @@ function authorized(c: Conv) { return (S.convPhones[c.id] || []).filter(id => S.
 async function performPhoneTool(call: CommanderCall) {
   try {
     const c = S.convs.find(x => x.remote && x.phoneScope === call.scope);
-    if (S.cloud !== 'signed-in' || accounts.get(call.scope) !== S.account?.id || !c || !S.running[c.id]) throw new Error('指挥会话未运行或已停止');
+    if ((!lanMode() && S.cloud !== 'signed-in') || accounts.get(call.scope) !== ownerKey() || !c || !S.running[c.id]) throw new Error('指挥会话未运行或已停止');
     const args = JSON.parse(call.arguments) as Record<string, unknown>;
     if (call.name === 'lom_view_image') return await viewImageTool(args);
     const agentResult = await executeAgentTool(c, call.name, args);
@@ -125,9 +126,9 @@ async function performPhoneTool(call: CommanderCall) {
     if (S.agents[device].status === 'offline') throw new Error('手机离线，未执行');
     if (call.name === 'phone_status') return textResult({ online: true, ...(await phoneRpc<Record<string, unknown>>(device, 'device.status', {})) });
     if (call.name === 'phone_send_image') {
-      const owner = S.account?.id, authenticated = authAccount();
+      const owner = ownerKey(), authenticated = phoneGuard();
       const current = () => {
-        if (!authenticated() || S.account?.id !== owner || accounts.get(call.scope) !== owner || !S.convs.includes(c) || !S.running[c.id] || isTaskStopping(c.id) || !authorized(c).includes(device) || S.agents[device]?.status === 'offline') throw new Error('会话或手机授权已变化，停止发送');
+        if (!authenticated() || ownerKey() !== owner || accounts.get(call.scope) !== owner || !S.convs.includes(c) || !S.running[c.id] || isTaskStopping(c.id) || !authorized(c).includes(device) || S.agents[device]?.status === 'offline') throw new Error('会话或手机授权已变化，停止发送');
       };
       return textResult(await sendPhoneImage(device, args, current));
     }
@@ -210,8 +211,8 @@ async function admitPhone(parent: Conv, device: string, args: Record<string, unk
 export async function executePhoneTool(call: CommanderCall) {
   if (call.scope.startsWith('pa-')) {
     const self = S.convs.find(c => c.personal && c.personalScope === call.scope);
-    const authenticated = authAccount(), parentCurrent = self ? captureDelegation(self) : () => false;
-    const current = () => authenticated() && parentCurrent() && !!self && S.cloud === 'signed-in' && scopeOwnedByAccount(call.scope) && !!S.running[self.id] && !isTaskStopping(self.id);
+    const authenticated = phoneGuard(), parentCurrent = self ? captureDelegation(self) : () => false;
+    const current = () => authenticated() && parentCurrent() && !!self && (lanMode() || S.cloud === 'signed-in') && scopeOwnedByAccount(call.scope) && !!S.running[self.id] && !isTaskStopping(self.id);
     if (CAPABILITY_TOOLS.includes(call.name)) {
       if (!self) return { isError: true, content: [{ type: 'text', text: '个人助理未运行' }] };
       const result = await executeCapabilityTool(self, call, current);
@@ -233,9 +234,9 @@ export async function executePhoneTool(call: CommanderCall) {
     });
     return executeSessionTool(call);
   }
-  const owner = S.account?.id;
+  const owner = ownerKey();
   const result = await performPhoneTool(call);
   const c = S.convs.find(c => c.phoneScope === call.scope);
-  if (c && owner === S.account?.id) audit(c.id, call.id, call.name, 'isError' in result && result.isError ? 'failed' : 'completed');
+  if (c && owner === ownerKey()) audit(c.id, call.id, call.name, 'isError' in result && result.isError ? 'failed' : 'completed');
   return result;
 }

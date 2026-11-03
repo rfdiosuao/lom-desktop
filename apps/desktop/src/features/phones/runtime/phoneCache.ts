@@ -1,5 +1,6 @@
 import { toast } from '@/shared/overlays/controller';
 import { readJson, writeJson } from '@/features/account/runtime/localCache';
+import { lanMode } from './deviceLink';
 import { S, update } from '@/state/store';
 import type { Conv, Schedule } from '@/state/types';
 import type { AppState } from '@/state/state';
@@ -7,6 +8,7 @@ import type { AppState } from '@/state/state';
 /** Account-scoped local app cache. No provider configuration or credentials are stored here. */
 let loadedAccount: string | null = null;
 const prefix = 'lom.phone-cache.v1:';
+const scope = () => S.cloud === 'signed-in' ? S.account?.id || null : lanMode() ? 'lan' : null;
 /** schedules 是后加的字段：旧缓存里没有，读取时当作空 */
 interface Cache { version: 1; convs: Conv[]; souls: Record<string, string>; memories: AppState['memories']; schedules?: Schedule[]; }
 const record = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -23,7 +25,7 @@ const readCache = (id: string) => readJson(prefix + id, validCache);
 /** 同步循环每 2 秒会重试读取：同一账号、同样的问题只提示一次 */
 let reported = '';
 export function loadPhoneCache() {
-  const id = S.cloud === 'signed-in' ? S.account?.id || null : null;
+  const id = scope();
   if (id === loadedAccount) return;
   loadedAccount = null;
   update(s => {
@@ -52,8 +54,8 @@ export function loadPhoneCache() {
   });
 }
 export async function savePhoneCache(savedSouls: Record<string, string> = {}) {
-  const id = S.account?.id;
-  if (!id || S.cloud !== 'signed-in') return;
+  const id = scope();
+  if (!id || (!lanMode() && S.cloud !== 'signed-in')) return;
   const read = readCache(id);
   if (read.status === 'invalid' || read.status === 'unavailable') throw new Error('phone.cache_unavailable：原手机缓存无法读取，未覆盖原数据');
   const previous = read.status === 'ok' ? read.value : null;

@@ -6,5 +6,7 @@ package top.heang.lom.pairing
  */
 interface PairingHost {
     val pairingAllowedHosts: Set<String>
+    /** Community LAN builds accept a private IPv4:port from the scanned QR. */
+    val pairingAllowsLan: Boolean get() = false
     fun createPairingGateway(): PairingGateway
 }

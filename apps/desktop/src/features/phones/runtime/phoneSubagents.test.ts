@@ -1,6 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const m = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('./phoneRpc', () => ({ phoneRpc: m.rpc }));
+// This suite exercises the cloud account guard; community builds otherwise treat signed-out as LAN mode.
+vi.mock('@/features/account/runtime/serviceConfig', () => ({
+  cloudConfigured: () => true,
+  requireCloudService: () => {},
+  LOM_CLOUD_URL: 'https://cloud.invalid',
+  CLOUD_UNAVAILABLE: '',
+}));
 import { S } from '@/state/store';
 import { initialState } from '@/state/state';
 import { beginAuthChange } from '@/features/account/runtime/authScope';

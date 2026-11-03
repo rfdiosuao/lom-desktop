@@ -25,3 +25,4 @@ apps/desktop/src-tauri/binaries/*
 **/*.la
 **/.deps/
 **/.libs/
+**/.kotlin/

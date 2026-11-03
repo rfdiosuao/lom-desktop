@@ -1,4 +1,5 @@
 import { S, update } from '@/state/store';
+import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
 import type { AppState } from '@/state/state';
 import type { Agent, TeamMember } from '@/state/types';
 
@@ -16,7 +17,7 @@ const prefix = 'lom.device-config.v1:';
 let activeAccount: string | null = null;
 let legacyMembers: Config['members'] = {};
 let initialized = false;
-const account = () => S.cloud === 'signed-in' ? S.account?.id || null : null;
+const account = () => S.cloud === 'signed-in' ? S.account?.id || null : !cloudConfigured() ? 'lan' : null;
 
 function memberSlots(s: AppState, owns: (id: string) => boolean): Config['members'] {
   return Object.fromEntries(s.teams.map(t => [t.id, t.members.flatMap((member, index) => owns(member.agent) ? [{ index, member: { ...member } }] : [])]));

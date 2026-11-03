@@ -1925,6 +1925,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2278,7 +2288,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lom-desktop"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "aionui-personal-evolution",
  "arboard",
@@ -2289,6 +2299,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hkdf",
  "hmac",
+ "if-addrs",
  "keyring",
  "log",
  "minisign-verify",

@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="Lom 连接验证" android:theme="@style/LomPairingTheme"
+    <application android:label="Lom 局域网连接验证" android:theme="@style/LomPairingTheme"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false" android:supportsRtl="true">
         <activity android:name=".PreviewActivity" android:exported="true">
             <intent-filter>

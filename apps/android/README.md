@@ -2,7 +2,7 @@
 
 This component is derived from OpenMinis and retains its GPLv3 license and third-party notices. See [UPSTREAM.md](UPSTREAM.md) for provenance and modifications.
 
-The public build supports the existing local phone agent. Official cloud pairing, automatic credential recovery and background relay are disabled. The commercial server is not included. Desktop LAN/USB pairing is not implemented; community transport adaptation is left to contributors. Retained client and protocol code does not make the remote features operational.
+The public build supports the existing local phone agent. Official cloud pairing, automatic credential recovery and cloud background relay are disabled. The commercial server is not included. The community build supports QR pairing and encrypted RPC over a private LAN; USB pairing and cloud transport are not implemented. Retained client and protocol code does not make the cloud features operational.
 
 Build instructions: [BUILDING.md](BUILDING.md). Full APK/device validation for this export has not been performed.
 

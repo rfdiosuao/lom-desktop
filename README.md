@@ -1,8 +1,10 @@
 # Lom community source
 
-This repository contains the desktop client, local execution core, Android client, and device protocol source in one place. It is a source distribution for community development, without the commercial account, billing, model gateway, pairing relay, operations console, or deployment services.
+This repository contains the desktop client, local execution core, Android client, and device protocol source in one place. It is a source distribution for community development, without the commercial account, billing, model gateway, cloud pairing relay, operations console, or deployment services. The community desktop and Android client can pair over a local network by QR; LAN messages use signed encrypted envelopes.
 
-**It does not connect to an official Lom cloud by default.** Configure your own model provider for ordinary desktop tasks. The account-dependent Personal Agent and desktop-to-phone pairing/remote control are not standalone features in this distribution. There is no implemented Lom LAN transport; adding direct connections or a self-hosted relay is community integration work. The Android app retains its local features and client-side protocol source. Its upstream developer debug server is not a replacement for Lom pairing.
+**It does not connect to an official Lom cloud by default.** Configure your own model provider for ordinary desktop tasks. Account-dependent Personal Agent features still require a compatible service, but desktop-to-phone LAN pairing is implemented locally: the desktop hosts a one-time QR session and the phone connects directly on the same private network. The Android app also retains its local features and protocol source. Its upstream developer debug server is not a replacement for Lom LAN pairing.
+
+LAN pairing is intended for a trusted private network. Pairing and control HTTP traffic is cleartext and uses a one-time QR secret plus a bearer device token; remote RPC payloads are signed encrypted envelopes. Do not expose the LAN port to the internet or an untrusted network.
 
 ## Source layout
 
