@@ -1,3 +1,6 @@
+import { DIAGNOSTIC_TOOLS } from '@/features/personal/runtime/managementCatalog';
+import { CAPABILITY_TOOLS, executeCapabilityTool } from '@/features/personal/runtime/capabilityTools';
+import { personalDiagnosticTool } from '@/features/personal/runtime/diagnosticTools';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { sendPhoneImage } from './phoneImage';
 import { delegatedTasks } from '@/features/teams/runtime/delegations';
@@ -64,21 +67,24 @@ export async function personalExtra() {
   return { lom_personal_scope: scope, selected_mcp_server_ids: [...enabled.filter(x => x.enabled && !x.name.startsWith('lom-phone-')).map(x => x.id), id] };
 }
 const upgradeTried = new Set<string>();
-/** PA04：每次运行登记一次；早期建的助理会话没有调度工具时，就地补上（核心重建 MCP 快照） */
-export async function ensurePersonalBridge(c: Conv) {
-  if (c.personalScope && ready.has(c.personalScope) && accounts.get(c.personalScope) === S.account?.id) { await startCommander(); return; }
+/** PA04：每次运行登记一次；早期建的助理会话没有调度工具时，就地补上（核心重建 MCP 快照）。
+ * 返回 true 表示刚重启了这个会话的运行时（PA-LATENCY-01：权限设置据此不再重启第二次） */
+export async function ensurePersonalBridge(c: Conv): Promise<boolean> {
+  if (c.personalScope && ready.has(c.personalScope) && accounts.get(c.personalScope) === S.account?.id) { await startCommander(); return false; }
   if (!c.personalScope) {
-    if (upgradeTried.has(c.id)) return;
+    if (upgradeTried.has(c.id)) return false;
     upgradeTried.add(c.id);
     const extra = await personalExtra();
     const row = await api<CoreConversation>('PATCH', `/api/conversations/${c.id}`, { extra });
     const id = extra.selected_mcp_server_ids.at(-1)!;
     // 旧版核心不会重建快照：这时不记 scope，助理照常可用，只是暂时没有调度工具
-    if (row.extra?.lom_personal_scope !== extra.lom_personal_scope || !row.extra?.mcp_server_ids?.includes(id)) { console.warn('personal.bridge_unsupported'); return; }
+    if (row.extra?.lom_personal_scope !== extra.lom_personal_scope || !row.extra?.mcp_server_ids?.includes(id)) { console.warn('personal.bridge_unsupported'); return false; }
     update(() => { c.personalScope = extra.lom_personal_scope; });
   } else await register(c.personalScope);
   const state = await api<{ runtime?: { has_task: boolean } }>('GET', `/api/conversations/${c.id}`);
-  if (state.runtime?.has_task) await api('POST', `/api/conversations/${c.id}/runtime/restart`, {});
+  if (!state.runtime?.has_task) return false;
+  await api('POST', `/api/conversations/${c.id}/runtime/restart`, {});
+  return true;
 }
 /** 这个 scope 是在当前账号下登记的 */
 export const scopeOwnedByAccount = (scope: string) => !!S.account?.id && accounts.get(scope) === S.account.id;
@@ -203,6 +209,22 @@ async function admitPhone(parent: Conv, device: string, args: Record<string, unk
 
 export async function executePhoneTool(call: CommanderCall) {
   if (call.scope.startsWith('pa-')) {
+    const self = S.convs.find(c => c.personal && c.personalScope === call.scope);
+    const authenticated = authAccount(), parentCurrent = self ? captureDelegation(self) : () => false;
+    const current = () => authenticated() && parentCurrent() && !!self && S.cloud === 'signed-in' && scopeOwnedByAccount(call.scope) && !!S.running[self.id] && !isTaskStopping(self.id);
+    if (CAPABILITY_TOOLS.includes(call.name)) {
+      if (!self) return { isError: true, content: [{ type: 'text', text: '个人助理未运行' }] };
+      const result = await executeCapabilityTool(self, call, current);
+      audit(self.id, call.id, call.name, result.isError ? 'failed' : 'completed');
+      return result;
+    }
+    if (DIAGNOSTIC_TOOLS.includes(call.name)) {
+      try {
+        const result = await personalDiagnosticTool(call.name, JSON.parse(call.arguments || '{}'), current);
+        if (self) audit(self.id, call.id, call.name, result?.isError ? 'failed' : 'completed');
+        return result!;
+      } catch { return { isError: true, content: [{ type: 'text', text: '工具参数无效' }] }; }
+    }
     if (call.name.startsWith('feishu_')) return executeFeishuTool(call, {
       fullAccess: personalFullAccess,
       requiresApproval: c => { const a = personalPermissionAssistant(c); return !a || requiresApproval(a); },

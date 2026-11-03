@@ -30,7 +30,7 @@ it('consecutive tool calls fold into one group with one sentence per call', asyn
   expect(host.querySelector('.tools__list')).toBeNull(); // 跑完默认收起
   await act(async () => head.click());
   const rows = [...host.querySelectorAll('.tool__text')].map(x => x.textContent);
-  expect(rows).toEqual(['运行命令：sleep 8', '读取CodeBuddy的任务结果', '派任务给 CodeBuddy：整理完整的 app 列表']);
+  expect(rows).toEqual(['运行命令', '读取成员的任务结果', '派任务给 助理']);
   expect(host.textContent).not.toContain('agent_task_read');
 });
 
@@ -69,7 +69,7 @@ it('Lom puts identity before thinking and preserves interleaved reply order', as
   expect(host.textContent).not.toContain('先检查情况');
   await act(async () => thinking.click());
   expect(host.textContent).toContain('先检查情况');
-  expect([...host.querySelectorAll('.msg__text:not(.lom-thinking__body), .tools')].map(e => e.textContent)).toEqual(['开始检查', '运行命令', '检查完成']);
+  expect([...host.querySelectorAll('.msg__text:not(.lom-thinking__body), .tool__text')].map(e => e.textContent)).toEqual(['开始检查', '运行命令', '检查完成']);
 });
 
 it('D31 AC-1 external agents use the same compact thinking below their identity', async () => {

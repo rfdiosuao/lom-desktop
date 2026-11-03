@@ -1,4 +1,4 @@
-import { t } from '@/shared/i18n/index';
+import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { PhoneScreen } from '@/features/phones/ui/PhoneScreen';
 import { PhonePlaceholder } from '@/shared/ui/PhonePlaceholder';
 import { dragWindow } from '@/core/platform';
@@ -6,16 +6,17 @@ import { toggleRight, wsTab } from '@/app/shell/layout';
 import { openModal, toast, toastError } from '@/shared/overlays/controller';
 import { sendFiles } from '@/features/phones/actions/phone';
 import { DeviceButton } from '@/shared/ui/Agent';
-import { Btn, Dropdown, IconBtn } from '@/shared/ui/Button';
+import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Dot, Seg, Spinner, Tabs } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { Empty } from '@/shared/ui/Layout';
-import { MISSING_FOLDER, activeFolder, openFile, openInSystem, refreshPreview, refreshWorkspace, revealInSystem } from '../runtime/workspace';
+import { openInSystem, refreshPreview } from '../runtime/workspace';
 import { conv, phone } from '@/state/selectors';
-import { update, useStore } from '@/state/store';
-import type { FileNode } from '@/state/types';
+import { S, update, useStore } from '@/state/store';
+import { WsFiles } from './WsFiles';
+export { WsFiles } from './WsFiles';
 import { WsChanges, WsPlan } from './WsActivity';
-import { ago, basename, prettyPath } from '@/shared/lib/util';
+import { ago, basename } from '@/shared/lib/util';
 
 /* ===== 右侧工作区：预览 / 文件 / 手机 ===== */
 
@@ -30,11 +31,17 @@ export function PreviewFrame({ device }: { device: 'desktop' | 'mobile' }) {
   );
 }
 
+/** 当前会话有可预览的作品：正在生成或已经有页面（UI-AUDIT-02 UI-10） */
+export function previewReady(s: Pick<typeof S, 'route' | 'activeConv' | 'previewHtml'> = S) {
+  const st = s.route.name === 'chat' ? conv(s.activeConv)?.preview : undefined;
+  return !!st && (!!s.previewHtml || st === 'building');
+}
+
 function WsPreview() {
   const s = useStore();
   const c = s.route.name === 'chat' ? conv(s.activeConv) : undefined;
   const st = c?.preview;
-  if (!st || (!s.previewHtml && st !== 'building')) {
+  if (!previewReady(s)) {
     return <>
       <div className="preview-empty"><Empty ic="globe" title="作品会在这里实时呈现" desc="让总指挥做一个网页、海报或文档，结果会自动出现在这里。" /></div>
       <div className="preview-status">{s.previewError ? <><Icon name="info" />预览失败：{s.previewError}</> : <><Dot />等待开始</>}</div>
@@ -59,61 +66,10 @@ function WsPreview() {
   </>;
 }
 
-function Tree({ node, depth = 0 }: { node: FileNode; depth?: number }) {
-  const s = useStore();
-  if (node.type === 'dir') {
-    const open = !!s.treeOpen[node.path];
-    return <>
-      <button type="button" className="ftree__row" style={{ paddingLeft: 6 + depth * 14 }} onClick={() => update(x => { x.treeOpen[node.path] = !open; })}>
-        <Icon name="chevron" className={`caret ${open ? '' : 'is-closed'}`} /><Icon name="folder" /><span className="grow ellipsis">{node.name}</span>
-      </button>
-      {open && node.children?.map(n => <Tree key={n.path} node={n} depth={depth + 1} />)}
-    </>;
-  }
-  const ic = /\.(png|jpe?g|gif|webp|svg)$/i.test(node.name) ? 'image' : /\.(md|txt)$/i.test(node.name) ? 'file' : 'fileCode';
-  return (
-    <button type="button" className="ftree__row" style={{ paddingLeft: 24 + depth * 14 }} onClick={() => void openFile(node.path)}>
-      <Icon name={ic} /><span className="grow ellipsis">{node.name}</span>
-    </button>
-  );
-}
-
-export function WsFiles() {
-  const s = useStore();
-  const root = activeFolder();
-  if (s.openFile) {
-    const content = s.openFileContent;
-    return <>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <IconBtn ic="back" label="返回文件列表" size="sm" onClick={() => void openFile(null)} />
-        <b className="grow ellipsis" style={{ fontSize: 14 }}>{basename(s.openFile)}</b>
-        <IconBtn ic="copy" label="复制内容" size="sm" onClick={() => { void navigator.clipboard?.writeText(content).then(() => toast('已复制文件内容')); }} />
-        <IconBtn ic="external" label="用默认应用打开" size="sm" onClick={() => { openInSystem(s.openFile || '').catch(e => toastError('打开失败', e)); }} />
-      </div>
-      <div className="code">{content ? content.split('\n').map((l, i) => <div key={i} className="code__line">{l || ' '}</div>) : <div className="code__line">读取中…</div>}</div>
-    </>;
-  }
-  const inTask = s.route.name === 'chat' && !!conv(s.activeConv)?.remote;
-  return <>
-    <div className="row" style={{ marginBottom: 10 }}>
-      {inTask
-        ? <Dropdown label={prettyPath(root, s.homeDir)} ic="folder" menu="folder" variant="secondary" size="sm" title={`这个任务的工作文件夹：${root}`} className="btn--path" ctx={{ ckey: `conv:${s.activeConv}`, key: `fold:conv:${s.activeConv}` }} />
-        : <Dropdown label={root ? prettyPath(root, s.homeDir) : '选择文件夹'} ic="folder" menu="folder" variant="secondary" size="sm" title={root} className="btn--path" />}
-      <span className="grow" />
-      <IconBtn ic="refresh" label="刷新" size="sm" onClick={() => { void refreshWorkspace().then(() => toast('文件列表已刷新', 'refresh')); }} />
-      <IconBtn ic="external" label="在访达中显示" size="sm" disabled={!root} onClick={() => { revealInSystem(root).catch(e => toastError('打开失败', e)); }} />
-    </div>
-    {s.filesError
-      ? <Empty ic={s.filesError.startsWith(MISSING_FOLDER) ? 'folder' : 'info'} title={s.filesError.startsWith(MISSING_FOLDER) ? '还没有文件' : '读取文件夹失败'} desc={s.filesError} actions={<Btn label="重试" ic="refresh" variant="secondary" size="sm" onClick={() => void refreshWorkspace()} />} />
-      : s.files
-        ? (s.files.children?.length ? <div className="ftree"><Tree node={s.files} /></div> : <Empty ic="folder" title="文件夹是空的" desc="总指挥生成的文件会出现在这里。" />)
-        : <div className="msg__sys">{s.filesLoading ? <><Spinner />正在读取…</> : '还没有选择工作文件夹'}</div>}
-  </>;
-}
-
 function WsPhone() {
   useStore();
   const p = phone();
+  if (!p) return <NoPhone />;
   return <>
     <DeviceButton phone={p} variant="panel" />
     {p.real ? <PhoneScreen key={p.id} device={p.id} /> : <PhonePlaceholder />}
@@ -122,17 +78,17 @@ function WsPhone() {
 
 export function Workspace() {
   const s = useStore();
+  const canFull = s.wsTab !== 'preview' || previewReady(s);
   return (
     <aside className="workspace" aria-label="工作区">
       <div className="workspace__head" onMouseDown={dragWindow}>
-        <h2 className="workspace__title">{t('工作区')}</h2>
+        <div className="workspace__tabs"><Tabs items={[{ value: 'preview', label: '预览' }, { value: 'files', label: '文件' }, { value: 'plan', label: '计划' }, { value: 'changes', label: '变更' }, { value: 'phone', label: '手机' }]} value={s.wsTab} onChange={wsTab} /></div>
         <div className="row" style={{ gap: 2 }}>
-          <IconBtn ic="expand" label="全屏查看" onClick={() => openModal('full')} />
+          <IconBtn ic="expand" label={canFull ? '全屏查看' : '全屏查看（还没有作品）'} onClick={() => openModal('full')} disabled={!canFull} />
           <IconBtn ic="chevronRight" label="收起工作区" onClick={toggleRight} />
         </div>
       </div>
-      <div className="workspace__tabs"><Tabs items={[{ value: 'preview', label: '预览' }, { value: 'files', label: '文件' }, { value: 'plan', label: '计划' }, { value: 'changes', label: '变更' }, { value: 'phone', label: '手机' }]} value={s.wsTab} onChange={wsTab} /></div>
-      <div className="workspace__body">{s.wsTab === 'preview' ? <WsPreview /> : s.wsTab === 'files' ? <WsFiles /> : s.wsTab === 'plan' ? <WsPlan /> : s.wsTab === 'changes' ? <WsChanges /> : <WsPhone />}</div>
+      <div className={`workspace__body${s.wsTab === 'files' ? ' workspace__body--files' : ''}`}>{s.wsTab === 'preview' ? <WsPreview /> : s.wsTab === 'files' ? <WsFiles /> : s.wsTab === 'plan' ? <WsPlan /> : s.wsTab === 'changes' ? <WsChanges /> : <WsPhone />}</div>
     </aside>
   );
 }

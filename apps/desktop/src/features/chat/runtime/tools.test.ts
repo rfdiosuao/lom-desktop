@@ -39,6 +39,22 @@ describe('D01 §2.4 工具调用的展示', () => {
     mergeFileChange(list, { path: 'a.html', add: 1, del: 0 });
     expect(list.filter(m => m.type === 'files')).toHaveLength(2);
   });
+
+  it('CHAT-ACTIVITY-01 AC-10 文件变更只并入当前这段执行过程，不越过正文和审批合并到前面的卡片', () => {
+    const list: Msg[] = [
+      { id: 't1', type: 'tool', at: 0, status: 'done' }, { id: 'f1', type: 'files', at: 1, changes: [{ path: 'a.html', add: 1, del: 0 }] },
+      { id: 'r', type: 'assistant', at: 2, text: '先改了首页' }, { id: 'ap', type: 'approval', at: 3, status: 'approved' }, { id: 't2', type: 'tool', at: 4, status: 'done' },
+    ];
+    mergeFileChange(list, { path: 'b.css', add: 2, del: 0 });
+    expect(list.map(m => m.type)).toEqual(['tool', 'files', 'assistant', 'approval', 'tool', 'files']);
+    expect(list[1].changes).toEqual([{ path: 'a.html', add: 1, del: 0 }]);
+    expect(list[5].changes).toEqual([{ path: 'b.css', add: 2, del: 0 }]);
+    // 同一段里隔着思考和工具仍并入同一张
+    list.push({ id: 'th', type: 'thinking', at: 5, text: '再改样式' }, { id: 't3', type: 'tool', at: 6, status: 'done' });
+    mergeFileChange(list, { path: 'b.css', add: 1, del: 1 });
+    expect(list.filter(m => m.type === 'files')).toHaveLength(2);
+    expect(list[5].changes).toEqual([{ path: 'b.css', add: 3, del: 1 }]);
+  });
 });
 
 describe('S04-01 AC-5 积分不足的提示', () => {

@@ -10,7 +10,7 @@ import { S } from '@/state/store';
 
 const assistant = { id: 'pa_a', name: '小麓', directory: '/a', workspace: '/a' };
 let host: HTMLDivElement, root: Root;
-let status = { configured: false, app_id: null as string | null, authorized: false, connected: false };
+let status: { configured: boolean; app_id: string | null; authorized: boolean; connected: boolean; listener_running?: boolean } = { configured: false, app_id: null as string | null, authorized: false, connected: false };
 const svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
 
 beforeEach(() => {
@@ -49,7 +49,7 @@ it('FEISHU-06 one scan takes an unconnected account straight to connected; autho
   status = { configured: true, app_id: 'cli_a1', authorized: false, connected: true } as typeof status;
   await step({ stage: 'app', ok: true });
   expect(m.invoke).not.toHaveBeenCalledWith('feishu_authorize_begin', expect.anything());
-  expect(host.textContent).toContain('已连接');
+  expect(host.textContent).toContain('机器人已配置');
   expect(host.textContent).toContain('cli_a1');
   await vi.waitFor(() => expect(m.invoke).toHaveBeenCalledWith('feishu_listen_start', { account: 'acc-1', assistantId: 'pa_a' }));
   // 以本人身份用文档、日历是可选的再授权
@@ -120,7 +120,7 @@ it('FEISHU-ISOLATE a successful scan records the assistant that started it', asy
   await click('扫码连接飞书');
   status = { configured: true, app_id: 'cli_new', authorized: false, connected: true };
   await step({ stage: 'app', ok: true });
-  expect(host.textContent).toContain('已连接');
+  expect(host.textContent).toContain('机器人已配置');
   expect(JSON.parse(localStorage.getItem('lom.personal.feishu-binding.v2:acc-1')!)).toContainEqual({ appId: 'cli_new', assistantId: 'pa_a' });
 });
 it('FEISHU-MULTI deleted ownership remains recoverable without silently transferring to this assistant',async()=>{
@@ -165,4 +165,40 @@ it('FEISHU-MULTI foreign assistant and stale connection events cannot replace th
  expect(host.textContent).toContain('扫码连接');
  await step({stage:'app',ok:false,generation:-1,error:'access_denied'});
  expect(host.textContent).toContain('扫码连接');
+});
+
+it('FEISHU-HEALTH-01 authorization with a stopped listener never claims message health and offers reconnect', async () => {
+ status = { configured: true, app_id: 'cli_health', authorized: true, connected: true, listener_running: false };
+ await render();
+ expect(host.textContent).toContain('监听未运行');
+ expect(host.textContent).toContain('消息收发尚未验证');
+ expect(host.textContent).not.toContain('已连接');
+ expect(host.textContent).toContain('重新连接');
+});
+
+it('FEISHU-HEALTH-01 a failed start remains visible when native cleanup advances the stopped generation', async () => {
+ const {beginFeishuHealth} = await import('../runtime/feishuHealth');
+ status = {configured:true,app_id:'cli_failed_start',authorized:true,connected:true,listener_running:false};
+ beginFeishuHealth({account:'acc-1',assistantId:'pa_a',appId:'cli_failed_start',generation:0},'error');
+ await render();
+ expect(host.textContent).toContain('监听中断');
+ expect(host.textContent).toContain('feishu.listener_failed');
+ expect(host.textContent).toContain('重新连接');
+});
+
+it('UI-AUDIT-03 AC-3 已配置但未验证：机器人 ID 和未验证各说一次，不说已连接，操作同一行，诊断折叠在最后', async () => {
+  status = { configured: true, app_id: 'cli_a1', authorized: false, connected: true, listener_running: true };
+  await render();
+  const text = host.textContent!;
+  expect(text.split('cli_a1')).toHaveLength(2);
+  expect(text.split('消息收发尚未验证')).toHaveLength(2);
+  expect(text).not.toContain('已连接');
+  expect(host.querySelector('.pa-channel .badge--brand')?.textContent).toContain('机器人已配置');
+  expect([...host.querySelector('.pa-channel__actions')!.querySelectorAll('button')].map(b => b.textContent)).toEqual(['重新连接', '授权访问我的飞书（可选）', '断开']);
+  expect(host.lastElementChild?.tagName).toBe('DETAILS');
+});
+
+it('UI-AUDIT-03 AC-4 飞书扫码连接用次按钮，与微信一致', async () => {
+  await render();
+  expect([...host.querySelectorAll('button')].find(b => b.textContent === '扫码连接飞书')?.classList.contains('btn--secondary')).toBe(true);
 });

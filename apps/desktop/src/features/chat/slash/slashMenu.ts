@@ -34,7 +34,7 @@ export function slashMenu(key: string, query: string): MenuItem[] {
     : key === 'home' && S.mode === 'desktop' && !homeAgent;
   const effortDesc = !effortOk
     ? (task?.agentId ? (extEffort ? '还没读到这个 Agent 的推理选项' : `${task.agentName || '这个 Agent'} 没有推理强度选项`) : task ? '当前模型不支持调整推理强度' : homeAgent ? `${homeAgent === 'pc' ? 'Lom' : S.agentCatalog?.find(a => a.id === homeAgent)?.name || '这个 Agent'} 的推理强度由它自己的设置决定` : '先打开一个任务')
-    : task?.agentId ? `${task.agentName}：${choiceName(extEffort, extEffort?.current_value) || '默认'}` : `当前：${effortName(task ? task.effort : S.effortPick)}（低 / 中 / 高）`;
+    : task?.agentId ? `${task.agentName}：${choiceName(extEffort, extEffort?.current_value) || '默认'}` : `当前：${effortName(task ? task.effort : S.effortPick)}（不思考 / 低 / 中 / 高）`;
   const commands: MenuItem[] = [
     { label: '海龟汤提问卡', desc: 'AI 提问，你回答对、不对或其他', ic: 'message', disabled: !real, onSelect: () => enableTurtle(key) },
     { label: '定时任务', desc: '设置时间和任务内容', ic: 'clock', disabled: !real && !device, onSelect: run(() => editSched({exec: device || 'pc'})) },

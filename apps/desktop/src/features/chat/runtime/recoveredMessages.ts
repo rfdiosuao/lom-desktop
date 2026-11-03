@@ -22,6 +22,7 @@ export function recoveredMessages(saved: Msg[], local: Msg[], stillStreaming: bo
     if (!match) continue;
     used.add(match);
     matches.set(message, match);
+    if (message.timing && (!match.timing || match.timing.endedAt === undefined)) match.timing = message.timing;
     if (message.type === 'user') {
       match.id = message.id;
       if (!message.remoteId) { match.remoteId = undefined; match.status = message.status; }

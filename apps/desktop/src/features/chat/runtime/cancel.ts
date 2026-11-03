@@ -9,67 +9,37 @@ import { stopAttempt } from './stopAttempt';
 import { authRevision } from '@/features/account/runtime/authScope';
 import { invalidateDelegations, stopDelegationAdmissions } from '@/features/teams/runtime/delegationLifecycle';
 
-export interface Registration { turnIds: string[]; unknown: boolean; }
-const unknownRegistration = (): Registration => ({ turnIds: [], unknown: true });
-function registrationOf(value: unknown): Registration {
-  if (!value || typeof value !== 'object') return unknownRegistration();
-  const row = value as { turn_id?: unknown; turnIds?: unknown; unknown?: unknown };
-  if (typeof row.turn_id === 'string' && row.turn_id) return { turnIds: [row.turn_id], unknown: false };
-  if (Array.isArray(row.turnIds) && row.turnIds.every(id => typeof id === 'string') && typeof row.unknown === 'boolean')
-    return { turnIds: row.turnIds, unknown: row.unknown };
-  return unknownRegistration();
-}
-const registrationResult = (pending: Promise<unknown>) => pending.then(registrationOf, unknownRegistration);
+import * as ledger from './turnLedger';
+import { finishTiming } from './activityTiming';
+import type { Registration } from './turnLedger';
+export type { Registration } from './turnLedger';
 
-/** A pending send can still register a turn after an idle runtime response. */
-export const pendingSends = new Map<string, Promise<unknown>>();
-const sending = new Map<string, Set<Promise<unknown>>>();
-const uncertain = new Map<string, Set<string | undefined>>();
-export const hasInFlightSend = (id: string) => !!sending.get(id)?.size;
-export const hasUnconfirmedSend = (id: string) => pendingSends.has(id) && !!uncertain.get(id)?.size;
+/* 会话操作状态由 turnLedger 统一持有（REFACTOR-01 模块 1）；这里保留原有对外名称，并负责停止流程本身。 */
 
-/** Idle runtime alone cannot prove that an unknown send was never admitted. */
-export function reconcileSendRegistrations(id: string, acceptedLocalIds: string[], _turnId?: string) {
-  if (hasInFlightSend(id)) return false;
-  const debt = uncertain.get(id);
-  if (!debt) return !pendingSends.has(id);
-  if (![...debt].every(message => !!message && acceptedLocalIds.includes(message))) return false;
-  uncertain.delete(id); pendingSends.delete(id);
-  return true;
-}
-
-export function trackPendingSend(id: string, request: Promise<unknown>, classify = (value: unknown, _error?: unknown) => registrationOf(value), messageId?: string) {
-  if (!pendingSends.has(id)) uncertain.delete(id);
-  const requests = sending.get(id) || new Set<Promise<unknown>>();
-  requests.add(request); sending.set(id, requests);
-  const finish = () => { requests.delete(request); if (!requests.size) sending.delete(id); };
-  void request.then(finish, finish);
-  const previous = pendingSends.get(id);
-  const own = request.then(value => classify(value), error => classify(undefined, error)).then(result => {
-    if (result.unknown) { const debt = uncertain.get(id) || new Set(); debt.add(messageId); uncertain.set(id, debt); }
-    return result;
-  });
-  const aggregate = Promise.all(previous ? [registrationResult(previous), own] : [own])
-    .then(results => ({ turnIds: results.flatMap(r => r.turnIds), unknown: results.some(r => r.unknown) }));
-  pendingSends.set(id, aggregate);
-  void aggregate.then(result => { if (!result.unknown && pendingSends.get(id) === aggregate) pendingSends.delete(id); });
-  return () => [...requests].some(other => other !== request);
-}
-const stopping = new Set<string>();
-const completedTurns = new Map<string, string>();
-export const recordCompletedTurn = (id: string, turnId: string) => { completedTurns.set(id, turnId); };
-export const isCompletedTurn = (id: string, turnId?: string) => !!turnId && completedTurns.get(id) === turnId;
-export const isTaskStopping = (id: string) => stopping.has(id);
+/** 发送登记的只读视图：get 返回自上次确认以来全部发送的登记结果 */
+export const pendingSends = { get: ledger.registration, has: (id: string) => !!ledger.registration(id) };
+export const hasInFlightSend = ledger.inFlight;
+export const hasUnconfirmedSend = ledger.unconfirmed;
+export const sendBlocker = ledger.sendBlocker;
+export const reconcileSendRegistrations = (id: string, acceptedLocalIds: string[], _turnId?: string) => ledger.reconcile(id, acceptedLocalIds);
+export const trackPendingSend = ledger.trackSend;
+export const recordCompletedTurn = ledger.completeTurn;
+export const completedTurnStatus = ledger.completedStatus;
+export const isCompletedTurn = ledger.isCompleted;
+export const isTaskStopping = ledger.isStopping;
+const registrationResult = ledger.registrationResult;
 interface Runtime { is_processing: boolean; turn_id: string | null; }
 interface Snapshot { runtime: Runtime; }
 
-function markStopped(id: string, wasRunning: boolean) {
+function markStopped(id: string, wasRunning: boolean, cancelled: boolean) {
   update(s => {
     delete s.running[id];
     const c = conv(id);
     if (!c) return;
     c.turnId = undefined;
     c.messages.forEach(m => {
+      // 只有真正发出取消并确认停止时，停止时刻才是观测到的结束；本来就已空闲时不补造结束时间（显示耗时未知）
+      if (cancelled && (m.streaming || (m.type === 'tool' && m.status === 'running'))) finishTiming(m);
       if (m.streaming) m.streaming = false;
       if (m.status === 'running') m.status = 'error';
       if (['approval', 'question'].includes(m.type) && ['pending', 'submitting'].includes(m.status || '')) m.status = 'denied';
@@ -80,7 +50,7 @@ function markStopped(id: string, wasRunning: boolean) {
 
 async function cancelOwn(id: string, quiet = false, expected?: Registration): Promise<boolean> {
   const attempt = stopAttempt();
-  const pending = pendingSends.get(id);
+  const pending = ledger.registration(id);
   const original = conv(id), account = S.account?.id, auth = authRevision();
   const current = () => conv(id) === original && S.account?.id === account && auth();
   let registration = expected;
@@ -114,14 +84,14 @@ async function cancelOwn(id: string, quiet = false, expected?: Registration): Pr
       }
       await attempt.wait(new Promise(resolve => setTimeout(resolve, 250)));
     }
-    markStopped(id, wasRunning);
+    markStopped(id, wasRunning, !!cancelled);
     return wasRunning;
   } finally { attempt.finish(); }
 }
 
 /** Keep the guard until every underlying operation that can still mutate state has settled. */
 function guard(id: string, work: Promise<unknown>, own: Promise<boolean>) {
-  const pending = pendingSends.get(id), original = conv(id), account = S.account?.id, auth = authRevision();
+  const pending = ledger.registration(id), original = conv(id), account = S.account?.id, auth = authRevision();
   const reconcile = own.then(async stopped => {
     try {
       if (!stopped && pending) {
@@ -130,7 +100,7 @@ function guard(id: string, work: Promise<unknown>, own: Promise<boolean>) {
       }
     } catch (e) { console.warn('task.late_stop_unconfirmed', id, e instanceof Error ? e.message : e); }
   });
-  void Promise.allSettled([work, reconcile]).then(() => update(() => { stopping.delete(id); }));
+  void Promise.allSettled([work, reconcile]).then(() => update(() => { ledger.endStop(id); }));
 }
 
 async function stopMembers(work: Promise<{ stopped: number; failed: number }>) {
@@ -140,9 +110,8 @@ async function stopMembers(work: Promise<{ stopped: number; failed: number }>) {
 
 /** Member cancellation never cascades into other members. */
 export async function stopChildTask(id: string): Promise<{ ok: boolean; ran: boolean }> {
-  if (stopping.has(id)) return { ok: false, ran: true };
+  if (!ledger.beginStop(id)) return { ok: false, ran: true };
   invalidateDelegations(id);
-  stopping.add(id);
   const own = cancelOwn(id, true).then(ran => ({ ok: true, ran }), e => {
     console.warn('team.child_stop_unconfirmed', id, e instanceof Error ? e.message : e);
     return { ok: false, ran: true };
@@ -157,9 +126,8 @@ export async function stopChildTask(id: string): Promise<{ ok: boolean; ran: boo
 }
 
 export async function stopTask(id: string): Promise<boolean> {
-  if (stopping.has(id)) return false;
+  if (!ledger.beginStop(id)) return false;
   invalidateDelegations(id);
-  stopping.add(id);
   update(st => { const g = st.goals[`conv:${id}`]; if (g && !g.done && !g.paused) { g.paused = true; g.pausedAt = Date.now(); g.note = '已停止，目标暂停'; } });
   const own = cancelOwn(id).then(() => true, e => { toastError('本会话停止尚未确认', e); return false; });
   // A stalled parent request must not delay either kind of delegated cancellation.

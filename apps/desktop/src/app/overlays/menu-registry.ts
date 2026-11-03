@@ -1,3 +1,4 @@
+import { externalPermissionMenu } from '@/features/settings/runtime/agentPermission';
 import { openPersonalPanel } from '@/features/personal/runtime/panel';
 import { ensureCloudConfig, repairBuiltin } from '@/features/account/runtime/cloud';
 import { historyMenu } from '@/features/chat/slash/historyMenu';
@@ -14,7 +15,7 @@ import { unreadFeedback } from '@/features/account/runtime/feedback';
 import { enableTurtle } from '@/features/chat/actions/turtle';
 import { addAttach, askInspect, attachAll, browseFolder, insertMention, pickFolderPath, pickModel, pickPerm, toggleAttachPhone } from '@/features/chat/actions/composer';
 import { deleteConv, deleteGroup, exportConv, moveConv, newGroup, pinConv, renameConv, renameGroup } from '@/features/chat/actions/conversations';
-import { addMember, deleteTeam, renameTeam } from '@/features/teams/actions/teams';
+import { addMember, deleteTeam, exportTeam, renameTeam } from '@/features/teams/actions/teams';
 import { installSkill } from '@/features/skills/actions/skills';
 import { setTheme, watchPhone } from '../shell/layout';
 import { enterPhone, gotoPhonePage, openSettings, pickPhone } from '../navigation';
@@ -26,7 +27,7 @@ import { formSet } from '@/features/schedules/actions/schedule';
 import { getEndpoint } from '@/core/client';
 import { signIn } from '@/features/account/runtime/cloud';
 import type { MenuItem } from '@/shared/ui/Overlay';
-import { agent, attached, conv, convsOf, currentPcModel, PERMISSIONS, personaOf, phoneModelChoice, phoneModels, phones, pcModels, quotaLeft, skill, team } from '@/state/selectors';
+import { agent, attached, conv, convModel, convsOf, currentPcModel, PERMISSIONS, personaOf, phoneModelChoice, phoneStatusText, phoneModels, phones, pcModels, quotaLeft, skill, team } from '@/state/selectors';
 import { S, update } from '@/state/store';
 import type { MenuCtx } from '@/state/types';
 import { basename, prettyPath } from '@/shared/lib/util';
@@ -64,7 +65,7 @@ const account: MenuFn = () => {
 
 const phonePick: MenuFn = () => [
   { header: true, label: '选择手机' },
-  ...phones().map(p => ({ label: p.name, desc: `${personaOf(p)} · ${p.status === 'online' ? '在线' : '离线'}`, avatar: p, onSelect: () => pickPhone(p.id), select: 'single' as const, checked: S.phoneId === p.id })),
+  ...phones().map(p => ({ label: p.name, desc: `${personaOf(p)} · ${phoneStatusText(p)}`, avatar: p, onSelect: () => pickPhone(p.id), select: 'single' as const, checked: S.phoneId === p.id })),
   '-',
   { label: '配对新手机…', ic: 'plus', onSelect: pair },
   { label: '管理手机', ic: 'settings', onSelect: () => openSettings('connections') },
@@ -91,7 +92,9 @@ const model: MenuFn = ctx => {
   else cur = (ctx.ckey ? (() => { const c = convOfKey(ctx.ckey); return c?.lomTier ? `lom-${c.lomTier}` : c?.modelId; })() : undefined) ?? currentPcModel()?.id ?? '';
   const forPhone = isPhone || ctx.agent === 'phones';
   const options = forPhone ? phoneModels() : ctx.ckey?.startsWith('personal:') ? pcModels().filter(m => !m.byok) : pcModels();
-  const chosen = phoneModelChoice(cur);
+  // 已记录模型的会话和输入框按钮、发送共用 convModel；解析不到就不勾选，不假装选中（UI-AUDIT-02 UI-03）
+  const keyConv = !ctx.team && !forPhone && ctx.ckey ? convOfKey(ctx.ckey) : undefined;
+  const chosen = keyConv?.modelId ? convModel(keyConv) : phoneModelChoice(cur);
   const curId = chosen?.id ?? cur;
   const pick = (id: string) => () => pickModel({ model: id, agent: ctx.agent, team: ctx.team, mid: ctx.mid, ckey: ctx.ckey });
   return [
@@ -124,7 +127,7 @@ const attachPhones: MenuFn = ctx => {
   return [
     { header: true, label: '选择手机 · 自动调度尚未接入' },
     ...phones().map(p => ({
-      label: p.name + (p.id === locked ? '（当前对话）' : ''), desc: `${personaOf(p)} · ${p.status === 'online' ? '在线' : '离线'} · ${lastTask(p.id)}`,
+      label: p.name + (p.id === locked ? '（当前对话）' : ''), desc: `${personaOf(p)} · ${phoneStatusText(p)} · ${lastTask(p.id)}`,
       avatar: p, onSelect: () => toggleAttachPhone(key, p.id), select: 'multi' as const, checked: ids.includes(p.id), keepOpen: true, disabled: p.id === locked,
     })),
     '-',
@@ -136,8 +139,8 @@ const attachPhones: MenuFn = ctx => {
   ];
 };
 
-const permission: MenuFn = ctx => [
-  { header: true, label: '总指挥在电脑上的权限（远程操作手机不受此限制）' },
+const permission: MenuFn = ctx => convOfKey(ctx.ckey || 'home')?.agentId ? externalPermissionMenu(ctx.ckey || 'home') : [
+  { header: true, label: ctx.ckey === 'home' && S.agentPick ? '新任务请求权限（实际生效以 Agent 会话回报为准）' : '总指挥在电脑上的权限（远程操作手机不受此限制）' },
   ...PERMISSIONS.map(p => ({ label: p.name, desc: p.desc, ic: p.ic, onSelect: () => pickPerm(p.id, ctx.ckey), select: 'single' as const, checked: S.permission === p.id })),
 ];
 
@@ -201,7 +204,7 @@ const convMenu: MenuFn = ctx => {
       ...(S.convGroup[c.id] ? [{ label: '移出分组', ic: 'close', onSelect: () => moveConv(c.id, '') }] : []),
       '-' as const,
     ] : []),
-    { label: '导出为 Markdown', ic: 'download', onSelect: () => exportConv(c.id) },
+    { label: '导出为 Markdown', ic: 'download', onSelect: () => void exportConv(c.id) },
     ...(c.remote ? [{ label: '归档', ic: 'archive', onSelect: () => archiveCmd(c) }] : []),
     { label: '复制标题', ic: 'copy', onSelect: () => { void navigator.clipboard?.writeText(c.title); toast('已复制任务标题'); } },
     '-',
@@ -240,6 +243,7 @@ const install: MenuFn = ctx => {
 const teamMenu: MenuFn = ctx => [
   { label: '重命名团队', ic: 'edit', onSelect: () => renameTeam(ctx.id ?? '') },
   { label: '管理成员', ic: 'userPlus', onSelect: () => addMember(ctx.id ?? '') },
+  { label: '导出为 Markdown', ic: 'download', onSelect: () => void exportTeam(ctx.id ?? '') },
   '-',
   { label: '解散团队', ic: 'trash', onSelect: () => deleteTeam(ctx.id ?? ''), danger: true },
 ];
@@ -331,7 +335,7 @@ function pendingExtEffort(agentId: string): MenuItem[] {
   }];
 }
 
-/* 推理强度：Lom 任务低 / 中 / 高（OpenAI 兼容接口）；外部 Agent 用它自己报的选项 */
+/* 推理强度：Lom 任务不思考 / 低 / 中 / 高（OpenAI 兼容接口）；外部 Agent 用它自己报的选项 */
 const effort: MenuFn = ctx => {
   const key = ctx.ckey || 'home';
   const c = convOfKey(key);
@@ -358,7 +362,7 @@ const effort: MenuFn = ctx => {
   }
   const current = c ? c.effort || '' : S.effortPick;
   return [{ header: true, label: c ? '推理强度（下一轮开始生效）' : '新任务的推理强度' },
-    ...EFFORTS.map(([v, label]) => ({ label, desc: v ? ({ low: '更快响应，适合简单问题', medium: '兼顾速度与思考深度', high: '深入思考，适合复杂任务', xhigh: '更深入地分析复杂问题' }[v] || '增加思考深度') : '由模型自动决定', ic: 'brain', select: 'single' as const, checked: current === v, onSelect: () => void pickEffort(key, v) }))];
+    ...EFFORTS.map(([v, label]) => ({ label, desc: v ? ({ none: '关闭额外推理，更快响应；需模型支持', low: '更快响应，适合简单问题', medium: '兼顾速度与思考深度', high: '深入思考，适合复杂任务' }[v] || '增加思考深度') : '由模型自动决定', ic: 'brain', select: 'single' as const, checked: current === v, onSelect: () => void pickEffort(key, v) }))];
 };
 
 export const MENUS: Record<string, MenuFn> = {

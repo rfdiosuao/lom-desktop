@@ -21,7 +21,7 @@ export interface CoreConversation {
   status?: string;
   created_at: number;
   modified_at: number;
-  extra?: { lom_personal?: string; lom_personal_name?: string; lom_personal_directory?: string; lom_tier?: 'pro' | 'max' | 'mini'; lom_probe?: boolean; lom_history_id?: string; lom_history_context?: string; lom_history_raw?: string; lom_phone_scope?: string; lom_personal_scope?: string; mcp_server_ids?: string[]; workspace?: string; session_mode?: string; is_temporary_workspace?: boolean; agent_id?: string; agent_name?: string; backend?: string; lom_parent?: string; lom_team?: string; lom_side?: string; reasoning_effort?: string; thought_level?: string; teamId?: string };
+  extra?: { lom_wechat_origin?: boolean; lom_personal?: string; lom_personal_name?: string; lom_personal_directory?: string; lom_tier?: 'pro' | 'max' | 'mini'; lom_probe?: boolean; lom_history_id?: string; lom_history_context?: string; lom_history_raw?: string; lom_phone_scope?: string; lom_personal_scope?: string; mcp_server_ids?: string[]; workspace?: string; session_mode?: string; is_temporary_workspace?: boolean; agent_id?: string; agent_name?: string; backend?: string; lom_parent?: string; lom_team?: string; lom_side?: string; reasoning_effort?: string; thought_level?: string; teamId?: string };
 }
 
 export interface CoreMessage {

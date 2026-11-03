@@ -18,6 +18,32 @@ pub fn personal_directory(
     prepare(&base, &account, &id, &name).map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Read operations must never create or upgrade assistant documents.
+pub(crate) fn existing_directory(base: &Path, account: &str, id: &str) -> Result<PathBuf, String> {
+    if account.is_empty()
+        || account.len() > 256
+        || id.is_empty()
+        || id.len() > 80
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    {
+        return Err("personal.invalid_identity".into());
+    }
+    let account_hash = format!("{:x}", Sha256::digest(account.as_bytes()));
+    let mut root = base
+        .canonicalize()
+        .map_err(|_| "personal.missing_directory")?;
+    for part in ["personal", &account_hash, id] {
+        root.push(part);
+        let meta = std::fs::symlink_metadata(&root).map_err(|_| "personal.missing_directory")?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("personal.unsafe_path".into());
+        }
+    }
+    Ok(root)
+}
+
 pub(crate) fn prepare(base: &Path, account: &str, id: &str, name: &str) -> Result<PathBuf, String> {
     if account.is_empty()
         || account.len() > 256
@@ -260,6 +286,23 @@ mod tests {
         for (file, data) in templates("小麓") {
             assert!(data.len() < 16 * 1024, "{file}");
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn pa_capability_01_version_lookup_does_not_create_or_upgrade_documents() {
+        let root = std::env::temp_dir().join(format!("lom-capability-read-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(existing_directory(&root, "owner", "missing").is_err());
+        assert!(!root.join("personal").exists());
+        let dir = prepare(&root, "owner", "read-test", "A").unwrap();
+        let text = "# 关于你\n\n此处记录你确认的长期偏好。\n";
+        std::fs::write(dir.join("USER.md"), text).unwrap();
+        assert_eq!(
+            existing_directory(&root, "owner", "read-test").unwrap(),
+            dir
+        );
+        assert_eq!(std::fs::read_to_string(dir.join("USER.md")).unwrap(), text);
+        assert!(existing_directory(&root, "owner", "../read-test").is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -128,7 +128,7 @@ fn r02_03_real_core_model_to_mcp_roundtrip() {
 }
 
 #[test]
-fn feishu_09_personal_scopes_get_session_and_feishu_tools_only() {
+fn pa_vision_02_personal_scopes_get_diagnostics_without_phone_control() {
     let names = |scope: &str| -> Vec<String> {
         tools(scope)
             .as_array()
@@ -143,6 +143,15 @@ fn feishu_09_personal_scopes_get_session_and_feishu_tools_only() {
             "session_list",
             "session_read",
             "session_send",
+            "session_wait",
+            "session_create",
+            "personal_assistant_create",
+            "personal_memory_merge",
+            "personal_memory_versions",
+            "personal_memory_rollback",
+            "personal_schedule_help",
+            "personal_capabilities",
+            "personal_targets",
             "feishu_search_docs",
             "feishu_read_doc",
             "feishu_list_chats",
@@ -151,7 +160,14 @@ fn feishu_09_personal_scopes_get_session_and_feishu_tools_only() {
             "feishu_search_messages",
             "feishu_chat_members",
             "feishu_find_people",
-            "feishu_send_message"
+            "feishu_send_message",
+            "feishu_create_doc",
+            "feishu_append_doc",
+            "feishu_send_file",
+            "feishu_send_image",
+            "phone_list",
+            "lom_view_image",
+            "phone_status"
         ]
     );
     let commander = names("0f8e7a52-1c2b-4d3e-9f00-112233445566");
@@ -159,4 +175,26 @@ fn feishu_09_personal_scopes_get_session_and_feishu_tools_only() {
     assert!(!commander
         .iter()
         .any(|n| n.starts_with("session_") || n.starts_with("feishu_")));
+}
+
+#[test]
+fn pa_catalog_01_discovery_contract_is_personal_scope_only() {
+    let personal = tools("pa-catalog-test");
+    let rows = personal.as_array().unwrap();
+    for name in ["personal_capabilities", "personal_targets"] {
+        let tool = rows.iter().find(|t| t["name"] == name).unwrap();
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        assert_eq!(tool["inputSchema"]["properties"]["offset"]["minimum"], 0);
+        assert!(!tools("ordinary-scope")
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == name));
+    }
+    assert_eq!(
+        rows.iter()
+            .find(|t| t["name"] == "personal_targets")
+            .unwrap()["inputSchema"]["required"],
+        json!(["kind"])
+    );
 }

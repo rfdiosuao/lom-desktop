@@ -8,7 +8,7 @@ import { api, CoreError } from '@/core/client';
 import type { CoreConversation } from '@/core/types';
 import { convFromCore } from '@/features/chat/runtime/history';
 import { openTask } from '@/features/chat/runtime/tasks';
-import { pcModels } from '@/state/selectors';
+import { modelChoice, pcModels } from '@/state/selectors';
 import { S, update } from '@/state/store';
 import { accountId, loadAssistants, storeAssistant, type PersonalAssistant } from './catalog';
 import { personalExtra } from '@/features/phones/runtime/phoneCommander';
@@ -23,7 +23,8 @@ export function ensureConversation(a: PersonalAssistant): Promise<string> {
 async function prepareConversation(a: PersonalAssistant, account: string, current: AuthGuard) {
   a.directory = await invoke<string>('personal_directory', { account, id: a.id, name: a.name });
   if (!a.workspace) a.workspace = a.directory;
-  const model = pcModels().find(m => m.id === S.model && !m.byok && !m.unavailable) ?? pcModels().find(m => !m.byok && !m.unavailable);
+  const selected = modelChoice(S.model);
+  const model = selected && !selected.byok && !selected.unavailable ? selected : pcModels().find(m => !m.byok && !m.unavailable);
   if (!current()) throw new Error('账号已切换');
   if (!a.conversation && a.pendingCreate) throw new Error('创建结果尚未确认，请重新同步任务后再试，未重复创建');
   if (!loadAssistants(account).items.some(x => x.id === a.id)) throw new Error('账号没有这位助理');
@@ -38,7 +39,7 @@ async function prepareConversation(a: PersonalAssistant, account: string, curren
     a.pendingCreate = true; storeAssistant(a, account);
     try { row = await api<CoreConversation>('POST', '/api/conversations', { type: 'aionrs', name: `${a.name} · Personal Agent`,
       model: { provider_id: model.providerId, model: model.model },
-      extra: { ...bridge, ...skills, workspace: a.workspace, session_mode: 'default', lom_personal: a.id, lom_personal_name: a.name,
+      extra: { ...bridge, ...skills, ...(model.lomTier ? { lom_tier: model.lomTier } : {}), workspace: a.workspace, session_mode: 'default', lom_personal: a.id, lom_personal_name: a.name,
         lom_personal_directory: a.directory, exclude_auto_inject_skills: EXCLUDED_AUTO_SKILLS, preset_rules: personalRules(a) } }); } catch (e) {
       if (current() && e instanceof CoreError && e.status && [400, 401, 403, 404, 405, 415, 422].includes(e.status)) { a.pendingCreate = false; storeAssistant(a, account); }
       throw e;
@@ -51,7 +52,7 @@ async function prepareConversation(a: PersonalAssistant, account: string, curren
   validateConversation(a, row);
   const existing = S.convs.find(c => c.id === row.id);
   const c = existing ?? convFromCore(row);
-  c.personal = { id: a.id, name: a.name, directory: a.directory, avatar: a.avatar };
+  c.personal = { id: a.id, name: a.name, directory: a.directory, avatar: a.avatar, ...(a.avatarImage ? { image: a.avatarImage } : {}) };
   if (!existing) update(s => { s.convs.push(c); });
   await openTask(row.id, { refreshWorkspace: false, throwOnError: true });
   if (!current()) throw new Error('账号已切换');

@@ -4,7 +4,7 @@ import { convFromCore } from '@/features/chat/runtime/history';
 import type { CoreConversation } from '@/core/types';
 import { api } from '@/core/client';
 import { S, update } from '@/state/store';
-import { currentPcModel, modelChoice } from '@/state/selectors';
+import { resolveScheduleModel, scheduleModelProblem, type PersonalScheduleScope } from './scheduleConfig';
 import type { Schedule } from '@/state/types';
 import { ensureLomSelection } from '@/features/account/runtime/cloud';
 import { quietError } from '@/shared/overlays/controller';
@@ -90,7 +90,6 @@ export function scheduleTime(f: Schedule): CronTime {
   if (f.freq === 'weekly' && !f.days.length) throw new Error('至少选择一天');
   return { kind: 'cron', expr: `${m} ${h} * * ${f.freq === 'weekly' ? f.days.map(d => DOW[d]).join(',') : '*'}`, tz: f.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone };
 }
-type PersonalScheduleScope = { personalId: string; beforeCreate?: () => void };
 function scheduleGuard(f: Schedule, scope?: PersonalScheduleScope, checkModel = true) {
   const current = authAccount();
   return () => {
@@ -98,9 +97,8 @@ function scheduleGuard(f: Schedule, scope?: PersonalScheduleScope, checkModel = 
       if (!current()) throw new Error('账号已切换，未继续操作定时任务');
       const c = personalConversation(`personal:${scope.personalId}`);
       if (!c || c.id !== f.conversationId) throw new Error('助理会话归属不一致');
-      const selected = f.agentConfig?.model as { provider_id?: string; model?: string } | undefined;
-      const choice = selected ? modelChoice(`${selected.provider_id}::${selected.model}`) : modelChoice(c.modelId || '');
-      if (checkModel && (!choice?.model || choice.byok || choice.unavailable)) throw new Error('个人助理只能使用可用的Lom账号模型');
+      const problem = checkModel ? scheduleModelProblem(f, scope) : undefined;
+      if (problem) throw new Error(problem);
     }
   };
 }
@@ -116,19 +114,22 @@ export async function saveCoreSchedule(f: Schedule, id?: string, scope?: Persona
     /* 改了运行权限时带上完整的 Agent 配置（更新接口会整体替换它） */
     const prev = f.agentConfig ? { ...f.agentConfig } : undefined;
     if (prev && selected?.provider_id && selected.model && !prev.cli_path) {
-      const choice = modelChoice(`${selected.provider_id}::${selected.model}`);
+      const choice = resolveScheduleModel(f, scope);
       if (!choice?.model || choice.unavailable) throw new Error('定时任务模型已失效，请重新选择');
       prev.model = { provider_id: choice.providerId, model: choice.model };
     }
     const agent_config = prev && (prev.mode !== mode || JSON.stringify(prev.model) !== JSON.stringify(selected)) ? { ...pickAgentConfig(prev), mode } : undefined;
     await api('PUT', `/api/cron/jobs/${id}`, { ...body, enabled: f.enabled, ...(agent_config ? { agent_config } : {}) });
   } else {
-    const previous = f.agentConfig?.model as { provider_id?: string; model?: string } | undefined;
-    const model = previous ? modelChoice(`${previous.provider_id}::${previous.model}`) : currentPcModel();
+    const model = resolveScheduleModel(f, scope);
     if (!model?.providerId || !model.model || model.unavailable) throw new Error('请先选择可用模型');
-    const assistants = await api<{ id: string; enabled: boolean; agent?: { type: string } }[]>('GET', '/api/assistants');
+    const assistants = await api<{ id: string; source?: string; enabled: boolean; agent?: { type: string } }[]>('GET', '/api/assistants');
     guard();
-    const assistant = assistants.find(x => x.enabled && x.agent?.type === 'aionrs');
+    const candidates = assistants.filter(x => x.enabled && x.agent?.type === 'aionrs');
+    const generated = candidates.filter(x => x.source === 'generated');
+    const native = generated.length === 1 ? generated[0] : undefined;
+    if (scope && !native && candidates.length) throw new Error('无法确认个人助理的原生 Agent，请同步助理配置后重试');
+    const assistant = scope ? native : candidates[0];
     if (!assistant) throw new Error('没有可用的电脑 Agent');
     const conversationId = f.conversationId || S.activeConv || '';
     if (f.runIn === 'same' && !conversationId) throw new Error('请先打开一个会话，或选择新开窗口');
@@ -156,6 +157,9 @@ function pickAgentConfig(c: Record<string, unknown>) {
 export async function toggleCoreSchedule(x: Schedule, scope?: PersonalScheduleScope) {
   const current = scope ? authAccount() : undefined;
   const guard = scheduleGuard(x, scope, !x.enabled); guard();
+  // 启用前确认模型仍然可用（普通任务原来不检查，已删除的模型照样启用、到点才失败）；暂停总是允许
+  const problem = !x.enabled && !scope ? scheduleModelProblem(x) : undefined;
+  if (problem) throw new Error(problem);
   await api('PUT', `/api/cron/jobs/${x.id}`, { enabled: !x.enabled });
   guard();
   await refreshSchedules(current);
@@ -171,7 +175,11 @@ export async function runCoreSchedule(id: string) {
 export async function scheduleResult(id: string) {
   const rows = await api<CoreConversation[]>('GET', `/api/cron/jobs/${id}/conversations`);
   const row = rows.sort((a, b) => (b.modified_at || b.created_at) - (a.modified_at || a.created_at))[0];
-  if (!row) return null;
+  if (!row) {
+    // UI-AUDIT-02 UI-14：在原会话里运行的任务（个人助理心跳等）没有单独的执行会话，结果就在原会话里
+    const x = S.schedules.find(y => y.id === id);
+    return x?.runIn === 'same' && x.conversationId ? x.conversationId : null;
+  }
   update(s => { if (!s.convs.some(c => c.id === row.id)) s.convs.unshift(convFromCore(row)); });
   return row.id;
 }

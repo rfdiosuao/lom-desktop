@@ -18,7 +18,7 @@ beforeEach(() => {
   S.agentCatalog = []; S.agentPins = []; S.agentOptions = {};
   S.convs = [{ id: 'target', owner: 'pc', title: '目标', messages: [], updated: 1, remote: true, agentId: 'codex', agentName: 'Codex CLI' }];
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); setEndpoint(null as any); vi.unstubAllGlobals(); S.historyImports = []; });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); setEndpoint(null as any); vi.unstubAllGlobals(); S.historyImports = []; });
 it('HIST-01 dragging a Claude archive into a Codex composer attaches real context and retains the chat and draft', async () => {
   const calls: string[] = [];
   vi.stubGlobal('fetch', async (url: string) => { calls.push(url); return new Response(JSON.stringify({ data: { entry, transcript_path: '/archive/a.md', raw_path: '/archive/a.jsonl' } })); });
@@ -40,6 +40,11 @@ it('HIST-01 dragging a Claude archive into a Codex composer attaches real contex
 });
 
 it('HIST-01 existing Qoder conversation drops into a Codex composer without switching or sending', async () => {
+  const digest = crypto.subtle.digest.bind(crypto.subtle);
+  vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(async (...args) => {
+    await new Promise(resolve => setTimeout(resolve, 25));
+    return digest(...args);
+  });
   S.convs.push({ id: 'source', owner: 'pc', title: 'Qoder 已有会话', updated: 1, agentId: 'qoder', messages: [{ id: 'm', type: 'assistant', at: 1, text: '下一步继续实现测试' }] });
   const fetch = vi.fn(async (_url: string) => new Response(JSON.stringify({ data: '/managed/history.md' }))); vi.stubGlobal('fetch', fetch);
   await act(async () => root.render(<Composer ckey="conv:target" />));
@@ -47,7 +52,10 @@ it('HIST-01 existing Qoder conversation drops into a Codex composer without swit
   const data = { types: [CONVERSATION_MIME], setData: (k: string, v: string) => values.set(k, v), getData: (k: string) => values.get(k) || '' } as unknown as DataTransfer;
   beginConversationDrag(data, 'source');
   const drop = new Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: data });
-  await act(async () => host.querySelector('.composer')!.dispatchEvent(drop));
+  await act(async () => {
+    host.querySelector('.composer')!.dispatchEvent(drop);
+    await vi.waitFor(() => expect(S.attachments['conv:target']?.some(a => a.historyId)).toBe(true));
+  });
   expect(drop.defaultPrevented).toBe(true);
   expect(host.querySelector('textarea')?.value).toContain('我的新要求');
   expect(host.querySelector('textarea')?.value).toBe('我的新要求');

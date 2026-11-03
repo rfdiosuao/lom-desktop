@@ -121,10 +121,15 @@ it('D33-AC-8: 实时事件原位更新、窗口内插入，窗口外的旧条目
   expect(vi.mocked(api)).toHaveBeenCalledTimes(1);
 });
 
-it('D33-AC-9: 请求失败显示错误，重试重新拉取', async () => {
-  vi.mocked(api).mockRejectedValueOnce(new Error('核心服务没有响应')).mockResolvedValueOnce(page([item(msg('m1', 1))]));
+it('D33-AC-9 / UI-AUDIT-04: 请求失败显示友好原因和固定错误码（不显示原始报错），重试重新拉取', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const failure = Object.assign(new Error('无法连接核心服务（TypeError: Failed to fetch）'), { code: 'LOM_CORE_UNREACHABLE' });
+  vi.mocked(api).mockRejectedValueOnce(failure).mockResolvedValueOnce(page([item(msg('m1', 1))]));
   await render();
-  expect(text('error')).toContain('核心服务没有响应');
+  expect(text('error')).toBe('连接不上 Lom 核心服务，请确认 Lom 仍在运行后重试（team.activity_unreachable）');
+  expect(text('error')).not.toContain('Failed to fetch');
+  expect(warn).toHaveBeenCalledWith('team.activity_load_failed', failure);
+  warn.mockRestore();
   expect(text('messages')).toBe('');
 
   await act(async () => { host.querySelector<HTMLButtonElement>('[data-testid="retry"]')!.click(); });

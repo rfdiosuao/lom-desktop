@@ -8,19 +8,21 @@ import { Icon } from './Icon';
 
 /* ===== Agent 相关控件：头像、选择标记、Agent 胶囊、手机选择按钮 ===== */
 
-type AvatarAgent = Pick<Agent, 'kind' | 'name'> & { status?: Agent['status']; avatar?: string };
+type AvatarAgent = Pick<Agent, 'kind' | 'name'> & { status?: Agent['status']; avatar?: string; real?: boolean };
 
 /* 头像：电脑主控 / 手机 / 用户 统一 */
 export function Avatar({ agent, size, crown, status }: { agent?: AvatarAgent | null; size?: 'sm' | 'lg'; crown?: boolean; status?: boolean }) {
   if (!agent) return null;
   const kind = agent.kind === 'computer' ? 'computer' : agent.kind === 'phone' ? 'phone' : 'user';
   const off = agent.status === 'offline';
+  /* 示例手机没有真实在线状态，不画在线 / 离线点（UI-AUDIT-02 UI-01） */
+  const dot = status && !(kind === 'phone' && !agent.real);
   return (
     <span className={cx('avatar', `avatar--${kind}`, size && `avatar--${size}`, off && 'is-offline')} aria-hidden="true">
       {kind === 'user' && agent.avatar ? <img key={agent.avatar} className="avatar__image" src={agent.avatar} alt="" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none'; }} /> : null}
       {kind === 'computer' ? <Icon name="monitor" /> : kind === 'phone' ? <Icon name="phone" /> : (agent.name || '?').slice(0, 1)}
       {crown && <span className="avatar__crown"><Icon name="crown" /></span>}
-      {status && <span className={cx('avatar__status', off && 'is-offline')} />}
+      {dot && <span className={cx('avatar__status', off && 'is-offline')} />}
     </span>
   );
 }
@@ -45,9 +47,11 @@ export function SelLabel({ title, kind, extra }: { title: string; kind: 'multi' 
 
 /* Agent 胶囊：select = 'multi'（多选勾选）| 'single'（单选高亮）| 不传（普通标签，如团队成员）
  * 在线状态统一画在头像右下角，避免和选择标记混淆 */
-export function Chip({ agent, title, sub, selected, onClick, size, variant, select, crown, label }: {
+export function Chip({ agent, title, sub, selected, onClick, size, variant, select, crown, label, tooltip }: {
   agent?: Agent; title?: string; sub?: string; selected?: boolean; onClick?: () => void;
   size?: 'sm'; variant?: 'tab'; select?: 'multi' | 'single'; crown?: boolean; label?: string;
+  /** 悬停提示：标签被截断时显示完整名称 */
+  tooltip?: string;
 }) {
   const t = title ?? agent?.name;
   const s = sub ?? agent?.persona;
@@ -61,6 +65,7 @@ export function Chip({ agent, title, sub, selected, onClick, size, variant, sele
       aria-checked={select ? !!selected : undefined}
       aria-pressed={select ? undefined : !!selected}
       aria-label={label}
+      title={tooltip}
     >
       <Avatar agent={agent} size={size === 'sm' || variant === 'tab' ? 'sm' : undefined} crown={crown} status={agent?.kind === 'phone'} />
       <span className="chip__text">

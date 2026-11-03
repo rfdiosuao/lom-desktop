@@ -20,13 +20,21 @@ export function findField(value: unknown, key: string, depth = 0): string | unde
 export interface TurnReply { text: string; failed: boolean; tools: number }
 
 export function replyOf(c: Conv, message: Msg): TurnReply {
-  const start = c.messages.indexOf(message);
-  const after = start < 0 ? [] : c.messages.slice(start + 1);
+  const start = c.messages.findIndex(m => m === message || m.type === 'user' && m.id === message.id);
+  if (start < 0) return { text: '无法核对此轮结果，请在 Lom 查看。', failed: true, tools: 0 };
+  const after = c.messages.slice(start + 1);
   const end = after.findIndex(m => m.type === 'user');
   const turn = end < 0 ? after : after.slice(0, end);
   const text = turn.filter(m => m.type === 'assistant' && m.text?.trim()).map(m => m.text!.trim()).join('\n\n');
-  const errors = turn.filter(m => m.type === 'system' && m.ic === 'info' && m.text?.trim()).map(m => m.text!.trim());
-  return { text: text || errors.join('\n'), failed: !text && errors.length > 0, tools: turn.filter(m => m.type === 'tool').length };
+  const notices = turn.filter(m => m.type === 'system' && m.ic === 'info' && m.text?.trim());
+  // The exact legacy terminal notice comes from onTurnCompleted, not arbitrary info messages.
+  const errors = notices.filter(m => m.turnOutcome === 'failed' || m.turnOutcome === 'cancelled' || /^这一轮没有正常完成（[^）]+）$/.test(m.text!));
+  const outcome = c.messages[start].turnOutcome;
+  const failed = outcome === 'failed' || outcome === 'cancelled' || outcome !== 'completed' && (errors.length > 0 || !text && notices.length > 0);
+  const details = (errors.length ? errors : !text ? notices : []).map(m => m.text!.trim());
+  if (outcome === 'cancelled' && !errors.length) details.push('这一轮已取消，未完成。');
+  if (outcome === 'failed' && !details.length) details.push('这一轮没有正常完成，请在 Lom 查看错误。');
+  return { text: failed ? [text, ...details].filter(Boolean).join('\n\n') : text, failed, tools: turn.filter(m => m.type === 'tool').length };
 }
 
 /** 跟踪这一轮直到会话不再运行；过程中每次状态变化都回调最新回复（流式卡片用） */
@@ -36,7 +44,7 @@ export function followTurn(c: Conv, message: Msg, onUpdate?: (reply: TurnReply) 
     const check = () => {
       if (!current()) { stop(); resolve({ text: '', failed: true, tools: 0 }); return; }
       const reply = replyOf(c, message);
-      const key = `${reply.text}\u0000${reply.tools}`;
+      const key = `${reply.text}\u0000${reply.tools}\u0000${reply.failed}`;
       if (key !== last) { last = key; onUpdate?.(reply); }
       if (!S.running[c.id] || !S.convs.includes(c)) { stop(); resolve(reply); }
     };
@@ -57,12 +65,12 @@ export async function addTyping(scope: FeishuScope, messageId: string) {
   try {
     const res = await feishuApi(scope, 'POST', `/open-apis/im/v1/messages/${messageId}/reactions`, { reaction_type: { emoji_type: 'Typing' } });
     return findField(res, 'reaction_id');
-  } catch (e) { console.warn('feishu.typing_add_failed', e); }
+  } catch (e) { console.warn('feishu.typing_add_failed'); }
 }
 
 export async function removeTyping(scope: FeishuScope, messageId: string, reaction: Promise<string | undefined>) {
   const id = await reaction;
   if (!id) return;
   await feishuApi(scope, 'DELETE', `/open-apis/im/v1/messages/${messageId}/reactions/${id}`, null)
-    .catch(e => console.warn('feishu.typing_remove_failed', e));
+    .catch(() => console.warn('feishu.typing_remove_failed'));
 }

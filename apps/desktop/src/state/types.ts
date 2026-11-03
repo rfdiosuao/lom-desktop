@@ -33,13 +33,22 @@ export type MsgType =
   | 'files' | 'delegate' | 'handoff' | 'schedule' | 'system' | 'teammate';
 
 export interface Msg {
+  /** Observed terminal state for this user turn or explicit error record. */
+  turnOutcome?: 'completed' | 'failed' | 'cancelled';
   /** schedule：定时任务；feishu / wechat：从该渠道发来（FEISHU-02） */
   source?: 'schedule' | 'feishu' | 'wechat' | 'personal';
   images?: string[];
   id: string;
   type: MsgType;
   at: number;
+  /** CHAT-ACTIVITY-01：实际观测到的起止时间（毫秒）；旧记录缺失时不推算耗时。 */
+  timing?: { startedAt: number; endedAt?: number };
   text?: string;
+  /** PA-CONTEXT-01: explicit context failure recovery, never inferred from translated text. */
+  recovery?: 'compact';
+  /** REFACTOR-01-M3：压缩提示的状态与它所属的轮次（只结算这一轮的终态） */
+  compaction?: 'running' | 'done' | 'failed' | 'unconfirmed' | 'stopped';
+  compactTurn?: string;
   agent?: string;
   role?: string;
   streaming?: boolean;
@@ -76,7 +85,10 @@ export interface Msg {
 }
 
 export interface Conv {
-  personal?: { id: string; name: string; directory: string; avatar?: string };
+  wechatOrigin?: boolean;
+  /** ACP-PERM: requested mode is not an observed runtime mode. */
+  agentModeChange?: { value: string; confirmation: 'pending_next_turn' | 'command_ack' };
+  personal?: { id: string; name: string; directory: string; avatar?: string; image?: string };
   historyArchiveId?: string;
   historyContextPath?: string;
   historyRawPath?: string;
@@ -144,7 +156,7 @@ export interface Skill {
 
 export interface TeamMember { mid: string; agent: string; role: string; leader?: boolean; model?: string; }
 /** real：真实团队（Leader 是 Lom 任务，成员是手机或本机 Agent）；leaderConv / memberConvs 是各自对应的会话 */
-export interface Team { id: string; name: string; folder: string; created: number; members: TeamMember[]; panes: Record<string, Msg[]>; real?: boolean; leaderConv?: string; memberConvs?: Record<string, string>; rosterSent?: string; core?: CoreTeamLink; }
+export interface Team { ownerAccountId?: string; id: string; name: string; folder: string; created: number; members: TeamMember[]; panes: Record<string, Msg[]>; real?: boolean; leaderConv?: string; memberConvs?: Record<string, string>; rosterSent?: string; core?: CoreTeamLink; }
 /** 真实团队在 lom-core 团队模式里的对应：内核团队编号、每个成员的 slot、Leader 助手和手机工具 */
 export interface CoreTeamLink { id: string; slots: Record<string, string>; assistant: string; scope?: string; pendingSync?: boolean; }
 
@@ -153,9 +165,7 @@ export interface ModelOption {
   byok?: boolean; providerId?: string; model?: string; unavailable?: boolean; lomTier?: 'pro' | 'max' | 'mini';
 }
 
-export interface Provider {
-  id: string; platform: string; name: string; base_url: string; models: string[]; enabled: boolean; created_at: number;
-}
+export type { CoreProvider as Provider } from '@/core/types';
 
 export type MenuCtx = Record<string, string | undefined> & { align?: 'start' | 'end'; key?: string; matchWidth?: string };
 export interface MenuState { id: string; ctx: MenuCtx; key: string; rect: { left: number; right: number; top: number; bottom: number; width: number }; }
@@ -165,6 +175,6 @@ export interface FileNode { name: string; path: string; type: 'dir' | 'file'; ch
 
 export type ConnState = 'connecting' | 'ready' | 'offline';
 
-export interface Layout { left: number; right: number; leftCollapsed: boolean; rightCollapsed: boolean; }
+export interface Layout { left: number; right: number; leftCollapsed: boolean; rightCollapsed: boolean; /** 技能商店、定时任务页是否展开工作区（默认不展开） */ rightOnPages?: boolean; }
 
 export interface TurtleSession { active: boolean; started: boolean; other: string; showOther: boolean; request: string; error: string; }

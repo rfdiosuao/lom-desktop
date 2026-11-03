@@ -9,6 +9,16 @@ const item = (o: Partial<CoreMessage> & Pick<CoreMessage, 'type' | 'content'>): 
   ({ id: Math.random().toString(36), msg_id: 'm', conversation_id: 'c1', position: 'left', created_at: 1, ...o });
 
 describe('D01 AC-3 从历史记录恢复任务', () => {
+  it('CHAT-ACTIVITY-01 AC-10 恢复历史时，正文之后的文件变更另起一张卡片', () => {
+    const { messages } = mapHistory([
+      item({ type: 'tool_call', content: { call_id: 'w1', name: 'Write', args: { file_path: `${WS}/a.html`, content: 'a' } } }),
+      item({ type: 'text', content: { content: '首页改好了' } }),
+      item({ type: 'tool_call', content: { call_id: 'w2', name: 'Write', args: { file_path: `${WS}/b.css`, content: 'b' } } }),
+    ], conv);
+    expect(messages.map(m => m.type)).toEqual(['tool', 'files', 'assistant', 'tool', 'files']);
+    expect(messages[1].changes?.map(c => c.path)).toEqual(['a.html']);
+    expect(messages[4].changes?.map(c => c.path)).toEqual(['b.css']);
+  });
   it('D01 AC-3 用户 / 总指挥消息、工具卡片、文件变更和预览文件都能恢复', () => {
     const { messages, previewFile } = mapHistory([
       item({ type: 'text', position: 'right', content: { content: '做一个网站' } }),
@@ -97,4 +107,39 @@ it('EFFORT-01 external history reads thought_level while native Lom keeps reason
   expect(convFromCore({ ...base, type: 'acp', extra: { thought_level: 'deep', reasoning_effort: 'wrong' } }).effort).toBe('deep');
   expect(convFromCore({ ...base, type: 'acp', extra: { reasoning_effort: 'high' } }).effort).toBeUndefined();
   expect(convFromCore({ ...base, type: 'aionrs', extra: { reasoning_effort: 'high', thought_level: 'wrong' } }).effort).toBe('high');
+});
+
+
+it.each([
+  { code: 'USER_LLM_PROVIDER_CONTEXT_TOO_LARGE', content: 'The request is too large for the model provider' },
+  { code: 'UserLlmProviderContextTooLarge', content: 'The model provider returned an error' },
+  { status: 413, content: 'Request rejected' },
+  { content: 'HTTP 413 Payload Too Large' },
+])('PA-CONTEXT-01 AC-5 persisted explicit context errors restore the recovery action: %j', content => {
+  const { messages } = mapHistory([item({ type: 'error', content })], conv);
+  expect(messages[0]).toMatchObject({ type: 'system', recovery: 'compact', text: expect.stringContaining('压缩上下文') });
+});
+it('PA-CONTEXT-01 AC-5 old generic gateway history cannot invent context recovery', () => {
+  const { messages } = mapHistory([item({ type: 'error', content: { code: 'UserLlmProviderGatewayError', content: 'The model provider returned an error' } })], conv);
+  expect(messages[0].recovery).toBeUndefined();
+});
+
+
+it('PA-CONTEXT-01 AC-5 wire gateway history does not invent compression recovery', () => {
+  const { messages } = mapHistory([item({ type: 'error', content: { code: 'USER_LLM_PROVIDER_GATEWAY_ERROR', content: 'The model provider returned an error' } })], conv);
+  expect(messages[0].recovery).toBeUndefined();
+});
+
+it('PA-CONTEXT-01 restores recovery for persisted autocompact API 413 error tips', () => {
+  const message = 'Autocompact failed: LLM provider error: API error 413: {"error":{"message":"openai_error"}}';
+  const result = mapHistory([item({ type: 'tips', status: 'error', content: { content: message, type: 'error', error: { message } } })], conv);
+  expect(result.messages[0]).toMatchObject({ type: 'system', recovery: 'compact', turnOutcome: 'failed' });
+});
+
+it('PA-CONTEXT-01 does not infer recovery from successful tips mentioning 413 ms or API 400 errors', () => {
+  const result = mapHistory([
+    item({ type: 'tips', content: { content: 'completed in 413 ms' } }),
+    item({ type: 'tips', status: 'error', content: { content: 'Autocompact failed: API error 400' } }),
+  ], conv);
+  expect(result.messages.every(m => m.recovery === undefined)).toBe(true);
 });

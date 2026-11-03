@@ -6,14 +6,15 @@ vi.mock('@/core/client', () => ({ api: m.api }));
 vi.mock('@/features/phones/runtime/phoneCommander', () => ({ stopDelegated: m.phones }));
 vi.mock('@/features/phones/runtime/commanderAgents', () => ({ stopAgentDelegated: m.agents }));
 vi.mock('@/shared/overlays/controller', () => ({ toast: m.toast, toastError: m.error }));
-const { stopTask, pendingSends, isTaskStopping, reconcileSendRegistrations } = await import('./cancel');
+const { stopTask, pendingSends, isTaskStopping, reconcileSendRegistrations, trackPendingSend } = await import('./cancel');
+const { resetOperations } = await import('./turnLedger');
 const { sendToTask } = await import('./tasks');
 const deferred = <T>() => { let resolve!: (value: T) => void; let reject!: (reason: Error) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const idle = { runtime: { is_processing: false, turn_id: null } };
 const active = (turn: string) => ({ runtime: { is_processing: true, turn_id: turn } });
 let c: Conv;
 beforeEach(() => {
-  vi.useFakeTimers(); vi.resetAllMocks(); pendingSends.clear();
+  vi.useFakeTimers(); vi.resetAllMocks(); resetOperations();
   c = { id: 'stop', owner: 'pc', title: 'Task', updated: 0, remote: true, turnId: 'stale', messages: [] };
   S.convs = [c]; S.running = { stop: true }; S.teams = [];
   S.account = { id: 'review', email: 'review@example.test', name: 'Review' };
@@ -123,10 +124,10 @@ it('D13 stalled phone cancellation retains the guard after returning unconfirmed
   expect(isTaskStopping(c.id)).toBe(false); expect(m.toast.mock.calls.some(x => String(x[0]).startsWith('已停止，并确认'))).toBe(false);
 });
 it('D01 AC-5 idle runtime while send is pending is not proof of stopping', async () => {
-  const sent = deferred<unknown>(); pendingSends.set(c.id, sent.promise); const stopped = stopTask(c.id); await vi.advanceTimersByTimeAsync(0);
+  const sent = deferred<unknown>(); trackPendingSend(c.id, sent.promise); const stopped = stopTask(c.id); await vi.advanceTimersByTimeAsync(0);
   expect(S.running.stop).toBe(true); expect(c.messages).toEqual([]);
   m.api.mockImplementation(async (method: string) => method === 'GET' ? active('registered') : idle);
-  pendingSends.delete(c.id); sent.resolve({ turn_id: 'registered' }); await vi.advanceTimersByTimeAsync(250);
+  sent.resolve({ turn_id: 'registered' }); await vi.advanceTimersByTimeAsync(250);
   expect(await stopped).toBe(true); expect(S.running.stop).toBeUndefined();
   expect(m.api).toHaveBeenCalledWith('POST', '/api/conversations/stop/cancel', { turn_id: 'registered' }, expect.anything());
 });
@@ -134,4 +135,42 @@ it('D01 AC-5 changed turn after cancellation is not cancelled with the previous 
   m.api.mockResolvedValueOnce(active('current')).mockResolvedValueOnce(active('current')).mockResolvedValueOnce(active('new'));
   const stopped = stopTask(c.id); await vi.advanceTimersByTimeAsync(250);
   expect(await stopped).toBe(false); expect(S.running.stop).toBe(true); expect(m.api.mock.calls.filter(x => x[0] === 'POST')).toHaveLength(1);
+});
+
+it('PA-CONTEXT-01 AC-3 blocks compact while stop is unresolved even after the running flag clears', async () => {
+  const members = deferred<{ stopped: number; failed: number }>();
+  m.phones.mockReturnValue(members.promise);
+  const stopped = stopTask(c.id);
+  await vi.advanceTimersByTimeAsync(0);
+  delete S.running[c.id];
+  expect(isTaskStopping(c.id)).toBe(true);
+  m.api.mockClear();
+  const { compactTask } = await import('./commands');
+  await expect(compactTask(c)).rejects.toThrow('执行');
+  expect(m.api).not.toHaveBeenCalled();
+  expect(isTaskStopping(c.id)).toBe(true);
+  members.resolve({ stopped: 0, failed: 0 });
+  await stopped;
+  await vi.advanceTimersByTimeAsync(0);
+});
+it('CHAT-ACTIVITY-01 AC-9 confirmed cancel freezes tool and thinking timing at the stop', async () => {
+  c.messages = [{ id: 'think', type: 'thinking', at: 1, timing: { startedAt: 1_000 }, text: '想', streaming: true }, { id: 'tool', type: 'tool', at: 2, timing: { startedAt: 2_000 }, status: 'running' }];
+  let processing = true;
+  m.api.mockImplementation(async (method: string) => {
+    if (method === 'POST') { processing = false; return idle; }
+    return processing ? active('turn') : idle;
+  });
+  vi.setSystemTime(10_000);
+  expect(await stopTask(c.id)).toBe(true);
+  expect(m.api).toHaveBeenCalledWith('POST', '/api/conversations/stop/cancel', { turn_id: 'turn' }, expect.anything());
+  for (const x of c.messages.slice(0, 2)) expect(x.timing?.endedAt).toBe(10_000);
+});
+it('CHAT-ACTIVITY-01 AC-9 stopping an already-idle conversation does not invent end times', async () => {
+  c.messages = [{ id: 'think', type: 'thinking', at: 1, timing: { startedAt: 1_000 }, text: '想', streaming: true }, { id: 'tool', type: 'tool', at: 2, timing: { startedAt: 2_000 }, status: 'running' }];
+  m.api.mockResolvedValue(idle);
+  vi.setSystemTime(10_000);
+  await stopTask(c.id);
+  expect(m.api).not.toHaveBeenCalledWith('POST', expect.stringContaining('/cancel'), expect.anything(), expect.anything());
+  for (const x of c.messages.slice(0, 2)) expect(x.timing?.endedAt).toBeUndefined();
+  expect(c.messages[0].streaming).toBe(false); expect(c.messages[1].status).toBe('error');
 });

@@ -14,7 +14,7 @@ beforeEach(() => {
   vi.useFakeTimers(); m.watch.mockReset(); m.feed.error = ''; m.feed.isLoading = false;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState()); S.cloud = 'signed-in'; S.account = { id: 'account' } as typeof S.account;
+  Object.assign(S, initialState(true)); S.cloud = 'signed-in'; S.account = { id: 'account' } as typeof S.account;
   S.agents.dev_phone = { id: 'dev_phone', kind: 'phone', name: '测试手机', persona: '', status: 'online', real: true };
   const team = S.teams[0]; team.real = true; team.members = [{ mid: 'mobile', agent: 'dev_phone', role: '手机' }]; team.core = undefined;
   S.convs = [{ id: 'exact-conv', owner: 'dev_phone', phoneSession: 'session', teamId: team.id, title: '历史任务', updated: 2, loaded: true, messages: [{ id: 'reply', type: 'assistant', at: 1, text: '真实手机回复'.repeat(80) }] }];
@@ -31,9 +31,11 @@ it('PHONE-TEAM-01 renders a phone-only team with real cards and no composer, rec
   expect(host.textContent).not.toContain('已读'); expect(host.querySelector('textarea')).toBeNull();
   expect(host.querySelector('[data-testid="activity-load-sentinel"]')).toBeNull();
 });
-it('PHONE-TEAM-01 clicking/Enter opens the exact phone conversation, never latest unrelated session', async () => {
+it('PHONE-TEAM-01 / UI-AUDIT-04 the 打开会话 button (keyboard path) opens the exact phone conversation, never latest unrelated session', async () => {
   await render();
-  await act(async () => host.querySelector<HTMLElement>('[data-testid="activity-phone-card"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  const open = host.querySelector<HTMLButtonElement>('[data-testid="activity-phone-card"] .act-card__open')!;
+  expect(open.getAttribute('aria-label')).toBe('打开会话：历史任务');
+  await act(async () => open.click());
   expect(S.activeConv).toBe('exact-conv'); expect(S.mode).toBe('phone'); expect(S.phoneId).toBe('dev_phone');
 });
 it('PHONE-TEAM-01 expanding content or revoking membership cannot navigate or send', async () => {

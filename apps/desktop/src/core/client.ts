@@ -97,9 +97,41 @@ export const wsUrl = () => {
   return `${u}/ws${endpoint.token ? `?token=${encodeURIComponent(endpoint.token)}` : ''}`;
 };
 
-/** 本地文件流地址（用于 <img> 等无法自定义请求头的场景） */
+/** Token-free address; only loadFilePreview may request this resource. */
 export const fileStreamUrl = (absPath: string) => {
   if (!endpoint) return '';
-  const q = new URLSearchParams({ kind: 'local', path: absPath, ...(endpoint.token ? { token: endpoint.token } : {}) });
-  return `${endpoint.url}/api/fs/stream?${q.toString()}`;
+  return `${endpoint.url}/api/fs/stream?${new URLSearchParams({ kind: 'local', path: absPath })}`;
 };
+
+/** Bounded image transport. Credentials never appear in a DOM resource URL. */
+export async function loadFilePreview(absPath: string, signal: AbortSignal): Promise<Blob> {
+  if (!endpoint) throw new CoreError('LOM_CORE_NOT_READY', '核心服务还没有启动');
+  const control = requestControl({ signal, timeoutMs: 15000 });
+  const max = 15 * 1024 * 1024;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const response = await fetch(fileStreamUrl(absPath), { headers: headers(false), signal: control.signal,
+      credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' });
+    if (!response.ok) throw new CoreError('file.preview_failed', '图片预览加载失败', response.status);
+    const mime = (response.headers.get('content-type') || '').split(';')[0].trim();
+    if (!/^image\/(png|jpeg|gif|webp|bmp)$/.test(mime) || Number(response.headers.get('content-length')) > max) {
+      await response.body?.cancel();
+      throw new CoreError('file.preview_invalid', '图片格式或大小不支持预览');
+    }
+    reader = response.body?.getReader();
+    if (!reader) throw new CoreError('file.preview_empty', '图片内容为空');
+    const parts: Uint8Array<ArrayBuffer>[] = []; let size = 0;
+    while (true) {
+      const { done, value } = await abortable(reader.read(), control.signal);
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) throw new CoreError('file.preview_too_large', '图片超过预览大小限制');
+      parts.push(new Uint8Array(value));
+    }
+    if (!size || control.signal.aborted) throw new CoreError('file.preview_empty', '图片未加载完成');
+    return new Blob(parts, { type: mime });
+  } finally {
+    if (reader) { try { await reader.cancel(); } catch { /* The aborted/failed stream is already unusable. */ } }
+    control.clear();
+  }
+}

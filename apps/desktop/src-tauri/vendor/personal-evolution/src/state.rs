@@ -11,6 +11,7 @@ pub enum Source {
 }
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Target {
+    Memory,
     User,
     Tools,
     WorkMethods,
@@ -18,6 +19,7 @@ pub enum Target {
 }
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Effect {
+    Fact,
     Preference,
     Method,
     Personality,

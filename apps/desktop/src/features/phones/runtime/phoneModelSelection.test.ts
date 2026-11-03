@@ -153,6 +153,7 @@ it('ST05 相同模型配置重复同步只发送一次（指纹去重保留）',
 it('ST05 模型失效时手机消息不会发出', async () => {
   S.agents = { dev_phone: agent('removed::private-model') };
   const c = { id: 'st05-blocked', owner: 'dev_phone', title: '手机', updated: 1, messages: [] };
+  S.cloud = 'signed-in'; S.account = { id: 'a', name: 'A', email: '' }; S.convs = [c];
   await expect(sendPhone(c, '做点事')).rejects.toThrow(/已失效.*重新选择/);
   expect(m.rpc.mock.calls.filter(call => call[1] === 'chat.send')).toHaveLength(0);
   expect(c).not.toHaveProperty('phonePending');

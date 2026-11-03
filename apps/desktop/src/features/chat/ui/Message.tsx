@@ -1,6 +1,9 @@
+import { desktopPermissionLabel } from '@/features/settings/runtime/permissionPlan';
+import { isTaskStopping, pendingSends } from '../runtime/cancel';
+import { toastError } from '@/shared/overlays/controller';
 import { personalPermissionLabel } from '@/features/personal/runtime/permissions';
-import { avatarUrl } from '@/features/personal/runtime/avatars';
-import { visibleReply } from '../runtime/commands';
+import { AssistantAvatar } from '@/features/personal/ui/AssistantAvatar';
+import { compactTask, visibleReply } from '../runtime/commands';
 import { MemberAvatar } from '@/features/teams/ui/MemberAvatar';
 import { agentRow } from '@/features/settings/runtime/agents';
 import { openMessagePath } from '@/features/workspace/runtime/workspace';
@@ -21,7 +24,7 @@ import { Badge, Spinner, Typing } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { IconTile } from '@/shared/ui/Layout';
 import { Markdown } from '@/shared/ui/Markdown';
-import { agent, conv, modelName, perm } from '@/state/selectors';
+import { agent, conv, modelName } from '@/state/selectors';
 import { useStore } from '@/state/store';
 import type { Msg } from '@/state/types';
 import { cx, fmtTime } from '@/shared/lib/util';
@@ -51,7 +54,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
         workspace: conversation?.workspace, ...(conversation?.phoneSession ? { phone: { device: conversation.owner, session: conversation.phoneSession } } : {}) };
       return (
         <div className={cx('msg', continued && 'msg--cont')}>
-          {continued ? <span className="msg__gutter" aria-hidden="true" /> : conversation?.personal ? <img className="pa-message-avatar" src={avatarUrl(conversation.personal.avatar)} alt={`${conversation.personal.name}头像`} /> : conversation?.agentId ? <MemberAvatar id={`ag:${conversation.agentId}`} name={conversation.agentName} size="sm" /> : <Avatar agent={a} size="sm" />}
+          {continued ? <span className="msg__gutter" aria-hidden="true" /> : conversation?.personal ? <AssistantAvatar assistant={{ avatar: conversation.personal.avatar, avatarImage: conversation.personal.image }} className="pa-message-avatar" alt={`${conversation.personal.name}头像`} /> : conversation?.agentId ? <MemberAvatar id={`ag:${conversation.agentId}`} name={conversation.agentName} size="sm" /> : <Avatar agent={a} size="sm" />}
           <div className="msg__body">
             {!continued && <div className="msg__meta"><span className="msg__name">{conversation?.agentId ? external?.name || conversation.agentName || 'Agent' : conversation?.personal?.name || m.role || a?.name}</span>{a?.kind === 'phone' && !a.real && <Badge text={modelName(a.model || 'lom-mini')} />}<span>{fmtTime(m.at)}</span></div>}
             {!headerOnly && <><div className="msg__text"><Markdown text={visibleReply(m.text, m.streaming)} streaming={m.streaming} fenceFrom={fence?.from} fenceOpenEnd={fence?.openEnd} file={conversation?.remote && !conversation.phoneSession ? (path, label, key) => <button key={key} type="button" className="message-path" title={`在侧栏打开：${path}`} onClick={() => void openMessagePath(path, conversation.workspace)}>{label}</button> : undefined} image={(source, alt, key) => <ReplyImage key={`${imageContext.account}:${ctxId}:${key}:${source}`} source={source} alt={alt} context={imageContext} ready={!m.streaming} />} />{m.streaming && <Typing inline />}</div>
@@ -71,7 +74,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
         {open && <div className="lom-thinking__body msg__text"><Markdown text={m.text || '暂无思考内容'} /></div>}
       </div>;
       // CW06：和桌面紧凑思考同一套 Markdown 规则，换行与列表不再被收成一行空格
-      return <EventCard m={m} ic="sparkles" title="思考过程" sub={open ? '' : `${(m.text || '').slice(0, 40)}…`} body={m.text ? <div className="msg__text"><Markdown text={m.text} /></div> : undefined} />;
+      return <EventCard m={m} ic="sparkles" title="思考过程" sub={open ? '' : '展开查看'} body={m.text ? <div className="msg__text"><Markdown text={m.text} /></div> : undefined} />;
     case 'plan': {
       const items = m.items || [], done = items.filter(i => i.done).length;
       return (
@@ -94,7 +97,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
       return (
         <EventCard m={m} tone="warn" ic="shield" title={title} sub={m.command} toggle={false}
           foot={pending || submitting ? <>
-            <span className="muted grow">{sideReadOnly ? '侧边聊天只读：不会请求你放权' : supported ? `权限模式：${messageConv?.personal ? personalPermissionLabel(messageConv) : perm(s.permission).name}` : m.confirmationProblem || '核心未提供可识别的权限选项；未允许任何操作，请停止任务后重试。'}</span>
+            <span className="muted grow">{sideReadOnly ? '侧边聊天只读：不会请求你放权' : supported ? `权限模式：${messageConv?.personal ? personalPermissionLabel(messageConv) : (({ name, note }) => note ? `${name}（${note}）` : name)(desktopPermissionLabel(s.permission, String(s.prefs.allowInstall)))}` : m.confirmationProblem || '核心未提供可识别的权限选项；未允许任何操作，请停止任务后重试。'}</span>
             {sideReadOnly
               ? <Btn label="拒绝" variant="ghost" size="sm" disabled={submitting} onClick={() => approve(ctxId, m, '0')} />
               : choices?.length ? choices.map((o, i) => <Btn key={i} label={o.label} size="sm" disabled={submitting} onClick={() => void approvePermissionOption(ctxId.replace(/^conv:/, ''), m, o.value)} />) : <>
@@ -107,7 +110,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
     }
     case 'files':
       return (
-        <EventCard m={m} tone="info" ic="fileCode" title={`修改了 ${m.changes?.length ?? 0} 个文件`} sub={m.changes?.map(c => c.path).join('、')}
+        <EventCard m={m} tone="info" ic="fileCode" title={`修改了 ${m.changes?.length ?? 0} 个文件`} sub="展开查看文件列表"
           body={m.changes?.map(c => <div key={c.path} className="diff-row"><Icon name="file" /><span className="grow">{c.path}</span><span className="add">+{c.add}</span><span className="del">−{c.del}</span></div>)}
           foot={<Btn label="在工作区查看" ic="eye" variant="ghost" size="sm" onClick={() => wsTab('files')} />} />
       );
@@ -155,7 +158,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
     case 'schedule':
       return <EventCard m={m} tone="info" ic="clock" title={m.title} sub={m.desc} toggle={false} foot={<Btn label="查看定时任务" variant="ghost" size="sm" onClick={() => go('schedule')} />} />;
     case 'system':
-      return <div className="msg__sys"><Icon name={m.ic || 'info'} />{m.text}</div>;
+      return <div className="msg__sys"><Icon name={m.ic || 'info'} />{m.text}{m.recovery === 'compact' && messageConv?.remote && !messageConv.agentId && !messageConv.phoneSession && !messageConv.sideOf && <Btn label="压缩上下文" size="sm" variant="ghost" disabled={!!s.running[messageConv.id] || pendingSends.has(messageConv.id) || isTaskStopping(messageConv.id)} onClick={() => void compactTask(messageConv).catch(e => toastError('压缩失败', e))} />}</div>;
     default:
       return null;
   }

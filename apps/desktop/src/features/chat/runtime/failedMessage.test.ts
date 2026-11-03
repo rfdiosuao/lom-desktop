@@ -94,3 +94,12 @@ it('D26 another client stream cannot acknowledge this client question after its 
   expect(S.running[task.id]).toBe(true);
   expect(() => retryTaskMessage(task, original)).toThrow('可重试');
 });
+
+
+it('PA-CONTEXT-01 AC-1 REST 413 retains explicit compression recovery without retry', async () => {
+  m.api.mockImplementation(async (_method, path) => { if (path.endsWith('/messages')) throw Object.assign(new Error('request rejected'), { status: 413 }); return {}; });
+  expect(await sendToTask(task, 'original', [attachment])).toBe(false);
+  expect(task.messages.at(-1)).toMatchObject({ type: 'system', recovery: 'compact', text: expect.stringContaining('压缩上下文') });
+  expect(task.messages.find(x => x.type === 'user')?.status).toBe('error');
+  expect(m.api.mock.calls.filter(([, path]) => path.endsWith('/messages'))).toHaveLength(1);
+});

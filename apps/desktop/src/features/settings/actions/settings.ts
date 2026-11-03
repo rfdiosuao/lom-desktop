@@ -6,6 +6,7 @@ import { S, update } from '@/state/store';
 import { initialState } from '@/state/state';
 import type { Team } from '@/state/types';
 import { redeemCode, signIn, signOut, saveProfile } from '@/features/account/runtime/cloud';
+import { loadPlans } from '@/features/account/runtime/plans';
 import { closeModal, confirm, openModal, toast, toastError } from '@/shared/overlays/controller';
 
 import { PENDING_PREFERENCES, unavailable } from '@/shared/lib/unavailable';
@@ -37,12 +38,14 @@ export const recharge = () => {
   if (S.cloud !== 'signed-in') { toast('先登录 HEANG 账号，才能充值积分', 'person'); void signIn(); return; }
   S.form = { pack: 98, code: '', redeeming: false, error: '' };
   openModal('recharge');
+  void loadPlans(); // 是否可以在线购买以服务端为准，打开时刷新一次
 };
 
-/** 开通 / 续费某一档：在线支付接入前，用订阅兑换码开通（兑换码在充值弹窗里兑换） */
+/** 开通 / 续费某一档：可在线购买的档打开购买窗口（SUB-AICHASHOU-01），其余用订阅兑换码开通 */
 export function subscribe(tier: number) {
   const t = S.plans?.tiers.find(x => x.tier === tier);
   if (!t?.enabled) { toast('这一档还没有开放', 'info'); return; }
+  if (t.aichashou) { openModal('subscribe', { tier }); return; }
   if (!S.plans?.online_payment) {
     recharge();
     S.form.note = `在线支付即将开放。已有${t.name}订阅兑换码的话，在这里兑换即可开通。`;
@@ -121,7 +124,7 @@ export const clearCache = () => confirm({ title: '清除预览缓存？', desc: 
 /** 只恢复示例团队：真实团队、偏好、目标、文件夹和模型选择等本机设置都保留（示例手机和定时任务本来就不保存） */
 export function restoreDemoTeams<T extends Record<string, unknown>>(saved: T): T & { teams: Team[] } {
   const real = Array.isArray(saved.teams) ? (saved.teams as Team[]).filter(t => t.real) : [];
-  return { ...saved, teams: [...initialState().teams.filter(t => !t.real), ...real] };
+  return { ...saved, teams: [...initialState(true).teams.filter(t => !t.real), ...real] };
 }
 export const resetDemo = () => confirm({
   title: '重置演示数据？', desc: '会刷新界面并恢复示例团队；你建的真实团队、偏好设置、电脑任务和模型服务都不受影响。', okText: '重置', danger: true,

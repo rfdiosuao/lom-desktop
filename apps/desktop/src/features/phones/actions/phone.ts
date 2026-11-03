@@ -1,5 +1,7 @@
+import { authAccount } from '@/features/account/runtime/authScope';
+import { syncPhoneNow, phoneSyncError } from '../runtime/phoneSync';
 import { phoneDocument, syncPhoneDocuments, writePhoneDocument } from '../runtime/phoneDocuments';
-import { dropPhone, removeDevice, renameDevice } from '../runtime/devices';
+import { dropPhone, removeDevice, renameDevice, refreshDevicesNow } from '../runtime/devices';
 import { agent, phone } from '@/state/selectors';
 import { S, update } from '@/state/store';
 import { uid } from '@/shared/lib/util';
@@ -86,9 +88,19 @@ export const doSendFiles = (_phoneId: string) => unavailable('向手机传送文
 
 /* ---------- 设备 ---------- */
 export const manageDevice = (id: string) => openModal('device', { id });
-export function reconnect(id: string) {
-  if (isReal(id)) { toast('请在手机上打开麓鸣 App，它会自动重新连接；在线状态每 15 秒刷新一次。', 'info'); return; }
-  toast('这是示例手机，无法建立真实连接。请使用配对新手机。', 'info');
+export async function reconnect(id: string) {
+  if (!isReal(id)) { toast('这是示例手机，无法建立真实连接。请使用配对新手机。', 'info'); return; }
+  const current=authAccount();
+  if(!current()){toast('请先登录后恢复手机连接','info');return;}
+  try {
+    await refreshDevicesNow();if(!current())return;
+    if(!isReal(id)||agent(id)?.status!=='online'){
+      toast('手机仍离线；请确认手机联网并允许麓鸣后台运行，上线后会自动恢复同步。','info');return;
+    }
+    const restored=await syncPhoneNow(id);if(!current())return;
+    if(restored)toast('手机已响应，连接和同步已恢复','check');
+    else toast(phoneSyncError(id)||'连接尚未确认，正在同步时不会重复发起，请稍后再看。','info');
+  }catch(e){if(current())toastError('手机连接恢复失败',e);}
 }
 export function renamePhone(id: string) {
   const p = agent(id);

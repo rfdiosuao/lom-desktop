@@ -29,18 +29,18 @@ it('D36 a task on the user\'s own key is never silently switched to paid Lom cre
   expect(usableModel(c, ok as never)).toBe(ok);
 });
 
-it('D36 a model or effort picked mid-turn is applied right after the turn ends; the later pick wins', async () => {
+it.each(['high', 'none', ''])('D36 EFFORT-02 AC-3 effort %s picked mid-turn waits for the turn end; the later model pick wins', async effort => {
   const applied: unknown[] = [];
   setSwitchApplier(async (id, change) => { applied.push([id, change]); });
   update(s => { s.running.c1 = true; });
   deferSwitch('c1', { model: 'cloud::pro-2' }, 'Lom Pro');
-  deferSwitch('c1', { effort: 'high' }, '推理强度 高');
+  deferSwitch('c1', { effort }, '推理强度');
   deferSwitch('c1', { model: 'cloud::max-2' }, 'Lom Max');
   expect(S.toast?.text).toContain('这一轮结束后切换到「Lom Max」');
   update();
   expect(applied).toEqual([]);
   update(s => { delete s.running.c1; });
-  await vi.waitFor(() => expect(applied).toEqual([['c1', { model: 'cloud::max-2', effort: 'high' }]]));
+  await vi.waitFor(() => expect(applied).toEqual([['c1', { model: 'cloud::max-2', effort }]]));
   expect(pendingSwitch('c1')).toBeUndefined();
 });
 

@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
 import { api } from '@/core/client';
 import { phoneRpc } from '@/features/phones/runtime/phoneRpc';
 import { base64 } from '@/features/phones/runtime/phoneFiles';
@@ -97,9 +96,7 @@ export async function loadReplyImage(source: string, context: ImageContext): Pro
 export async function saveReplyImage(image: ReplyImage): Promise<boolean> {
   const bytes = decode(image.data), ext = image.data.slice(11, image.data.indexOf(';')).replace('jpeg', 'jpg');
   const name = /\.(png|jpe?g|webp|gif)$/i.test(image.name) ? image.name : `${image.name}.${ext}`;
-  const path = await save({ defaultPath: name }); if (!path) return false;
-  await invoke('local_file_save', { path, data: base64(bytes), sha256: await hash(bytes) });
-  return true;
+  return invoke<boolean>('local_file_save', { name, data: base64(bytes), sha256: await hash(bytes) });
 }
 
 /** Copy pixels rather than a filesystem path or Markdown. Native clipboard works in WKWebView. */

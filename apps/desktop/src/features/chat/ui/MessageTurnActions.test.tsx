@@ -50,7 +50,7 @@ it('D30 AC-1 keeps one copy and one regenerate at the end of a tool-split reply'
     expect(count('复制')).toBe(1);
     expect(count('重新生成')).toBe(1);
     const actions = host.querySelector('.msg--actions')!;
-    const lastTool = host.querySelectorAll('.tools')[1];
+    const lastTool = [...host.querySelectorAll('.tools')].at(-1)!;
     expect(lastTool.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="复制"]')!.click());
     expect(writeText).toHaveBeenCalledWith('先看结构。\n\n目录干净了。\n\n继续写核心脚本。');

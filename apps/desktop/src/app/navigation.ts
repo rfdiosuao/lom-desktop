@@ -1,4 +1,5 @@
 import { watchPhone } from '@/features/phones/runtime/phoneChat';
+import { wakeVisiblePhones } from '@/features/phones/runtime/phonePace';
 import { openTask } from '@/features/chat/runtime/tasks';
 import { loadConvOptions } from '@/features/settings/runtime/agentOptions';
 import { activeFolder, refreshWorkspace } from '@/features/workspace/runtime/workspace';
@@ -21,6 +22,8 @@ export function navigate(patch: Partial<AppState>, push = true) {
     s.menu = null;
     s.openFile = null; s.workspaceBrowseRoot = '';
   });
+  // PHONE-POLL-01：刚显示出来的手机会话（打开的会话、团队成员会话）立即读一次，不等完离屏时的长间隔
+  wakeVisiblePhones();
   const c = S.route.name === 'chat' ? conv(S.activeConv) : undefined;
   if (c?.phoneSession) void watchPhone(c);
   else if (c?.remote) { void openTask(c.id); if (c.agentId && !S.agentOptions[c.id]) void loadConvOptions(c); }

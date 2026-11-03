@@ -106,3 +106,35 @@ it.each(['codex', 'claude'])('PHONE-IMAGE-01 %s receives a conversation-scoped p
   expect(S.convs[0].phoneScope).toBe(create.extra.lom_phone_scope);
   await vi.waitFor(() => expect(m.api.mock.calls.some(c => c[1] === `/api/conversations/${id}/messages`)).toBe(true));
 });
+
+it('PA-VISION-02 unknown or unsupported cloud vision never guesses a billable model', async () => {
+  for (const vision of [undefined, []]) {
+    S.cloudVision = vision as typeof S.cloudVision;
+    const result = await viewImageTool({ file_path: '/tmp/a.png' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(vision ? 'vision.unsupported' : 'vision.unknown');
+  }
+  expect(m.invoke).not.toHaveBeenCalled(); expect(m.api).not.toHaveBeenCalled();
+});
+it('PA-VISION-02 provider lookup failure returns an error and empty description is never success', async () => {
+  m.api.mockRejectedValueOnce(new Error('provider lookup failed'));
+  expect((await viewImageTool({ file_path: '/tmp/a.png' })).isError).toBe(true);
+  m.api.mockResolvedValue([{ name: 'Lom 云端', enabled: true, api_key: 'K' }]);
+  m.invoke.mockResolvedValue('  ');
+  expect((await viewImageTool({ file_path: '/tmp/a.png' })).isError).toBe(true);
+});
+
+it('PA-VISION-02 cancellation before provider lookup finishes sends no image and wipes keys', async () => {
+  let current = true;
+  const providers = [{ name: 'Lom 云端', enabled: true, api_key: 'test-key' }];
+  m.api.mockImplementation(async () => { current = false; return providers; });
+  const result = await viewImageTool({ file_path: '/tmp/a.png' }, () => current);
+  expect(result.isError).toBe(true); expect(m.invoke).not.toHaveBeenCalled();
+  expect(providers[0].api_key).toBe('');
+});
+it('PA-VISION-02 account change during image request suppresses late description', async () => {
+  m.api.mockResolvedValue([{ name: 'Lom 云端', enabled: true, api_key: 'test-key' }]);
+  m.invoke.mockImplementation(async () => { S.account = { id: 'another', name: '', email: '' }; return 'late-private-image'; });
+  const result = await viewImageTool({ file_path: '/tmp/a.png' });
+  expect(result.isError).toBe(true); expect(result.content[0].text).not.toContain('late-private-image');
+});

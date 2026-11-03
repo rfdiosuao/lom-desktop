@@ -1,4 +1,5 @@
 import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
+import { useTeamWaitReminder } from '@/features/teams/activity/useTeamWaitReminder';
 import { PersonalFloating } from '@/features/personal/ui/PersonalFloating';
 import { startUpdateChecks } from '@/features/updates/runtime/updater';
 import { UpdateBanner } from '@/features/updates/ui/Updates';
@@ -72,6 +73,7 @@ function ConnBanner() {
 }
 
 export function App() {
+  useTeamWaitReminder();
   const s = useStore();
   useCloudInbox();
   useEffect(() => {

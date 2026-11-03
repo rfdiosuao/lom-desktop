@@ -150,3 +150,114 @@ fn pa_evolve_02_fenced_json_from_the_model_is_accepted_but_still_checked() {
         "```json\n[{\"slot\":\"length\",\"value\":\"concise\",\"quote\":\"用户没说过\"}]\n```";
     assert!(compile(forged, "以后简短一点", "好的", "turn:1").is_err());
 }
+
+#[test]
+fn pa_capability_01_version_guards_restore_managed_preferences_and_preserve_manual_notes() {
+    let d = root();
+    std::fs::write(d.join("USER.md"), "manual-user\n").unwrap();
+    std::fs::write(d.join("MEMORY.md"), "manual-fact\n").unwrap();
+    apply(
+        &d,
+        "one",
+        "以后简短",
+        "",
+        "one:u",
+        r#"[{"slot":"length","value":"concise","quote":"简短"}]"#,
+    )
+    .unwrap();
+    apply(
+        &d,
+        "two",
+        "以后详细",
+        "",
+        "two:u",
+        r#"[{"slot":"length","value":"detailed","quote":"详细"}]"#,
+    )
+    .unwrap();
+    assert_eq!(versions(&d).unwrap().current_version, 2);
+    assert!(restore(&d, 1, 1).is_err());
+    assert!(restore(&d, 2, 99).is_err());
+    assert!(apply_checked(
+        &d,
+        "stale",
+        "以后简短",
+        "",
+        "s:u",
+        r#"[{"slot":"length","value":"concise","quote":"简短"}]"#,
+        Some(0)
+    )
+    .is_err());
+    assert_eq!(restore(&d, 2, 1).unwrap(), 3);
+    let text = std::fs::read_to_string(d.join("USER.md")).unwrap();
+    assert!(text.starts_with("manual-user\n"));
+    assert!(text.contains("回答优先简洁"));
+    assert!(!text.contains("回答提供充分"));
+    assert_eq!(
+        std::fs::read_to_string(d.join("MEMORY.md")).unwrap(),
+        "manual-fact\n"
+    );
+    std::fs::remove_dir_all(d).unwrap();
+}
+#[test]
+fn pa_capability_01_approved_facts_append_restore_and_cannot_be_auto_learned() {
+    let d = root();
+    std::fs::write(d.join("MEMORY.md"), "manual-fact\n").unwrap();
+    let first = r#"[{"slot":"fact","value":"我的猫叫小白","quote":"我的猫叫小白"}]"#;
+    assert!(apply(&d, "auto", "我的猫叫小白", "", "auto:u", first).is_err());
+    apply_checked(&d, "one", "我的猫叫小白", "", "one:u", first, Some(0)).unwrap();
+    let second = r#"[{"slot":"fact","value":"我住在上海","quote":"我住在上海"}]"#;
+    apply_checked(&d, "two", "我住在上海", "", "two:u", second, Some(1)).unwrap();
+    assert!(std::fs::read_to_string(d.join("MEMORY.md"))
+        .unwrap()
+        .contains("我住在上海"));
+    restore(&d, 2, 1).unwrap();
+    let text = std::fs::read_to_string(d.join("MEMORY.md")).unwrap();
+    assert!(text.starts_with("manual-fact\n"));
+    assert!(text.contains("我的猫叫小白"));
+    assert!(!text.contains("我住在上海"));
+    assert!(compile(
+        r#"[{"slot":"fact","value":"fake","quote":"我的猫叫小白"}]"#,
+        "我的猫叫小白",
+        "",
+        "u"
+    )
+    .is_err());
+    assert!(compile(
+        r#"[{"slot":"fact","value":"密码secret","quote":"密码secret"}]"#,
+        "密码secret",
+        "",
+        "u"
+    )
+    .is_err());
+    std::fs::remove_dir_all(d).unwrap();
+}
+
+#[test]
+fn pa_capability_01_rollback_to_pre_fact_version_clears_only_managed_facts() {
+    let d = root();
+    std::fs::write(d.join("MEMORY.md"), "original-manual\n").unwrap();
+    apply(
+        &d,
+        "one",
+        "以后简短",
+        "",
+        "one:u",
+        r#"[{"slot":"length","value":"concise","quote":"简短"}]"#,
+    )
+    .unwrap();
+    apply_checked(
+        &d,
+        "fact",
+        "我的猫叫小白",
+        "",
+        "fact:u",
+        r#"[{"slot":"fact","value":"我的猫叫小白","quote":"我的猫叫小白"}]"#,
+        Some(1),
+    )
+    .unwrap();
+    restore(&d, 2, 1).unwrap();
+    let text = std::fs::read_to_string(d.join("MEMORY.md")).unwrap();
+    assert!(text.starts_with("original-manual\n"));
+    assert!(!text.contains("我的猫叫小白"));
+    std::fs::remove_dir_all(d).unwrap();
+}

@@ -1,7 +1,9 @@
+import { Markdown } from '@/shared/ui/Markdown';
 import { useRef, useState } from 'react';
 import { Badge } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { cardNavigation, type CardNavigation } from './cardNavigation';
+import { CardOpen } from './CardOpen';
 import { formatActivityTime } from './activityTime';
 import type { PhoneActivity } from './phoneActivity';
 import { clampStyle, useIsClamped } from './useIsClamped';
@@ -19,11 +21,12 @@ export function PhoneActivityCard({ activity, at, navigation }: { activity: Phon
         <span className="act-card__subject" title={activity.title}>{activity.title}</span>
         <Badge text={activity.label} />
       </header>
-      {activity.text && <div ref={bodyRef} className="act-card__body" style={expanded ? undefined : clampStyle(3)}>{activity.text}</div>}
+      {activity.text && <div ref={bodyRef} className="act-card__body msg__text" style={expanded ? undefined : clampStyle(3)}><Markdown text={activity.text} /></div>}
       <footer className="act-card__foot">
         <span>手机会话 · 本机同步</span>
         {activity.files > 0 && <span className="act-card__files"><Icon name="file" />{activity.files} 个附件</span>}
         {(clamped || expanded) && <button type="button" className="act-card__more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开'}</button>}
+        <CardOpen navigation={navigation} />
         <time className="act-card__time" title={time.full}>{time.label}</time>
       </footer>
     </article>

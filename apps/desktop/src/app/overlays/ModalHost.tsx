@@ -18,6 +18,7 @@ import { DeviceModal, MemoryModal, PairModal, SendFilesModal, SubModal } from '@
 import { SchedModal, SchedRunsModal } from '@/features/schedules/ui/ScheduleModals';
 import { SkillModal, UploadModal } from '@/features/skills/ui/SkillModals';
 import { TeamModal } from '@/features/teams/ui/TeamModal';
+import { PersonalAvatarModal } from '@/features/personal/ui/PersonalAvatarModal';
 
 /* ===== 弹窗宿主：按栈渲染，点遮罩关闭（dismissible=false 的除外） ===== */
 
@@ -27,7 +28,7 @@ const MODALS: Record<string, ComponentType<P>> = {
   confirm: ConfirmModal, prompt: PromptModal, shortcuts: ShortcutsModal, audit: AuditModal, feedback: FeedbackModal, profile: ProfileModal,
   palette: PaletteModal, sched: SchedModal, schedRuns: SchedRunsModal, skill: SkillModal, upload: UploadModal, team: TeamModal,
   sub: SubModal, memory: MemoryModal, sendFiles: SendFilesModal, device: DeviceModal, pair: PairModal,
-  archived: ArchivedModal, lomMemory: LomMemoryModal, recharge: RechargeModal, addKey: AddKeyModal, full: FullModal, customAgent: CustomAgentModal, notice: NoticeModal,
+  archived: ArchivedModal, lomMemory: LomMemoryModal, recharge: RechargeModal, addKey: AddKeyModal, full: FullModal, customAgent: CustomAgentModal, notice: NoticeModal, personalAvatar: PersonalAvatarModal,
 };
 
 export function ModalHost() {

@@ -27,9 +27,27 @@ it.each<Partial<Msg>>([
   { type: 'assistant', streaming: true }, { type: 'thinking', status: 'running' },
   { type: 'tool', status: 'running' }, { type: 'approval', status: 'pending' },
   { type: 'question', status: 'pending' }, { type: 'question', status: 'submitting' }, { type: 'approval', status: 'submitting' },
-])('D07 visible active $type replaces the generic waiting animation', async activity => {
+])('UI-AUDIT-05 (D07) visible active $type hides the waiting animation but keeps the row and its announcement unchanged', async activity => {
   c.messages.push({ id: 'a', at: 2, type: 'assistant', ...activity });
-  await render(); expect(host.childElementCount).toBe(0);
+  await render();
+  expect(host.querySelectorAll('.reply-pending')).toHaveLength(1);
+  expect(host.querySelector('.reply-pending__live')).toBeNull();
+  expect(host.querySelector('.typing')).toBeNull();
+  expect(host.querySelector('[role="status"]')!.textContent).toBe(activity.type === 'assistant' ? '正在继续处理…' : '正在等待回复…');
+  expect(host.querySelector('.msg__name')).toBeNull();
+});
+it('UI-AUDIT-05 the status row has no fixed label, so its text is what gets announced', async () => {
+  await render();
+  const status = host.querySelector('[role="status"]')!;
+  expect(status.hasAttribute('aria-label')).toBe(false);
+  expect(host.querySelector('.reply-pending')!.hasAttribute('aria-label')).toBe(false);
+  expect(status.textContent).toBe('正在等待回复…');
+});
+it('UI-AUDIT-05 (D31) an external agent identity shown at its first thinking is not repeated by the waiting row', async () => {
+  c.messages.push({ id: 'th', type: 'thinking', at: 2, text: '想好了' });
+  await render();
+  expect(host.querySelector('.msg__name')).toBeNull();
+  expect(host.querySelector('[role="status"]')!.textContent).toBe('正在等待回复…');
 });
 it('D07 a continued reply does not repeat identity, but the next user turn does', async () => {
   c.messages.push({ id: 'a', type: 'assistant', at: 2, text: 'checking' });

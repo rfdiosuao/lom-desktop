@@ -1,5 +1,5 @@
 import { t } from '@/shared/i18n/index';
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { enterPhone, newTask, pickPhone } from '@/app/navigation';
 import { pair } from '@/features/phones/actions/phone';
 import { applySuggestion, toggleAttachPhone } from '../actions/composer';
@@ -18,14 +18,34 @@ import { MessageList } from './MessageList';
 
 /* ===== 首页与对话页 ===== */
 
-/** 滚动区贴底：用户停在底部时，新内容到来自动滚到底；往上翻看时不打扰 */
+type SizeWatch = { observer: ResizeObserver; target?: Element; seen: Set<Element> };
+
+/** 观察滚动区本身和它的每个直接子元素；子元素随渲染增减，每次同步一遍 */
+function watchSizes(watch: SizeWatch, el: Element) {
+  if (watch.target !== el) { watch.observer.disconnect(); watch.seen.clear(); watch.target = el; watch.observer.observe(el); }
+  const now = new Set(el.children);
+  watch.seen.forEach(child => { if (!now.has(child)) { watch.observer.unobserve(child); watch.seen.delete(child); } });
+  now.forEach(child => { if (!watch.seen.has(child)) { watch.observer.observe(child); watch.seen.add(child); } });
+}
+
+/** 滚动区贴底：用户停在底部时，新内容到来自动滚到底；往上翻看时不打扰。
+ *  UI-AUDIT-05：图片加载、展开测量等不经过重新渲染的变高，由 ResizeObserver 补上贴底 */
 export function useStickBottom<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const atBottom = useRef(true);
-  useLayoutEffect(() => {
+  const sizes = useRef<SizeWatch | null>(null);
+  const pin = () => {
     const el = ref.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  };
+  useLayoutEffect(() => {
+    pin();
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    sizes.current ??= { observer: new ResizeObserver(pin), seen: new Set() };
+    watchSizes(sizes.current, el);
   });
+  useEffect(() => () => { sizes.current?.observer.disconnect(); sizes.current = null; }, []);
   const onScroll = () => {
     const el = ref.current;
     if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;

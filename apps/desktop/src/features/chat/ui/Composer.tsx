@@ -1,3 +1,6 @@
+import { desktopPermissionLabel } from '@/features/settings/runtime/permissionPlan';
+import { AttachmentThumbnail } from './AttachmentThumbnail';
+import { externalPermission } from '@/features/settings/runtime/agentPermission';
 import { personalPermissionLabel } from '@/features/personal/runtime/permissions';
 import { dropHistory, isHistoryDrop } from '@/features/history/runtime/historyImport';
 import { toastError } from '@/shared/overlays/controller';
@@ -17,7 +20,7 @@ import { closeMenu, openMenu } from '@/shared/overlays/controller';
 import { Dropdown, IconBtn } from '@/shared/ui/Button';
 import { Spinner } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
-import { agent, attached, currentPcModel, model, pcModels, perm, phone, phoneModelName } from '@/state/selectors';
+import { agent, attached, convModelLabel, currentPcModel, model, pcModels, perm, phone, phoneModelName } from '@/state/selectors';
 import { agentRow, externalAgentName, externalEffort, externalModel } from '@/features/settings/runtime/agents';
 import { prepareAgentTask } from '@/features/settings/runtime/agentWarmup';
 import { getEndpoint } from '@/core/client';
@@ -66,7 +69,13 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
     : effState === 'ready' ? effortName(effortConv ? effortConv.effort : s.effortPick)
     : '';
   const keyConv = effortConv ?? convOfKey(ckey);
-  const modelLabel = isPhone ? phoneModelName(ag?.model || s.phoneModel) : `${(keyConv?.remote && keyConv.modelId ? model(keyConv.modelId) : currentPcModel() ?? (keyConv?.lomTier ? model(`lom-${keyConv.lomTier}`) : s.model ? model(s.model) : undefined) ?? pcModels()[0])?.name ?? '添加模型'}`;
+  // REFACTOR-01-M4：所选档位与核心实际生效不一致时直接写出来（例如「全自动」但命令仍需确认）
+  const deskPerm = desktopPermissionLabel(s.permission, String(s.prefs.allowInstall));
+  const deskPermLabel = deskPerm.note ? `${deskPerm.name} · 命令需确认` : deskPerm.name;
+  // 已有会话的按钮、菜单和发送共用 convModel（UI-AUDIT-02 UI-03）
+  const modelLabel = isPhone ? phoneModelName(ag?.model || s.phoneModel)
+    : keyConv?.remote && keyConv.modelId ? convModelLabel(keyConv)
+    : (currentPcModel() ?? (keyConv?.lomTier ? model(`lom-${keyConv.lomTier}`) : s.model ? model(s.model) : undefined) ?? pcModels()[0])?.name ?? '选择模型';
 
   // Focus starts a bounded, prompt-free Codex warmup. Scope changes retire the unused session.
   useEffect(() => {
@@ -122,7 +131,7 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
           <div className="composer__attachments">
             {atts.map((a, i) => (
               <span key={`${a.name}${i}`} data-history-reference={a.historyId ? true : undefined} className={cx('attach', a.uploading && 'is-uploading')} title={a.uploading ? '正在上传…' : a.name}>
-                {a.uploading ? <Spinner size={14} /> : a.preview ? <img className="attach__thumb" src={a.preview} alt="" /> : <Icon name={a.ic || 'file'} />}
+                {a.uploading ? <Spinner size={14} /> : <AttachmentThumbnail attachment={a} />}
                 {a.name}{a.uploading && a.progress != null ? ` · ${a.progress}%` : ''}
                 <IconBtn ic="close" label={a.historyId ? "移除会话引用" : "移除附件"} disabled={a.uploading} onClick={() => removeAttach(ckey, i)} size="sm" />
               </span>
@@ -164,7 +173,7 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
         <div className="composer__bar">
           <div className="composer__group">
             <IconBtn ic="plus" label="添加" variant="soft" className="ibtn--round" size={compact ? 'sm' : undefined} onClick={e => openMenu('attach', e.currentTarget.closest<HTMLElement>('.composer') || e.currentTarget, { key: `att${ckey}`, ckey, matchWidth: 'true' })} />
-            {personal ? <span className="pa-muted" title={`个人助理当前权限：${personalPermissionLabel(convOfKey(ckey))}`}>{personalPermissionLabel(convOfKey(ckey))}</span> : <Dropdown label={perm(s.permission).name} ic={perm(s.permission).ic} menu="permission" ctx={{ ckey }} size={compact ? 'sm' : undefined} />}
+            {personal ? <span className="pa-muted" title={`个人助理当前权限：${personalPermissionLabel(convOfKey(ckey))}`}>{personalPermissionLabel(convOfKey(ckey))}</span> : <Dropdown label={ext ? (keyConv?.agentId ? externalPermission(ckey).label : `请求权限：${perm(s.permission).name}`) : deskPermLabel} ic={ext ? 'lock' : perm(s.permission).ic} menu="permission" ctx={{ ckey }} size={compact ? 'sm' : undefined} />}
           </div>
           <div className="composer__group">
             {/* 推理强度：每个 Agent 用它自己的档位（Lom 低/中/高，外部 Agent 是它 CLI 报的选项） */}

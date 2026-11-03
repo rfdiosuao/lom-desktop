@@ -2,6 +2,8 @@ import { PhoneActivityCard } from './PhoneActivityCard';
 import { useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Spinner } from '@/shared/ui/Controls';
+import { Btn } from '@/shared/ui/Button';
+import { cx } from '@/shared/lib/util';
 import { MemberAvatar } from '../ui/MemberAvatar';
 import type { ActivityItem } from './activityTypes';
 import { MessageCard } from './MessageCard';
@@ -34,8 +36,10 @@ type Props = {
   onLoadMore: () => void;
   onOpenMember?: (memberId: string) => void;
   onOpenPhone?: (conversationId: string) => void;
-  /** 一列都没有时的说明：新建团队和筛选后为空要说得不一样。 */
-  emptyHint: { title: string; desc?: string };
+  /** 顶栏选中的成员：它的一列带选中标记，供顶栏点选后定位（TEAM-FOCUS-01）。 */
+  focusMemberId?: string;
+  /** 一列都没有时的说明：新建团队和筛选后为空要说得不一样；action 是空状态里的主操作。 */
+  emptyHint: { title: string; desc?: string; action?: { label: string; onClick: () => void } };
   /** 空列的成员空状态；由上层注入，看板和会话窗格共用同一个组件。 */
   renderEmpty?: (lane: BoardLane) => ReactNode;
 };
@@ -55,14 +59,14 @@ function LoadMore({ onLoadMore }: { onLoadMore: () => void }) {
   return <button ref={ref} type="button" className="team-board__more" data-testid="activity-load-sentinel" onClick={onLoadMore}>加载更多</button>;
 }
 
-function Column({ lane, items, identity, hasMore, isLoadingMore, onLoadMore, renderEmpty, onOpenMember, onOpenPhone }: {
-  lane: BoardLane; items: ActivityItem[]; identity: IdentityResolver; hasMore: boolean; isLoadingMore: boolean; onLoadMore: () => void; renderEmpty?: (lane: BoardLane) => ReactNode; onOpenMember?: (memberId: string) => void; onOpenPhone?: (conversationId: string) => void;
+function Column({ lane, focused, items, identity, hasMore, isLoadingMore, onLoadMore, renderEmpty, onOpenMember, onOpenPhone }: {
+  lane: BoardLane; focused: boolean; items: ActivityItem[]; identity: IdentityResolver; hasMore: boolean; isLoadingMore: boolean; onLoadMore: () => void; renderEmpty?: (lane: BoardLane) => ReactNode; onOpenMember?: (memberId: string) => void; onOpenPhone?: (conversationId: string) => void;
 }) {
   const memberId = lane.memberId;
   const navigation = memberId && !lane.isFallback && onOpenMember
-    ? { open: () => onOpenMember(memberId), label: `打开 ${lane.name} 的会话` } : undefined;
+    ? { open: () => onOpenMember(memberId), target: lane.name } : undefined;
   return (
-    <section className="team-board__col" data-testid="activity-board-column" data-lane-id={lane.slotId}>
+    <section className={cx('team-board__col', focused && 'is-focus')} data-testid="activity-board-column" data-lane-id={lane.slotId} data-member-id={lane.isFallback ? undefined : memberId} aria-label={lane.name} aria-current={focused ? 'true' : undefined}>
       <header className="team-board__head">
         {lane.isFallback
           ? <span className="team-board__dot" aria-hidden="true" />
@@ -75,7 +79,7 @@ function Column({ lane, items, identity, hasMore, isLoadingMore, onLoadMore, ren
         {items.length === 0
           ? (renderEmpty ? renderEmpty(lane) : <p className="team-board__empty">还没有活动</p>)
           : items.map((item) => item.kind === 'phone'
-            ? <PhoneActivityCard key={item.id} activity={item.phone} at={item.createdAt} navigation={onOpenPhone ? { open: () => onOpenPhone(item.phone.conversationId), label: `打开手机会话 ${item.phone.title}` } : undefined} />
+            ? <PhoneActivityCard key={item.id} activity={item.phone} at={item.createdAt} navigation={onOpenPhone ? { open: () => onOpenPhone(item.phone.conversationId), target: item.phone.title } : undefined} />
             : item.kind === 'message'
             ? <MessageCard key={`message:${item.id}`} message={item.message} identity={identity} navigation={navigation} />
             : <TaskCard key={`task:${item.id}`} task={item.task} identity={identity} navigation={navigation} />)}
@@ -86,7 +90,7 @@ function Column({ lane, items, identity, hasMore, isLoadingMore, onLoadMore, ren
   );
 }
 
-export function ActivityBoard({ lanes, items, identity, hasMore, isLoadingMore, onLoadMore, emptyHint, renderEmpty, onOpenMember, onOpenPhone }: Props) {
+export function ActivityBoard({ lanes, items, identity, hasMore, isLoadingMore, onLoadMore, emptyHint, renderEmpty, onOpenMember, onOpenPhone, focusMemberId }: Props) {
   const byLane = useMemo(() => {
     const map = new Map<string, ActivityItem[]>();
     for (const lane of lanes) map.set(lane.slotId, []);
@@ -100,6 +104,7 @@ export function ActivityBoard({ lanes, items, identity, hasMore, isLoadingMore, 
         <div>
           <p className="team-board__hint">{emptyHint.title}</p>
           {emptyHint.desc && <p className="team-board__hint-sub">{emptyHint.desc}</p>}
+          {emptyHint.action && <Btn className="team-board__hint-action" label={emptyHint.action.label} ic="message" variant="primary" onClick={emptyHint.action.onClick} />}
         </div>
       </div>
     );
@@ -111,6 +116,7 @@ export function ActivityBoard({ lanes, items, identity, hasMore, isLoadingMore, 
         <Column
           key={lane.slotId}
           lane={lane}
+          focused={!!focusMemberId && !lane.isFallback && lane.memberId === focusMemberId}
           items={byLane.get(lane.slotId) ?? []}
           identity={identity}
           hasMore={hasMore}

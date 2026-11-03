@@ -13,6 +13,8 @@ export interface AgentOption { id: string; name?: string; category?: string; cur
 const KEY = (agentId: string) => `lom.agent-options:${agentId}`;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+export const modeOption = (opts?: AgentOption[]) => opts?.find(o => o.category === 'mode' || o.id === 'mode');
+
 export const modelOption = (opts?: AgentOption[]) => opts?.find(o => o.category === 'model' || o.id === 'model');
 
 /** 归一化 id/category，让 thoughtLevel、model_reasoning_effort 这类写法也能匹配 */
@@ -57,7 +59,12 @@ export async function loadConvOptions(c: Conv) {
   loading.add(c.id);
   try {
     const opts = await ensureOptions(c.id);
-    update(s => { s.agentOptions[c.id] = opts; });
+    update(s => {
+      s.agentOptions[c.id] = opts;
+      // Only this fresh runtime response can settle a previous mode request.
+      const observed = modeOption(opts)?.current_value;
+      if (c.agentModeChange && observed === c.agentModeChange.value) delete c.agentModeChange;
+    });
     if (modelOption(opts)) remember(c.agentId, opts);
   } catch (e) {
     console.warn('agent.options_failed', e instanceof Error ? e.message : e);
@@ -104,7 +111,8 @@ export async function setConvOption(c: Conv, optionId: string, value: string) {
   const base = t?.core ? `/api/teams/${t.core.id}/conversations/${c.id}` : `/api/conversations/${c.id}`;
   const r = await api<{ confirmation?: string; config_options?: AgentOption[] | null }>('PUT', `${base}/config-options/${encodeURIComponent(optionId)}`, { value });
   // 未确认时保留目标项旧值；其他回传项仍可合并，不能把请求值当生效值。
-  const confirmed = ['observed', 'pending_next_turn', 'next_turn'].includes(r.confirmation || '');
+  const isMode = modeOption(S.agentOptions[c.id])?.id === optionId;
+  const confirmed = r.confirmation === 'observed' || (!isMode && ['pending_next_turn', 'next_turn'].includes(r.confirmation || ''));
   const incoming = r.config_options?.filter(o => confirmed || o.id !== optionId);
   const merged = incoming ? mergeOptions(S.agentOptions[c.id], incoming) : undefined;
   if (merged) {

@@ -1,0 +1,23 @@
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { expect, it, vi } from 'vitest';
+vi.mock('./GoalStrip', () => ({ GoalStrip: () => null }));
+vi.mock('./TurtleCard', () => ({ TurtleCard: () => null }));
+vi.mock('./ComposerPlaceholder', () => ({ ComposerPlaceholder: () => null }));
+import { Composer } from './Composer';
+import { S } from '@/state/store';
+import { initialState } from '@/state/state';
+it('ACP-PERM Composer external permission button shows runtime Default instead of global full access and opens its scoped menu', async () => {
+  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  Object.assign(S, initialState()); S.permission = 'full';
+  S.convs = [{ id: 'worker', owner: 'pc', agentId: 'qoder', agentName: 'Qoder', messages: [], updated: 1, title: 'test' }];
+  S.agentOptions.worker = [{ id: 'mode', category: 'mode', current_value: 'default', options: [{ value: 'default', name: 'Default' }] }];
+  const host = document.createElement('div'), root = createRoot(host);
+  await act(async () => root.render(<Composer ckey="conv:worker" toolbar={false} />));
+  const permission = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Default'));
+  expect(permission).toBeDefined();
+  expect(host.textContent).not.toContain('完全访问');
+  await act(async () => permission!.click());
+  expect(S.menu?.id).toBe('permission'); expect(S.menu?.ctx.ckey).toBe('conv:worker');
+  await act(async () => root.unmount());
+});

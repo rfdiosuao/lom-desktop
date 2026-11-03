@@ -1,7 +1,8 @@
+import { contextRecovery } from './contextRecovery';
 import { hideHistory } from '@/state/history';
 import { scheduledMessage } from './scheduledMessage';
 import { S } from '@/state/store';
-import { compactNotice } from './commands';
+import { compactNotice } from './compaction';
 import { applyAcpTool, toolImages } from './toolImages';
 import type { Conv, Msg } from '@/state/types';
 import { api } from '@/core/client';
@@ -10,10 +11,12 @@ import { attachmentOfPath, fileChangeOf, isHtml, mergeFileChange, normCallId, sp
 import type { CoreConversation, CoreMessage } from '@/core/types';
 import { teammateMsg } from '@/features/teams/runtime/coreTeam';
 import { channelOf } from './channelSource';
+import { historyToolTiming } from './activityTiming';
 
 /* ===== lom-core 会话 ↔ 界面会话 ===== */
 
 export const convFromCore = (c: CoreConversation): Conv => ({
+  wechatOrigin: c.extra?.lom_wechat_origin === true,
   id: c.id, historyArchiveId: c.extra?.lom_history_id, historyContextPath: c.extra?.lom_history_context, historyRawPath: c.extra?.lom_history_raw, phoneScope: c.extra?.lom_phone_scope, personalScope: c.extra?.lom_personal_scope, owner: 'pc', title: c.name || '新的任务', updated: c.modified_at || c.created_at,
   ...(c.extra?.lom_personal ? { personal: { id: c.extra.lom_personal, name: c.extra.lom_personal_name || c.name, directory: c.extra.lom_personal_directory || '' } } : {}),
   preview: null, remote: true, workspace: c.extra?.workspace, loaded: false, messages: [], providerId: c.model?.provider_id, modelId: c.model ? `${c.model.provider_id}::${c.model.model}` : undefined,
@@ -89,6 +92,7 @@ export function mapHistory(items: CoreMessage[], conv: Conv): { messages: Msg[];
   const out: Msg[] = [];
   const seen = new Set<string>();
   const status = finalToolStatus(items);
+  const timing = historyToolTiming(items);
   let previewFile: string | undefined;
   for (const it of items) {
     if (it.hidden) { const scheduled = scheduledMessage(it); if (scheduled) out.push(scheduled); continue; }
@@ -112,14 +116,14 @@ export function mapHistory(items: CoreMessage[], conv: Conv): { messages: Msg[];
         out.push({ id: it.id, type: 'assistant', at, text, agent: 'pc', remoteId: it.msg_id });
       }
     } else if (it.type === 'acp_tool_call') {
-      applyAcpTool(out, c, at);
+      applyAcpTool(out, c, at, Number.isFinite(it.created_at) && it.created_at > 0);
     } else if (it.type === 'tool_call') {
       const callId = normCallId(c.call_id);
       const name = String(c.name ?? '');
       if (seen.has(callId) || name.startsWith('cancelled:')) continue;
       seen.add(callId);
       const args = (c.args as Record<string, unknown>) || {};
-      const m: Msg = { ...toolMsg(callId, name, args, conv.workspace), at, status: status.get(callId) ?? 'done' };
+      const m: Msg = { ...toolMsg(callId, name, args, conv.workspace), at, timing: timing.get(callId), status: status.get(callId) ?? 'done' };
       if (typeof c.output === 'string') m.output = c.output;
       if (m.status === 'done') m.images = toolImages(c);
       out.push(m);
@@ -132,7 +136,9 @@ export function mapHistory(items: CoreMessage[], conv: Conv): { messages: Msg[];
     } else if (it.type === 'tips' || it.type === 'error') {
       const tip = versionTip(c);
       const text = tip === undefined ? textOf(c) : tip;
-      if (text) out.push({ id: it.id, type: 'system', at, text, ic: 'info' });
+      const failed = it.type === 'error' || it.status === 'error' || (it.type === 'tips' && c.type === 'error');
+      const recovery = failed ? contextRecovery({ ...c, message: text }) : null;
+      if (text || recovery) out.push({ id: it.id, type: 'system', at, text, ...recovery, ic: 'info', ...(failed ? { turnOutcome: 'failed' as const } : {}) });
     }
   }
   return { messages: out, previewFile };

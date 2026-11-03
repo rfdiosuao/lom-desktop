@@ -15,6 +15,7 @@ beforeEach(() => {
   cache = new Map(); m.invoke.mockImplementation(async (cmd, { request }) => {
     if (cmd === 'reply_image_read') return cache.get(request.key) || null;
     if (cmd === 'reply_image_store') cache.set(request.key, request.data);
+    if (cmd === 'local_file_save') return true;
   }); m.api.mockResolvedValue(png);
 });
 it('D08 本地图片按会话工作目录解析，重载后原图删除仍从持久缓存恢复', async () => {
@@ -26,7 +27,7 @@ it('D08 本地图片按会话工作目录解析，重载后原图删除仍从持
   await expect(loadReplyImage('图片 a.png', { ...context, account: 'other' })).rejects.toThrow('file missing');
 });
 it('D08 缓存写入失败明确提示，保存取消不报告成功', async () => {
-  m.invoke.mockImplementation(async cmd => { if (cmd === 'reply_image_store') throw new Error('disk full'); return null; });
+  m.invoke.mockImplementation(async cmd => { if (cmd === 'reply_image_store') throw new Error('disk full'); return cmd === 'local_file_save' ? false : null; });
   const image = await loadReplyImage('/work/a.png', context);
   expect(image.warning).toContain('未保存'); m.save.mockResolvedValue(null);
   expect(await saveReplyImage(image)).toBe(false);
@@ -58,5 +59,5 @@ it('D08 手机图片分片成功后缓存，手机离线仍恢复；保存写入
   expect((await loadReplyImage('minis://workspace/a.png', ctx)).data).toBe(png);
   m.save.mockResolvedValue('/downloads/a.png');
   expect(await saveReplyImage(first)).toBe(true);
-  expect(m.invoke).toHaveBeenCalledWith('local_file_save', { path: '/downloads/a.png', data, sha256 });
+  expect(m.invoke).toHaveBeenCalledWith('local_file_save', { name: first.name, data, sha256 });
 });

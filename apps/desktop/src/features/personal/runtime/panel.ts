@@ -1,6 +1,7 @@
 import { cloudConfigured, CLOUD_UNAVAILABLE } from '@/features/account/runtime/serviceConfig';
 import { toast } from '@/shared/overlays/controller';
 import { S, update } from '@/state/store';
+import { loadAssistants, storeAssistant } from './catalog';
 export interface PanelRect { x: number; y: number; w: number; h: number }
 const key = (account: string) => `lom.personal.panel:${account}`;
 export function fitPanel(r: PanelRect): PanelRect {
@@ -20,6 +21,16 @@ export function savePanelRect(rect: PanelRect) {
   const next = fitPanel(rect);
   try { localStorage.setItem(key(p.account), JSON.stringify(next)); } catch { /* in-memory geometry remains usable */ }
   update(s => { if (s.personalPanel === p) p.rect = next; });
+}
+/** 打开某条会话所属的个人助理；社区版未配置云端时返回 false */
+export function openAssistantOf(conversationId: string) {
+  if (!cloudConfigured() || S.cloud !== 'signed-in' || !S.account) return false;
+  let item;
+  try { item = loadAssistants().items.find(x => x.conversation === conversationId); } catch { return false; }
+  if (!item) return false;
+  storeAssistant(item); openPersonalPanel();
+  update(s => { if (s.personalPanel) s.personalPanel.focus = { id: item.id, at: Date.now() }; });
+  return true;
 }
 export const closePersonalPanel = () => update(s => { s.personalPanel = null; });
 export const minimizePersonalPanel = () => update(s => { if (s.personalPanel) s.personalPanel.minimized = true; });

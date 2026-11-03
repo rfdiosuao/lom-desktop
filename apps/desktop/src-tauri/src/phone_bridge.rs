@@ -64,7 +64,7 @@ pub fn phone_bridge_reply(
     }
     Ok(()) // A timed-out request is deliberately never replayed.
 }
-/// 个人助理的会话用 `pa-` 开头的 scope，只拿到调度会话的工具（PA04）；其他会话拿到手机与本机 Agent 工具
+/// 个人助理 scope 提供会话、飞书及只读手机诊断/看图；其他 scope 提供手机与本机 Agent 工具
 fn tools(scope: &str) -> Value {
     let list = if scope.starts_with("pa-") {
         include_str!("session_tools.json")
@@ -78,6 +78,30 @@ fn tools(scope: &str) -> Value {
             serde_json::from_str::<Value>(include_str!("feishu_tools.json")),
         ) {
             rows.extend(extra);
+        }
+    }
+    if scope.starts_with("pa-") {
+        let diagnostics: Vec<String> = serde_json::from_str(include_str!(
+            "personal_diagnostic_tools.json"
+        ))
+        .unwrap_or_else(|e| {
+            eprintln!("personal.diagnostic_registry_invalid: {e}");
+            Vec::new() // Invalid registry fails closed: no diagnostic tools are exposed.
+        });
+        if let (Some(rows), Ok(Value::Array(extra))) = (
+            result.as_array_mut(),
+            serde_json::from_str::<Value>(include_str!("phone_tools.json")),
+        ) {
+            rows.extend(extra.into_iter().filter(|t| {
+                t["name"].as_str().is_some_and(|name| diagnostics.iter().any(|n| n == name))
+            }).map(|mut tool| {
+                if tool["name"] == "phone_list" {
+                    tool["description"] = json!("List paired phones for read-only diagnostics. Call first; never invent device ids. This grants no phone control permission.");
+                } else if tool["name"] == "phone_status" {
+                    tool["inputSchema"]["properties"]["device"]["description"] = json!("Paired device ID from phone_list; read-only status query.");
+                }
+                tool
+            }));
         }
     }
     result

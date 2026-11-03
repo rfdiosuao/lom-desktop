@@ -12,6 +12,9 @@ it('PA02 prevents editing during an outstanding save so the receipt cannot disca
     await act(async () => root.render(<PersonalDocuments assistant={{ id: 'pa_a', name: '小麓', directory: '/a', workspace: '/a' }} />));
     await act(async () => host.querySelector<HTMLButtonElement>('.pa-document')!.click());
     await act(async () => [...host.querySelectorAll('button')].find(x => x.textContent === '编辑')!.click());
+    // UI-AUDIT-03：没有修改时「保存」不可点，先改一处再保存
+    const area = host.querySelector('textarea')!, set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    await act(async () => { set.call(area, 'changed'); area.dispatchEvent(new Event('input', { bubbles: true })); });
     await act(async () => [...host.querySelectorAll('button')].find(x => x.textContent === '保存')!.click());
     expect(host.querySelector<HTMLTextAreaElement>('textarea')?.disabled).toBe(true);
     await act(async () => finish());

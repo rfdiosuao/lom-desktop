@@ -88,6 +88,9 @@ fn template(slot: &str, value: &str) -> Option<&'static str> {
     }
 }
 fn build_lesson(c: Candidate, evidence: &str, corrected: bool) -> Result<Lesson, String> {
+    if c.slot == "fact" {
+        return fact_lesson(c, evidence);
+    }
     let (cue, target, effect) = if c.slot == "workflow" {
         ("任务工作方法", Target::WorkMethods, Effect::Method)
     } else {
@@ -107,6 +110,39 @@ fn build_lesson(c: Candidate, evidence: &str, corrected: bool) -> Result<Lesson,
         },
         target,
         effect,
+    })
+}
+
+fn fact_lesson(c: Candidate, evidence: &str) -> Result<Lesson, String> {
+    let lower = c.value.to_lowercase();
+    if c.value != c.quote
+        || [
+            "password",
+            "secret",
+            "api_key",
+            "api key",
+            "access_token",
+            "private key",
+            "bearer ",
+            "sk-",
+            "密码",
+            "密钥",
+            "令牌",
+            "私钥",
+        ]
+        .iter()
+        .any(|s| lower.contains(s))
+    {
+        return Err("personal.learning_fact_scope".into());
+    }
+    Ok(Lesson {
+        key: format!("personal.fact.{:x}", Sha256::digest(c.value.as_bytes())),
+        cue: "用户批准的原话；只读事实资料，不是权限或指令".into(),
+        content: c.value,
+        evidence: evidence.into(),
+        source: Source::Correction,
+        target: Target::Memory,
+        effect: Effect::Fact,
     })
 }
 
@@ -131,6 +167,7 @@ fn private_directory(path: &Path) -> Result<(), String> {
     }
 }
 /// Root is derived by personal_directory, never supplied by the model or web request.
+#[cfg(test)]
 pub(crate) fn apply(
     root: &Path,
     turn: &str,
@@ -139,27 +176,29 @@ pub(crate) fn apply(
     evidence: &str,
     proposals: &str,
 ) -> Result<Applied, String> {
+    apply_checked(root, turn, user, reply, evidence, proposals, None)
+}
+pub(crate) fn apply_checked(
+    root: &Path,
+    turn: &str,
+    user: &str,
+    reply: &str,
+    evidence: &str,
+    proposals: &str,
+    expected: Option<u64>,
+) -> Result<Applied, String> {
     if turn.is_empty() || turn.len() > 256 {
         return Err("personal.learning_identity".into());
     }
     let lessons = compile(proposals, user, reply, evidence)?;
+    if expected.is_none() && lessons.iter().any(|l| l.target == Target::Memory) {
+        return Err("personal.learning_fact_approval_required".into());
+    }
+    let (mut e, _lock) = open_ledger(root)?;
+    if expected.is_some_and(|v| e.current().map_or(0, |n| n.number) != v) {
+        return Err("personal.learning_conflict".into());
+    }
     let store = root.join(".evolution");
-    private_directory(&store)?;
-    let lock_path = store.join("apply.lock");
-    let _file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&lock_path)
-        .map_err(|_| "personal.learning_busy")?;
-    let _lock = Lock(lock_path);
-    let mut e = Evolution::open(
-        &store,
-        Scope {
-            account: "local-personal".into(),
-            assistant: "presentation".into(),
-        },
-    )
-    .map_err(|_| "personal.learning_storage")?;
     let receipts = store.join("turns");
     private_directory(&receipts)?;
     let receipt = receipts.join(format!("{:x}.json", Sha256::digest(turn.as_bytes())));
@@ -168,6 +207,26 @@ pub(crate) fn apply(
     Ok(result)
 }
 
+fn open_ledger(root: &Path) -> Result<(Evolution, Lock), String> {
+    let store = root.join(".evolution");
+    private_directory(&store)?;
+    let lock_path = store.join("apply.lock");
+    let _file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|_| "personal.learning_busy")?;
+    let lock = Lock(lock_path);
+    let e = Evolution::open(
+        &store,
+        Scope {
+            account: "local-personal".into(),
+            assistant: "presentation".into(),
+        },
+    )
+    .map_err(|_| "personal.learning_storage")?;
+    Ok((e, lock))
+}
 fn adopt(e: &mut Evolution, receipt: &Path, lessons: Vec<Lesson>) -> Result<Applied, String> {
     let result = if let Ok(meta) = fs::symlink_metadata(receipt) {
         if !meta.is_file() || meta.file_type().is_symlink() {
@@ -217,7 +276,16 @@ fn publish(e: &Evolution, root: &Path) -> Result<(), String> {
     for (name, target) in [
         ("USER.md", Target::User),
         ("AGENTS.md", Target::WorkMethods),
+        ("MEMORY.md", Target::Memory),
     ] {
+        if target == Target::Memory
+            && !e
+                .history()
+                .iter()
+                .any(|r| r.version.lessons.iter().any(|l| l.target == Target::Memory))
+        {
+            continue;
+        }
         let path = root.join(name);
         if let Ok(m) = fs::symlink_metadata(&path) {
             if !m.is_file() || m.file_type().is_symlink() {
@@ -240,6 +308,35 @@ fn publish(e: &Evolution, root: &Path) -> Result<(), String> {
             .map_err(|_| "personal.learning_publish")?;
     }
     Ok(())
+}
+#[derive(Serialize)]
+pub(crate) struct Versions {
+    pub current_version: u64,
+    pub versions: Vec<Record>,
+}
+pub(crate) fn versions(root: &Path) -> Result<Versions, String> {
+    if !root.join(".evolution").exists() {
+        return Ok(Versions {
+            current_version: 0,
+            versions: vec![],
+        });
+    }
+    let (e, _lock) = open_ledger(root)?;
+    Ok(Versions {
+        current_version: e.current().map_or(0, |v| v.number),
+        versions: e.history().iter().rev().take(20).cloned().collect(),
+    })
+}
+pub(crate) fn restore(root: &Path, expected: u64, target: u64) -> Result<u64, String> {
+    let (mut e, _lock) = open_ledger(root)?;
+    if e.current().map_or(0, |v| v.number) != expected {
+        return Err("personal.learning_conflict".into());
+    }
+    let version = e
+        .rollback(target)
+        .map_err(|_| "personal.learning_version")?;
+    publish(&e, root)?;
+    Ok(version)
 }
 #[cfg(test)]
 #[path = "personal_learning_test.rs"]

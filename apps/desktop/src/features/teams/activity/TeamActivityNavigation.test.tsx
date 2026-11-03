@@ -11,7 +11,7 @@ import { initialState } from '@/state/state';
 let host: HTMLDivElement, root: Root, first: string, second: string;
 beforeEach(async () => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  Object.assign(S, initialState());
+  Object.assign(S, initialState(true));
   const team = S.teams[0]; [first, second] = team.members.map(m => m.mid);
   team.core = { id: 'core-team', assistant: 'leader', slots: { [first]: 'lead', [second]: 'worker' } };
   S.route = { name: 'team', id: team.id }; S.teamView = 'board';
@@ -27,10 +27,16 @@ it.each(['message', 'task'])('D33-CARD-01 clicking %s enters its lane member con
   expect(S.teamFocus).toBe(second); expect(S.teamView).toBe('single');
   expect(S.convs.length).toBe(conversations); expect(S.drafts).toEqual(drafts);
 });
-it('D33-CARD-01 Enter activates a focused card', async () => {
+it('D33-CARD-01 / UI-AUDIT-04 cards are not links; the 打开会话 button is the keyboard path', async () => {
   const card = host.querySelector<HTMLElement>('[data-testid="activity-message-card"]')!;
-  expect(card.getAttribute('role')).toBe('link'); expect(card.tabIndex).toBe(0);
-  await act(async () => { card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+  expect(card.getAttribute('role')).toBeNull(); expect(card.hasAttribute('tabindex')).toBe(false); expect(card.getAttribute('aria-label')).toBeNull();
+  expect(host.querySelector('[role="link"]')).toBeNull();
+  expect(card.textContent).toContain('任务说明');
+  const open = card.querySelector<HTMLButtonElement>('.act-card__open')!;
+  expect(open.type).toBe('button'); expect(open.textContent).toBe('打开会话');
+  expect(open.getAttribute('aria-label')).toBe('打开会话：手机一号');
+  open.focus(); expect(document.activeElement).toBe(open);
+  await act(async () => open.click());
   expect(S.teamFocus).toBe(second); expect(S.teamView).toBe('single');
 });
 it('D33-CARD-01 expand and task dependency controls do not enter a conversation', async () => {
@@ -44,6 +50,8 @@ it('D33-CARD-01 broadcast enters the sender lane and unassigned cards have no fa
   feed.messages.push({ ...feed.messages[0], id: 'unknown', to_agent_id: 'user' });
   await act(async () => root.render(<TeamActivityView team={S.teams[0]} />));
   expect(host.querySelector('[data-message-id="unknown"]')!.getAttribute('role')).toBeNull();
+  expect(host.querySelector('[data-message-id="unknown"] .act-card__open')).toBeNull();
+  expect(host.querySelector('[data-message-id="message"] .act-card__open')?.getAttribute('aria-label')).toBe('打开会话：Lom');
   await act(async () => host.querySelector<HTMLElement>('[data-message-id="message"]')!.click());
   expect(S.teamFocus).toBe(first);
 });
@@ -51,4 +59,8 @@ it('D33-CARD-01 a removed member cannot navigate to an arbitrary conversation', 
   S.teams[0].members = S.teams[0].members.filter(m => m.mid !== second);
   await act(async () => { expect(openTeamMember(S.teams[0].id, second)).toBe(false); });
   expect(S.teamView).toBe('board');
+});
+it('UI-AUDIT-04 board columns and activity segmented controls have accessible names', async () => {
+  expect([...host.querySelectorAll('[data-testid="activity-board-column"]')].map(c => c.getAttribute('aria-label'))).toEqual(['Lom', '手机一号']);
+  expect([...host.querySelectorAll('[role="radiogroup"]')].map(g => g.getAttribute('aria-label'))).toEqual(['排序', '内容筛选']);
 });

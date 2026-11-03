@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "麓鸣 Lom",
   "mainBinaryName": "Lom",
-  "version": "0.2.5",
+  "version": "0.3.4",
   "identifier": "org.lom.community.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -57,7 +57,13 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": { "width": 640, "height": 420 },
+        "appPosition": { "x": 160, "y": 245 },
+        "applicationFolderPosition": { "x": 480, "y": 245 }
+      }
     }
   }
 }

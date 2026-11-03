@@ -32,15 +32,21 @@
 
   /* 尺寸 */
   --h-sm:30px; --h-md:36px; --h-lg:44px;
+  /* 字号：界面小字 / 正文 / 名称；新写的样式用这些，不写死字号 */
+  --fs-sm:13px; --fs-md:14px; --fs-lg:15px;
   --header-h:52px;
   --titlebar-btn-w:46px;
   --titlebar-close-bg:var(--danger); --titlebar-close-ink:#ffffff;
   --reply-detail-size:13px;
+  /* 消息：头像列宽 + 间距 = 正文、思考、工具组与事件卡片共用的缩进；事件卡片的最大宽度 */
+  --msg-gutter:24px; --msg-gap:10px; --msg-indent:calc(var(--msg-gutter) + var(--msg-gap)); --event-max-w:640px;
+  --workbench-inset:8px; --sidebar-selected:#e9ecea; --sidebar-icon:#78827d;
   --panel-duration:280ms; --panel-ease:cubic-bezier(.22,1,.36,1);
   --login-title-size:30px; --login-note-size:13px;
 }
 
 :root[data-theme="dark"]{
+  --sidebar-selected:#2b3230; --sidebar-icon:#a1ada6;
   --brand:#2fb35b; --brand-strong:#279c4f; --brand-ink:#7fdc9c; --brand-soft:#1d3324; --brand-softer:#18281d; --brand-ring:#46c46f;
   --bg:#17191b; --bg-app:#0d0e0f; --bg-sidebar:#1d2022; --bg-subtle:#202326; --bg-hover:#262a2d; --bg-active:#1f3326;
   --surface:#1b1d20; --surface-raised:#24272b;

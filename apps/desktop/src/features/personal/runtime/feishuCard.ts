@@ -50,7 +50,7 @@ export async function streamReply(scope: FeishuScope, messageId: string, c: Conv
     if (!current()) return Promise.reject(new Error('feishu.binding_changed'));
     return feishuApi(...args);
   };
-  if (!current()) return;
+  if (!current()) return false;
   const started = Date.now();
   let cardId: string | undefined;
   try {
@@ -58,11 +58,12 @@ export async function streamReply(scope: FeishuScope, messageId: string, c: Conv
     if (!cardId) throw new Error('feishu.card_missing');
     await scopedApi(scope, 'POST', `/open-apis/im/v1/messages/${messageId}/reply`, { msg_type: 'interactive', content: JSON.stringify({ type: 'card', data: { card_id: cardId } }) });
   } catch (e) {
-    if (!current()) return;
-    console.warn('feishu.card_create_failed', e);
+    if (!current()) return false;
+    console.warn('feishu.card_create_failed');
     const reply = await followTurn(c, sent, undefined, current);
-    if (current()) await replyText(scope, messageId, reply.text || emptyReply(reply));
-    return;
+    if (!current()) return false;
+    await replyText(scope, messageId, reply.text || emptyReply(reply));
+    return true;
   }
   const id = cardId;
   let sequence = 0, latest: TurnReply = { text: '', failed: false, tools: 0 }, shown = latest, broken = false, done = false;
@@ -78,7 +79,7 @@ export async function streamReply(scope: FeishuScope, messageId: string, c: Conv
         if (next.text !== shown.text) await scopedApi(scope, 'PUT', `/open-apis/cardkit/v1/cards/${id}/elements/${ANSWER}/content`, { content: next.text, sequence: ++sequence });
         else await scopedApi(scope, 'PUT', `/open-apis/cardkit/v1/cards/${id}/elements/${STATUS}/content`, { content: statusLine(next.tools), sequence: ++sequence });
         shown = next;
-      } catch (e) { console.warn('feishu.card_stream_failed', e); broken = true; return; }
+      } catch (e) { console.warn('feishu.card_stream_failed'); broken = true; return; }
       await new Promise(resolve => setTimeout(resolve, gapMs));
     }
   };
@@ -86,14 +87,15 @@ export async function streamReply(scope: FeishuScope, messageId: string, c: Conv
   const reply = await followTurn(c, sent, r => { latest = r; wake(); }, current);
   done = true; wake();
   await pushing;
-  if (!current()) return;
+  if (!current()) return false;
   try {
     await scopedApi(scope, 'PATCH', `/open-apis/cardkit/v1/cards/${id}/settings`, { settings: JSON.stringify({ streaming_mode: false }), sequence: ++sequence });
     await scopedApi(scope, 'PUT', `/open-apis/cardkit/v1/cards/${id}`, { card: cardJson(finalCard(reply, Date.now() - started)), sequence: ++sequence });
     if (broken) throw new Error('feishu.card_stream_incomplete');
   } catch (e) {
-    if (!current()) return;
-    console.warn('feishu.card_finish_failed', e);
-    if (broken) await replyText(scope, messageId, reply.text || emptyReply(reply));
+    if (!current()) return false;
+    console.warn('feishu.card_finish_failed');
+    await replyText(scope, messageId, reply.text || emptyReply(reply));
   }
+  return true;
 }

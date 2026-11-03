@@ -38,11 +38,13 @@ export function ActivityControls({ value, onChange, members }: Props) {
   return (
     <div className="act-bar" data-testid="activity-control-bar">
       <Seg
+        label="排序"
         options={[{ value: 'desc', label: '最新在前' }, { value: 'asc', label: '最早在前' }]}
         value={value.direction}
         onChange={(direction) => patch({ direction })}
       />
       <Seg
+        label="内容筛选"
         options={[{ value: 'all', label: '全部' }, { value: 'message', label: '消息' }, { value: 'task', label: '任务' }]}
         value={value.kind}
         onChange={(kind) => patch({ kind })}

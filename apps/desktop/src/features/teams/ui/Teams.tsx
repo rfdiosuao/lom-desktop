@@ -27,15 +27,15 @@ export function TeamsPage() {
               <button key={t.id} type="button" className="card card--hover team-card" onClick={() => go('team', t.id)}>
                 <div className="row"><span className="avatar-stack">{t.members.slice(0, 5).map(m => <MemberAvatar key={m.mid} id={m.agent} crown={m.leader} />)}</span><span className="grow" />{!t.real && <Badge text="示例" />}<Badge text={`${t.members.length} 位成员`} /></div>
                 <div><div className="skill-card__name">{t.name}</div><div className="skill-card__author"><Icon name="folder" /> {t.folder || '当前工作文件夹'}</div></div>
-                <div className="muted" style={{ fontSize: 13 }}>Leader：{memberInfo(leader?.agent ?? 'pc').name} · {leader?.role}　创建于 {ago(t.created)}</div>
+                <div className="muted team-card__meta">Leader：{memberInfo(leader?.agent ?? 'pc').name} · {leader?.role}　创建于 {ago(t.created)}</div>
               </button>
             );
           })}
-          <button type="button" className="card card--hover" onClick={newTeam} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 150, borderStyle: 'dashed', color: 'var(--muted)' }}><Icon name="plus" /> 新建团队</button>
+          <button type="button" className="card card--hover team-card--new" onClick={newTeam}><Icon name="plus" /> 新建团队</button>
         </div>
       ) : <Empty ic="people" title="还没有团队" desc="比如「小红书内容工厂」：电脑主控当总编，手机一号、手机二号分别运营两个账号。" actions={<Btn label="新建团队" ic="plus" variant="primary" onClick={newTeam} />} />}
       <Section title="怎么协作">
-        <div className="grid-cards">{tips.map(([ic, t, d]) => <div key={t} className="card"><div className="row" style={{ marginBottom: 6 }}><Icon name={ic} /><b>{t}</b></div><div className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>{d}</div></div>)}</div>
+        <div className="grid-cards">{tips.map(([ic, t, d]) => <div key={t} className="card"><div className="row team-tip__head"><Icon name={ic} /><b>{t}</b></div><div className="muted team-tip__desc">{d}</div></div>)}</div>
       </Section>
     </Page>
   );

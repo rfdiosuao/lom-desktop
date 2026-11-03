@@ -5,7 +5,7 @@ import { toastError } from '@/shared/overlays/controller';
 import { pair, manageDevice, reconnect, unpair } from '@/features/phones/actions/phone';
 import { resetLayout, setTheme } from '@/app/shell/layout';
 import { openMenu } from '@/shared/overlays/controller';
-import { addKey, auditLog, checkUpdate, clearCache, deleteKey, editProfile, exportData, feedback, logout, recharge, resetDemo, settingsPage, shortcuts, testKey, togglePref } from '../actions/settings';
+import { addKey, auditLog, checkUpdate, clearCache, deleteKey, editProfile, feedback, logout, recharge, resetDemo, settingsPage, shortcuts, testKey, togglePref } from '../actions/settings';
 import { Avatar } from '@/shared/ui/Agent';
 import { Btn, Dropdown, IconBtn } from '@/shared/ui/Button';
 import { Badge, Dot, Seg, Toggle } from '@/shared/ui/Controls';
@@ -131,18 +131,27 @@ function Models() {
 
 function Connections() {
   const s = useStore();
+  const real = phones().filter(p => p.real), demo = phones().filter(p => !p.real);
   return <>
     <PageHead title="手机与连接" desc="管理配对设备、连接方式与实时画面。手机和电脑不需要在同一网络。" actions={<Btn label="添加手机" ic="plus" variant="primary" onClick={pair} />} />
-    <Section title="已配对手机" extra={<Badge text={String(phones().length)} />} hint="真实手机支持会话、人格、记忆和技能同步；子代理管理尚未接入。">
-      <div className="list">{phones().map(p => (
+    <Section title="已配对手机" extra={<Badge text={String(real.length)} />} hint="真实手机支持会话、人格、记忆和技能同步；子代理管理尚未接入。">
+      <div className="list">{real.length ? real.map(p => (
         <ListRow key={p.id} lead={<Avatar agent={p} status />} title={p.name} sub={`${personaOf(p)} · ${p.device}`}
           meta={p.status === 'online' ? <span className="row"><Dot />在线 · {p.network || '网络未知'}</span> : <span className="row"><Dot status="offline" />离线 · {ago(p.lastSeen)}</span>}
           actions={<>
             <Btn label={p.status === 'online' ? '管理' : '重新连接'} variant="secondary" size="sm" onClick={() => (p.status === 'online' ? manageDevice(p.id) : reconnect(p.id))} />
             <IconBtn ic="more" label={`${p.name}更多选项`} onClick={e => openMenu('device', e.currentTarget, { id: p.id, key: `dv${p.id}`, align: 'end' })} />
           </>} />
-      ))}</div>
+      )) : <div className="list-row muted"><span className="grow">还没有配对手机。</span><Btn label="添加手机" ic="plus" variant="link" size="sm" onClick={pair} /></div>}</div>
     </Section>
+    {/* UI-AUDIT-02 UI-01：示例手机单独列出，不计入配对数、不显示在线状态 */}
+    {demo.length > 0 && <Section title="示例手机" extra={<Badge text="示例" />} hint="仅用于演示界面，不计入已配对手机，也不会执行真实任务。">
+      <div className="list">{demo.map(p => (
+        <ListRow key={p.id} lead={<Avatar agent={p} />} title={p.name} titleExtra={<Badge text="示例" />} sub={`${personaOf(p)} · ${p.device}`}
+          meta={<span className="muted">示例 · 不执行任务</span>}
+          actions={<Btn label="查看示例" variant="ghost" size="sm" onClick={() => manageDevice(p.id)} />} />
+      ))}</div>
+    </Section>}
     <Section title="连接与画面">
       <SettingCard>
         <SettingRow title="断线自动重连" desc="自动恢复电脑端画面和内容同步；不改变手机系统后台限制。" control={<Sw k="reconnect" label="断线自动重连" />} />
@@ -199,7 +208,7 @@ function Data() {
     <PageHead title="数据与备份" />
     <Section title="本机数据">
       <SettingCard>
-        <SettingRow title="导出全部数据" desc="电脑任务、团队对话与设置导出为一个加密压缩包。" control={<Btn label="导出" ic="download" variant="secondary" size="sm" onClick={exportData} />} />
+        <SettingRow title="导出全部数据" desc="完整数据导出暂未支持，目前不会生成任何备份文件。" control={<Btn label="暂不支持" ic="download" variant="secondary" size="sm" disabled />} />
         <SettingRow title="清除缓存" desc="清除预览快照，不影响任务和设置。" control={<Btn label="清除" variant="secondary" size="sm" onClick={clearCache} />} />
         <SettingRow title="重置演示数据" desc="恢复手机、团队、定时任务的示例数据（电脑任务和模型服务不受影响）。" control={<Btn label="重置" variant="danger-ghost" size="sm" onClick={resetDemo} />} />
       </SettingCard>

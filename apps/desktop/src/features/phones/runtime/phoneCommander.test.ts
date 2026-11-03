@@ -64,7 +64,7 @@ it('PHONE-IMAGE-01 image tool uses the real chunk transport and honors revocatio
     async arrayBuffer() { return this.bytes.buffer; }
     slice(start: number, end: number) { const bytes = this.bytes.slice(start, end); return { arrayBuffer: async () => bytes.buffer }; }
   });
-  m.invoke.mockImplementation(async (name, args) => name === 'local_image_data' ? 'data:image/png;base64,YWJj' : name === 'local_file_info' ? ['3', 'a'.repeat(64)] : name === 'local_file_chunk' ? btoa('abc') : ({ scope: args?.scope }));
+  m.invoke.mockImplementation(async (name, args) => name === 'local_image_data' ? 'data:image/png;base64,YWJj' : name === 'local_file_info' ? ['3', 'a'.repeat(64), 'read-ticket'] : name === 'local_file_chunk' ? btoa('abc') : ({ scope: args?.scope }));
   m.rpc.mockImplementation(async (_device, method, payload) => method === 'file.begin' ? { offset: '0' } : method === 'file.chunk' ? { offset: '3' } : { id: payload.id, status: 'complete', sha256: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' });
   const result = await call('phone_send_image', { device: 'dev_a', file_path: '/work/image.png' });
   expect(JSON.parse(result.content[0].text!)).toMatchObject({ status: 'received', name: 'image.png' });
@@ -82,4 +82,34 @@ it('PHONE-IMAGE-01 a stop request prevents file.begin even while running remains
   expect(await call('phone_send_image', { device: 'dev_a', file_path: '/work/image.png' })).toMatchObject({ isError: true });
   expect(m.rpc).not.toHaveBeenCalled();
   stopping.mockRestore();
+});
+
+it('PA-VISION-02 personal scope discovers phones and routes vision while stopped scopes cannot call', async () => {
+  const { personalExtra } = await import('./phoneCommander');
+  const extra = await personalExtra(); scope = extra.lom_personal_scope;
+  S.convs = [{ id: 'personal', owner: 'pc', personalScope: scope, personal: { id: 'assistant', name: 'A', directory: '/tmp/a' }, messages: [] } as unknown as Conv];
+  S.running = { personal: true };
+  const list = await call('phone_list');
+  expect('isError' in list && list.isError).not.toBe(true); expect(list.content[0].text).toContain('dev_a');
+  m.rpc.mockResolvedValue({ battery: '23' });
+  expect((await call('phone_status', { device: 'dev_a' })).content[0].text).toContain('23');
+  S.cloudVision = [];
+  expect((await call('lom_view_image', { file_path: '/tmp/a.png' })).content[0].text).toContain('vision.unsupported');
+  S.running = {}; m.rpc.mockClear();
+  expect(await call('phone_status', { device: 'dev_a' })).toMatchObject({ isError: true });
+  expect(m.rpc).not.toHaveBeenCalled();
+});
+
+it('PA-CAPABILITY-01 personal scoped discovery is available only for its running owned profile', async () => {
+  const { personalExtra } = await import('./phoneCommander');
+  const { storeAssistant } = await import('@/features/personal/runtime/catalog');
+  const extra = await personalExtra(); scope = extra.lom_personal_scope;
+  const a = { id: 'pa_capability', name: 'A', directory: '/a', workspace: '/a', conversation: 'personal-capability' };
+  storeAssistant(a);
+  S.convs = [{ id: a.conversation, owner: 'pc', personalScope: scope, personal: { id: a.id, name: a.name, directory: a.directory }, messages: [] } as unknown as Conv];
+  S.running = { [a.conversation]: true };
+  expect((await call('personal_schedule_help')).content[0].text).toContain('config cron current list');
+  S.running = {}; expect(await call('personal_schedule_help')).toMatchObject({ isError: true });
+  S.running = { [a.conversation]: true }; S.account = { id: 'another-account' } as typeof S.account;
+  expect(await call('personal_schedule_help')).toMatchObject({ isError: true });
 });

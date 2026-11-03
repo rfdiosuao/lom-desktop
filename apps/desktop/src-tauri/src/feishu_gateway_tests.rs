@@ -114,3 +114,27 @@ fn feishu_multi_inbound_receipt_identifies_its_connection() {
     assert_eq!(value["generation"], 7);
     assert_eq!(value["message_id"], "om_1");
 }
+
+#[cfg(unix)]
+#[test]
+fn feishu_health_01_listener_reports_process_death_without_touching_other_listeners() {
+    let gateway = FeishuGateway::default();
+    let other = FeishuGateway::default();
+    let mut child = std::process::Command::new("/bin/cat")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let input = child.stdin.take().unwrap();
+    *gateway.0.lock().unwrap() = Some((child, input));
+    assert!(running(&gateway));
+    assert!(!running(&other));
+    {
+        let mut guard = gateway.0.lock().unwrap();
+        let (child, _) = guard.as_mut().unwrap();
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+    assert!(!running(&gateway));
+    stop(&gateway);
+}

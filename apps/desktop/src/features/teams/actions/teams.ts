@@ -1,11 +1,15 @@
 import { agent, team } from '@/state/selectors';
-import { isAgentMember, memberAgentRow } from '../runtime/team';
+import { isAgentMember, leaderMember, memberAgentRow } from '../runtime/team';
+import { focusMemberView } from '../activity/activityFocus';
+import { memberLaneNotice } from '../activity/memberLanes';
 import { removeCoreTeam, stopCoreTeam, syncCoreMembers } from '../runtime/coreTeam';
+import { exportTeamMarkdown } from '../runtime/teamExport';
+import { markdownFileName, saveMarkdown } from '@/features/chat/runtime/exportMarkdown';
 import { stopTask } from '@/features/chat/runtime/cancel';
 import { loadAgents } from '@/features/settings/runtime/agents';
 import { cachedOptions, probeAgentOptions } from '@/features/settings/runtime/agentOptions';
 import { S, update } from '@/state/store';
-import type { TeamMember } from '@/state/types';
+import type { Team, TeamMember } from '@/state/types';
 import { uid } from '@/shared/lib/util';
 import { navigate } from '@/app/navigation';
 import { closeModal, confirm, openModal, prompt, toast, toastError, topModal } from '@/shared/overlays/controller';
@@ -19,15 +23,17 @@ export const addMember = (id: string) => {
   openModal('team', { mode: 'add', id });
 };
 
-/** 加入成员：Lom、手机或本机 Agent（'ag:<编号>'）。Leader 只能是 Lom：只有它能指挥手机和其他 Agent */
+/** 加入成员：Lom、手机或本机 Agent（'ag:<编号>'）。电脑 Agent 可担任 Leader，手机作为执行成员 */
 export function pickAssist(id: string) {
   const a = agent(id), row = memberAgentRow(id);
   if (!a && !row) return;
+  // 同一团队只保留一位 Lom；外部 Agent 可创建多个独立成员。
+  if (id === 'pc' && S.form.members.some((m: TeamMember) => m.agent === 'pc')) { toast('团队里已经有 Lom 了：Lom 只能加入一次，其他助手可以重复添加', 'info'); return; }
   update(s => {
     const f = s.form;
     const lom = id === 'pc', create = topModal()?.props.mode === 'create';
-    const leader = lom && create && !f.members.some((m: TeamMember) => m.leader);
-    const role = lom ? (leader ? '总编' : '执行') : row ? specialtyRole(row.backend) : a?.persona ? `${a.persona.replace('博主', '')}运营` : '运营';
+    const leader = (lom || !!row) && create && !f.members.some((m: TeamMember) => m.leader);
+    const role = lom ? (leader ? '总编' : '执行') : leader ? '主控' : row ? specialtyRole(row.backend) : a?.persona ? `${a.persona.replace('博主', '')}运营` : '运营';
     f.members.push({ mid: uid('m'), agent: id, role, leader });
   });
   // 本机 Agent 第一次进团队：顺手读一次它自己配置的模型，团队窗口里才能显示
@@ -37,10 +43,14 @@ const specialtyRole = (backend?: string) => ({ codex: '电脑操作', kimi: '看
 export const removeAssist = (mid: string) => update(s => {
   if (topModal()?.props.mode === 'add' && s.form.members.find((m: TeamMember) => m.mid === mid)?.leader) return;
   s.form.members = s.form.members.filter((x: TeamMember) => x.mid !== mid);
+  if (!s.form.members.some((m: TeamMember) => m.leader)) {
+    const first = s.form.members.find((m: TeamMember) => m.agent === 'pc' || isAgentMember(m.agent));
+    if (first) first.leader = true;
+  }
 });
 export const setLeader = (mid: string) => update(s => {
   const target = s.form.members.find((m: TeamMember) => m.mid === mid);
-  if (target?.agent !== 'pc') { toast('Leader 只能是 Lom：只有它能指挥手机和其他 Agent', 'info'); return; }
+  if (!target || (target.agent !== 'pc' && !isAgentMember(target.agent))) { toast('电脑 Agent 可担任 Leader，手机作为执行成员', 'info'); return; }
   s.form.members.forEach((m: TeamMember) => { m.leader = m.mid === mid ? !m.leader : false; });
 });
 
@@ -49,20 +59,23 @@ const membersFromForm = (f: Record<string, any>): TeamMember[] => f.members.map(
 export function createTeam() {
   const f = S.form;
   const members = membersFromForm(f);
-  // 没选 Lom 就自动加上它当 Leader
-  if (!members.some(m => m.leader)) members.unshift({ mid: uid('m'), agent: 'pc', role: '总编', leader: true });
+  // 第一个电脑 Agent 默认主控，不再额外插入 Lom。手机没有团队主控运行时。
+  const first = members.find(m => m.agent === 'pc' || isAgentMember(m.agent));
+  if (!first) { toast('请添加一位电脑 Agent 担任主控，手机作为执行成员', 'info'); return; }
+  if (!members.some(m => m.leader)) first.leader = true;
   const real = members.every(m => m.agent === 'pc' || isAgentMember(m.agent) || S.agents[m.agent]?.real);
-  const t = { id: uid('t'), name: f.name, folder: f.folder || S.folder, created: Date.now(), members, panes: {}, real };
+  const t = { ownerAccountId: S.account?.id, id: uid('t'), name: f.name, folder: f.folder || S.folder, created: Date.now(), members, panes: {}, real };
   update(s => { s.teams.unshift(t); s.modals = []; });
-  toast(real ? `团队「${t.name}」已创建，在 Leader 窗格里说目标即可开工` : `团队「${t.name}」含示例手机，只能演示`, real ? 'check' : 'info');
+  // TEAM-FOCUS-01：看板里没有 Leader 窗格，提示看板上的入口；并排 / 单个视图才有 Leader 窗格
+  const start = S.teamView === 'board' ? '点「和 Leader 说目标」开工' : '在 Leader 窗格里说目标即可开工';
+  toast(real ? `团队「${t.name}」已创建，${start}` : `团队「${t.name}」含示例手机，只能演示`, real ? 'check' : 'info');
   navigate({ mode: 'desktop', route: { name: 'team', id: t.id }, teamFocus: members.find(m => m.leader)?.mid ?? members[0]?.mid });
 }
 
 export function saveMembers() {
   const t = team(topModal()?.props.id as string);
   if (!t) return;
-  const busy = S.convs.some(c => (c.teamId === t.id || c.id === t.leaderConv || Object.values(t.memberConvs || {}).includes(c.id)) && S.running[c.id]);
-  if (busy) { toast('请先停止团队，再保存成员变更', 'info'); return; }
+  if (teamBusy(t)) { toast('请先停止团队，再保存成员变更', 'info'); return; }
   const members = membersFromForm(S.form);
   const leader = t.members.find(m => m.leader);
   if (leader && !members.some(m => m.mid === leader.mid && m.leader)) { toast('请保留团队 Leader', 'info'); return; }
@@ -77,15 +90,54 @@ export function saveMembers() {
   void syncCoreMembers(t).then(() => toast('成员已更新，团队成员之间可以直接互发消息', 'check'), e => toastError('成员同步到团队失败，下次发送前会自动重试', e));
 }
 
+/** 团队里有没有成员会话正在运行：Leader、成员会话和派给手机的团队会话 */
+export const teamBusy = (t: Team) => S.convs.some(c => (c.teamId === t.id || c.id === t.leaderConv || Object.values(t.memberConvs || {}).includes(c.id)) && !!S.running[c.id]);
+
+/** UI-AUDIT-04：「停止团队」只在确定没有任务可停时（示例团队、从未开工）才不可用，并给出可见原因。
+ *  本地运行标记看不到内核里没有本地会话的成员，重启后也不一定恢复，所以「看起来都空闲」时仍可点，
+ *  点下去由停止结果说明「团队现在没有在运行」。 */
+export function stopTeamState(t: Team): { enabled: boolean; hint: string } {
+  if (!t.real) return { enabled: false, hint: '示例团队没有真实运行，不能停止' };
+  if (!t.leaderConv && !t.core) return { enabled: false, hint: '团队还没有开工，没有可停止的任务' };
+  if (teamBusy(t)) return { enabled: true, hint: '停止团队所有成员正在运行的任务' };
+  return { enabled: true, hint: '停止团队里可能仍在运行的任务；没有在运行时会告诉你' };
+}
+
 /** 停止团队：内核团队取消整轮运行（所有成员一起停）；之前建的团队只停 Leader 和它派出去的任务 */
 export function stopTeam(id: string) {
   const t = team(id);
   if (!t) return;
-  if (t.core) { void stopCoreTeam(t).then(r => toast(r?.stopped ? '团队已停止' : '团队现在没有在运行', 'stop'), e => toastError('停止团队失败', e)); return; }
+  // 本地看不准是否空闲，按钮开工后一直可用；核心那边没有运行（且没有手机被停下）时提示没在运行
+  if (t.core) { void stopCoreTeam(t).then(r => toast(r?.stopped || r?.phones ? '团队已停止' : '团队现在没有在运行', 'stop'), e => toastError('停止团队失败', e)); return; }
   if (t.leaderConv) void stopTask(t.leaderConv);
 }
 
 export const teamFocus = (mid: string) => update(s => { s.teamFocus = mid; });
+
+/** TEAM-FOCUS-01：顶栏选成员。看板 / 并排视图把它的列或窗格滚到可见处；没有列时说明原因，不假装已定位 */
+export function focusTeamMember(id: string, mid: string) {
+  teamFocus(mid);
+  const t = team(id);
+  if (!t || S.teamView === 'single' || focusMemberView(mid)) return;
+  toast(memberLaneNotice(t, mid, S), 'info');
+}
+
+/** 把建议填进这个成员的输入框。看板里没有输入框：切到单个视图并选中这位成员，输入框出现后拿到焦点 */
+export const fillTeamDraft = (teamId: string, memberId: string, text: string) => {
+  const ckey = `team:${teamId}:${memberId}`;
+  update(s => {
+    s.drafts[ckey] = text; s.focusNext = `composer:${ckey}`; s.teamFocus = memberId;
+    if (s.teamView === 'board') s.teamView = 'single';
+  });
+};
+
+/** TEAM-FOCUS-01：看板空状态「和 Leader 说目标」：在单个视图里打开 Leader，焦点交给它的输入框 */
+export function talkToLeader(id: string) {
+  const t = team(id), leader = t && leaderMember(t);
+  if (!t || !leader) return;
+  update(s => { s.teamView = 'single'; s.teamFocus = leader.mid; s.focusNext = `composer:team:${t.id}:${leader.mid}`; });
+}
+
 export const paneMax = (mid: string) => update(s => { if (s.teamView === 'single') s.teamView = 'side'; else { s.teamView = 'single'; s.teamFocus = mid; } });
 
 export function clearPane(id: string, mid: string) {
@@ -94,10 +146,26 @@ export function clearPane(id: string, mid: string) {
   confirm({ title: '清空这位成员的对话？', desc: '只清空当前窗格的记录，不影响其他成员。', okText: '清空', danger: true, onOk: () => update(() => { t.panes[mid] = []; }) });
 }
 
+/** 团队名称规则：去掉首尾空白后不能为空（与新建团队一致）；在弹窗内提示，不悄悄保留旧名 */
+export const teamNameError = (name: string) => (name.trim() ? undefined : '请输入团队名称');
+
 export function renameTeam(id: string) {
   const t = team(id);
   if (!t) return;
-  prompt({ title: '重命名团队', label: '团队名称', value: t.name, onOk: v => update(() => { t.name = v || t.name; }) });
+  prompt({ title: '重命名团队', label: '团队名称', value: t.name, validate: teamNameError, onOk: v => update(() => { t.name = v.trim(); }) });
+}
+
+/** TEAM-MENU-01：把团队各成员的记录导出为一个 Markdown 文件；真正保存了才提示，读取失败的成员在提示里列出 */
+export async function exportTeam(id: string) {
+  const t = team(id);
+  if (!t) return;
+  const name = markdownFileName(t.name);
+  try {
+    const { markdown, failed } = await exportTeamMarkdown(t);
+    if (!(await saveMarkdown(name, markdown))) return;
+    if (failed.length) toast(`已导出「${name}」，但这些成员的记录读取失败、没有包含：${failed.join('、')}`, 'info');
+    else toast(`已导出「${name}」`, 'download');
+  } catch (e) { toastError('导出团队记录失败，没有生成文件', e); }
 }
 
 export function deleteTeam(id: string) {

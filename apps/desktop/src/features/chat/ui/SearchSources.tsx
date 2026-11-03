@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from '@/shared/ui/Icon';
+import { SiteIcon } from '@/shared/ui/SiteIcon';
 import { cx } from '@/shared/lib/util';
 import { openExternalUrl } from '@/core/links';
 import { toastError } from '@/shared/overlays/controller';
-import { siteIcon, type SearchSource } from '../runtime/searchSources';
+import type { SearchSource } from '../runtime/searchSources';
 
 /* ===== 联网搜索来源条：工具组下方一行站点，点开看完整列表 ===== */
 
@@ -23,18 +24,12 @@ function domainOf(url: string) {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
-/** 先用搜索结果自带的图标，没有或加载失败再用网站自己的 /favicon.ico，都不行才显示首字母 */
+/** 先用搜索结果自带的图标，没有或加载失败再用网站自己的 /favicon.ico，都不行才显示首字母（来源本身就是搜索结果，可以加载） */
 function SourceMark({ source, domain }: { source: SearchSource; domain: string }) {
-  const icons = [source.favicon, siteIcon(source.url)].filter((icon, i, all): icon is string => !!icon && all.indexOf(icon) === i);
-  const [failed, setFailed] = useState(0);
   const letter = Array.from(source.site || domain)[0]?.toUpperCase() || '?';
-  const icon = icons[failed];
   return (
     <span className={cx('src-mark', `src-mark--${sourceTone(domain)}`)}>
-      {icon
-        ? <img key={icon} className="src-mark__img" src={icon} alt="" width={16} height={16}
-          loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(n => n + 1)} />
-        : <span className="src-mark__letter">{letter}</span>}
+      <SiteIcon url={source.url} favicon={source.favicon} searched imageClass="src-mark__img" fallback={<span className="src-mark__letter">{letter}</span>} />
     </span>
   );
 }

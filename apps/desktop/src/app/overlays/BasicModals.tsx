@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { readAudit, clearAudit } from '@/features/settings/runtime/audit';
 import { closeModal, topModal, confirm } from '@/shared/overlays/controller';
 import { saveAccountProfile } from '@/features/settings/actions/settings';
@@ -18,20 +18,25 @@ export function ConfirmModal({ p }: { p: P }) {
   const ok = () => { const m = topModal(); update(s => { s.modals.pop(); }); (m?.props.onOk as (() => void) | undefined)?.(); };
   return (
     <Modal title={String(p.title)} desc={p.desc as string | undefined} size="sm"
-      foot={<><Btn label="取消" variant="secondary" onClick={closeModal} /><Btn label={String(p.okText || '确定')} variant={p.danger ? 'danger' : 'primary'} onClick={ok} /></>} />
+      foot={<><Btn label={String(p.cancelText || '取消')} variant="secondary" onClick={closeModal} /><Btn label={String(p.okText || '确定')} variant={p.danger ? 'danger' : 'primary'} onClick={ok} /></>} />
   );
 }
 
 export function PromptModal({ p }: { p: P }) {
+  const s = useStore(), box = useRef<HTMLDivElement>(null);
   const ok = () => {
     const m = topModal(), v = String(S.form.value ?? '').trim();
+    // UI-AUDIT-02 UI-11：校验在弹窗内完成；不通过时不关闭，保留输入和头像等草稿，焦点回到输入框
+    const error = (m?.props.validate as ((v: string) => string | undefined) | undefined)?.(v);
+    if (error) { update(x => { x.form.error = error; }); box.current?.querySelector('input')?.focus(); return; }
     update(s => { s.modals.pop(); });
     (m?.props.onOk as ((v: string) => void) | undefined)?.(v);
   };
   return (
     <Modal title={String(p.title)} size="sm"
       foot={<><Btn label="取消" variant="secondary" onClick={closeModal} /><Btn label={String(p.okText || '保存')} variant="primary" onClick={ok} /></>}>
-      <Field label={String(p.label)}><Input bind="form.value" placeholder={p.placeholder as string | undefined} autoFocus /></Field>
+      <div ref={box}><Field label={String(p.label)}><Input bind="form.value" placeholder={p.placeholder as string | undefined} autoFocus /></Field></div>
+      {s.form.error && <p className="form-error" role="alert">{String(s.form.error)}</p>}
       {p.extra as ReactNode}
     </Modal>
   );

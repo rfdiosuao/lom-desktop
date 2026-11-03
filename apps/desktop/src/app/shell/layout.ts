@@ -1,13 +1,14 @@
 import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
 import { S, update } from '@/state/store';
+import { workspaceOptional } from '@/state/selectors';
 import { toast } from '@/shared/overlays/controller';
 
 /* ===== 布局：三栏收起 / 展开、主题、工作区标签 ===== */
 
 export const toggleLeft = () => update(s => { s.layout.leftCollapsed = !s.layout.leftCollapsed; });
-export const toggleRight = () => update(s => { s.layout.rightCollapsed = !s.layout.rightCollapsed; });
-export const resetLayout = () => { update(s => { s.layout = { left: 276, right: 380, leftCollapsed: false, rightCollapsed: false }; }); toast('面板布局已恢复默认'); };
-export const showRight = () => { if (S.layout.rightCollapsed) S.layout.rightCollapsed = false; };
+export const toggleRight = () => update(s => { if (workspaceOptional(s.route.name)) s.layout.rightOnPages = !s.layout.rightOnPages; else s.layout.rightCollapsed = !s.layout.rightCollapsed; });
+export const resetLayout = () => { update(s => { s.layout = { left: 276, right: 520, leftCollapsed: false, rightCollapsed: false }; }); toast('面板布局已恢复默认'); };
+export const showRight = () => { if (workspaceOptional()) S.layout.rightOnPages = true; else if (S.layout.rightCollapsed) S.layout.rightCollapsed = false; };
 
 export const applyTheme = () => {
   const t = S.theme;

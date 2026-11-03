@@ -1,4 +1,5 @@
 import type { Msg } from '@/state/types';
+import { observeToolTiming } from './activityTiming';
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 /** Read declared image outputs only, never scrape arbitrary shell output for paths. */
 export function toolImages(value: unknown): string[] {
@@ -12,11 +13,12 @@ export function toolImages(value: unknown): string[] {
   }
   return [...new Set([image.path, raw.saved_path, raw.savedPath].filter((p): p is string => typeof p === 'string' && /\.(png|jpe?g|webp|gif)$/i.test(p) && !/[\r\n]/.test(p)))];
 }
-export function applyAcpTool(messages: Msg[], value: Record<string, unknown>, at = Date.now()) {
+export function applyAcpTool(messages: Msg[], value: Record<string, unknown>, at = Date.now(), timed = true) {
   const d = object(value.update ?? value), id = String(d.tool_call_id ?? d.toolCallId ?? '');
   if (!id) return;
   let msg = messages.find(m => m.type === 'tool' && m.callId === id);
   if (!msg) { msg = { id: `acp:${id}`, type: 'tool', at, callId: id, status: 'running' }; messages.push(msg); }
+  if (timed) observeToolTiming(msg, String(d.status || 'running'), at);
   if (typeof d.title === 'string') msg.tool = d.title;
   const raw = d.rawInput ?? d.raw_input;
   if (raw) msg.detail = JSON.stringify(raw).slice(0, 160);

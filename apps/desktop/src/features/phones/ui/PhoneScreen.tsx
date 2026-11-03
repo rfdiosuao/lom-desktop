@@ -6,6 +6,7 @@ import { Btn, Dropdown } from '@/shared/ui/Button';
 import { Toggle, Spinner } from '@/shared/ui/Controls';
 import { Empty } from '@/shared/ui/Layout';
 import { useStore, update } from '@/state/store';
+import { rightHidden } from '@/state/selectors';
 import { toast, toastError } from '@/shared/overlays/controller';
 import { superviseNow } from '@/features/chat/actions/composer';
 
@@ -17,7 +18,7 @@ export function PhoneScreen({ device, full = false }: { device: string; full?: b
   const [retry, setRetry] = useState(0);
   const online = s.agents[device]?.status !== 'offline';
   const account = s.account?.id;
-  const covered = !full && (s.layout.rightCollapsed || s.modals.some(m => m.id === 'full'));
+  const covered = !full && (rightHidden(s) || s.modals.some(m => m.id === 'full'));
   const signedIn = s.cloud === 'signed-in';
   useEffect(() => {
     let failures = 0;

@@ -117,6 +117,9 @@ fn definition(name: &str, v: &Value) -> Result<CommandDefinition, String> {
 }
 
 fn build_args(name: &str, v: &Value) -> Result<Vec<String>, String> {
+    if delivery::writer(name) {
+        return delivery::build(name, v);
+    }
     let (group, action, fields) = definition(name, v)?;
     let object = v.as_object().ok_or_else(invalid)?;
     if object.keys().any(|k| {
@@ -231,75 +234,11 @@ fn options(args: &mut Vec<String>, name: &str, v: &Value) -> Result<(), String> 
 #[path = "feishu_tool_output.rs"]
 mod output;
 use output::{document, normalize};
-fn classify_error(raw: &str) -> String {
-    let text = raw.to_ascii_lowercase();
-    if [
-        "unauthorized",
-        "token expired",
-        "99991663",
-        "need_user_auth",
-        "not logged in",
-    ]
-    .iter()
-    .any(|s| text.contains(s))
-    {
-        "feishu.need_user_auth".into()
-    } else if ["scope", "permission", "99991672"]
-        .iter()
-        .any(|s| text.contains(s))
-    {
-        "feishu.scope_missing".into()
-    } else {
-        "feishu.tool_failed".into()
-    }
-}
-fn run_cli(dir: &Path, args: &[String]) -> Result<String, String> {
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = crate::feishu::command(dir, &refs)?
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| "feishu.tool_failed".to_owned())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "feishu.tool_failed".to_owned())?;
-    let reader = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout
-            .take(RAW_LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes)
-    });
-    let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() < Duration::from_secs(20) => {
-                std::thread::sleep(Duration::from_millis(25))
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = reader.join();
-                return Err("feishu.tool_failed: timeout".into());
-            }
-        }
-    };
-    let bytes = reader
-        .join()
-        .map_err(|_| "feishu.tool_failed".to_owned())?
-        .map_err(|_| "feishu.tool_failed".to_owned())?;
-    if bytes.len() as u64 > RAW_LIMIT {
-        return Err("feishu.output_too_large".into());
-    }
-    let text = String::from_utf8(bytes).map_err(|_| "feishu.tool_failed".to_owned())?;
-    if !status.success() {
-        return Err(classify_error(&text));
-    }
-    Ok(text)
-}
-
+#[path = "feishu_tool_cli.rs"]
+mod cli;
+use cli::{classify_error, run_cli};
+#[path = "feishu_delivery.rs"]
+mod delivery;
 // Explicit IPC fields keep connection scope mandatory at the Tauri boundary.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -318,7 +257,7 @@ pub async fn feishu_tool_execute(
     let guard = app
         .state::<std::sync::Arc<crate::feishu::FeishuState>>()
         .scoped(&account, &assistant_id)?;
-    if name == "feishu_send_message" {
+    if name.starts_with("feishu_send_") {
         use sha2::{Digest, Sha256};
         if call_id.is_empty() || call_id.len() > 256 {
             return Err(invalid());
@@ -330,21 +269,17 @@ pub async fn feishu_tool_execute(
     }
     tauri::async_runtime::spawn_blocking(move || {
         crate::feishu_scope::check_generation(&guard, generation)?;
-        let status = run_cli(&dir, &["auth".into(), "status".into(), "--json".into()])?;
-        let owner = crate::feishu_register::read_owner(&dir).ok_or("feishu.need_user_auth")?;
-        if crate::feishu_gateway::owner_open_id(&status).as_deref() != Some(owner.as_str()) {
-            return Err("feishu.need_user_auth".into());
-        }
-        let status = crate::feishu::parse_status(&status);
-        if status.app_id.as_deref() != Some(app_id.as_str()) {
-            return Err("feishu.binding_invalid".into());
-        }
-        if !status.authorized {
-            return Err("feishu.need_user_auth".into());
-        }
-        let raw =
-            crate::feishu_scope::with_generation(&guard, generation, || run_cli(&dir, &args))?;
-        let result = if name == "feishu_read_doc" {
+        verify_owner(&dir, &app_id)?;
+        let raw = crate::feishu_scope::with_generation(&guard, generation, || {
+            if delivery::writer(&name) {
+                delivery::execute(&dir, &name, &arguments, &args, &call_id)
+            } else {
+                run_cli(&dir, &args)
+            }
+        })?;
+        let result = if delivery::writer(&name) {
+            delivery::outcome(&name, &raw)?
+        } else if name == "feishu_read_doc" {
             document(&raw, &arguments)?
         } else {
             normalize(&raw, &arguments)?
@@ -357,4 +292,20 @@ pub async fn feishu_tool_execute(
     })
     .await
     .map_err(|_| "feishu.tool_failed".to_owned())?
+}
+
+fn verify_owner(dir: &Path, app_id: &str) -> Result<(), String> {
+    let status = run_cli(dir, &["auth".into(), "status".into(), "--json".into()])?;
+    let owner = crate::feishu_register::read_owner(dir).ok_or("feishu.need_user_auth")?;
+    if crate::feishu_gateway::owner_open_id(&status).as_deref() != Some(owner.as_str()) {
+        return Err("feishu.need_user_auth".into());
+    }
+    let status = crate::feishu::parse_status(&status);
+    if status.app_id.as_deref() != Some(app_id) {
+        return Err("feishu.binding_invalid".into());
+    }
+    if !status.authorized {
+        return Err("feishu.need_user_auth".into());
+    }
+    Ok(())
 }

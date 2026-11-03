@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { S } from '@/state/store';
+import { S, update } from '@/state/store';
 import { api, CoreError } from '@/core/client';
 import { sendToTask } from '@/features/chat/runtime/tasks';
 import { beginAuthChange } from '@/features/account/runtime/authScope';
@@ -17,7 +17,10 @@ beforeEach(()=>{
 });
 it('PA03 real send boundary retries rejected memory then suppresses it after confirmed delivery',async()=>{
  vi.mocked(api).mockRejectedValueOnce(new CoreError('bad','rejected',400)).mockResolvedValue({turn_id:'turn'});
- const c=S.convs[0];expect(await sendToTask(c,'one',[])).toBe(false);expect(await sendToTask(c,'two',[])).toBe(true);expect(await sendToTask(c,'three',[])).toBe(true);
+ const c=S.convs[0];expect(await sendToTask(c,'one',[])).toBe(false);expect(await sendToTask(c,'two',[])).toBe(true);
+ // A POST receipt accepts a turn; the next Personal message requires its completion.
+ update(s=>{delete s.running[c.id];});
+ expect(await sendToTask(c,'three',[])).toBe(true);
  const content=vi.mocked(api).mock.calls.map(call=>(call[2] as any).content);
  expect(content[0]).toContain('[LOM_PERSONAL_MEMORY_V1]');expect(content[1]).toContain('[LOM_PERSONAL_MEMORY_V1]');expect(content[2]).not.toContain('[LOM_PERSONAL_MEMORY_V1]');
  expect(c.messages.filter(m=>m.type==='user').map(m=>m.text)).toEqual(['one','two','three']);

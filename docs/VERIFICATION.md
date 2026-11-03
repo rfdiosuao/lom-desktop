@@ -15,3 +15,14 @@ Official cloud endpoints, updater verification key/configuration, server deploym
 Mechanical imports preserve upstream whitespace, including vendored C sources and patches; a repository-wide whitespace cleanup is not claimed.
 
 Tracked native build intermediate files from the upstream LAME directory were excluded; its source/configure inputs remain. Archive XML/JSON/properties text is also scanned for the same sensitive patterns.
+
+
+## 2026-11-03 community desktop 0.3.4 sync
+
+- Desktop frontend typecheck passed.
+- Desktop tests: 259 files / 1,784 tests passed (Node 24 semantics; local Node 25 used `NODE_OPTIONS=--no-experimental-webstorage`).
+- Production Vite build passed.
+- `python3 tools/audit-source.py`: 4,725 files audited, 0 findings.
+- `python3 apps/android/tests/check_public_boundary.py`: 3 tests passed.
+- Commercial account, billing, purchase, WeChat, server, deployment and automatic-update code remain excluded; community guards keep the app usable with a self-configured model provider.
+- Community Mac DMG built locally from the sanitized source with the verified local core binary; version, community identifier, signature, DMG checksum and Finder layout were verified. No Windows artifact or real-device installation is claimed.

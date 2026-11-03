@@ -19,15 +19,20 @@
 .team-board--empty{align-items:center;justify-content:center;text-align:center}
 .team-board__hint{margin:0 0 4px;font-size:14px;font-weight:600;color:var(--text)}
 .team-board__hint-sub{margin:0;font-size:13px;color:var(--muted)}
+.team-board__hint-action{margin-top:12px}
 
 .team-board__col{flex:0 0 288px;display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle);overflow:hidden}
+/* TEAM-FOCUS-01：顶栏选中的成员列——描边换品牌色，列头底部 2px 线，和并排窗格的选中标记一致 */
+.team-board__col.is-focus{border-color:var(--brand-ring)}
+.team-board__col.is-focus .team-board__head{box-shadow:inset 0 -2px 0 var(--brand)}
 .team-board__head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface);flex:none;min-width:0}
 .team-board__head .avatar{flex:none}
 .team-board__dot{width:8px;height:8px;border-radius:50%;background:var(--placeholder);flex:none}
 .team-board__title{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .team-board__count{flex:none;font-size:11px;color:var(--muted);background:var(--bg-hover);border-radius:var(--r-pill);padding:1px 7px}
 .team-board__body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:8px;scrollbar-width:thin}
-.team-board__empty{margin:12px 0;text-align:center;font-size:12px;color:var(--placeholder)}
+/* UI-AUDIT-04：说明文字用 --muted，浅色主题下对比度不低于 4.5:1（--placeholder 只有约 3:1） */
+.team-board__empty{margin:12px 0;text-align:center;font-size:12px;color:var(--muted)}
 .team-board__more{align-self:center;font-size:12px;color:var(--brand);background:none;border:0;padding:6px 8px;border-radius:var(--r-sm)}
 .team-board__more:hover{background:var(--bg-hover)}
 .team-board__loading{display:flex;justify-content:center;padding:6px 0}
@@ -72,9 +77,10 @@
 .act-card__foot{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);flex-wrap:wrap}
 .act-card__files{display:inline-flex;align-items:center;gap:3px}
 .act-card__files .icon{width:11px;height:11px}
-.act-card__more{border:0;background:none;padding:0;font-size:11px;color:var(--brand);cursor:pointer}
-.act-card__more:hover{text-decoration:underline}
-.act-card__time{margin-left:auto;flex:none;color:var(--placeholder)}
+.act-card__more,.act-card__open{border:0;background:none;padding:0;font-size:11px;color:var(--brand);cursor:pointer}
+.act-card__more:hover,.act-card__open:hover{text-decoration:underline}
+.act-card__raw{margin:6px 0 0;padding:8px 10px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg-subtle);border-radius:var(--r-sm)}
+.act-card__time{margin-left:auto;flex:none;color:var(--muted)}
 
 @media (max-width: 720px){
   .team-board__col{flex-basis:240px}
@@ -84,3 +90,5 @@
 .act-card--linked:hover{border-color:var(--brand-ring)}
 
 .team-board__status{color:var(--muted);font-size:var(--reply-detail-size);flex:none}
+
+.member-wait { padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; max-height: 40%; overflow-y: auto; overflow-wrap: anywhere; }

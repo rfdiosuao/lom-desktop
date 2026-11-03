@@ -85,6 +85,9 @@ a{color:var(--brand)}
 .seg__opt:hover{color:var(--text-strong)}
 .seg__opt.is-active{background:var(--surface);color:var(--text-strong);box-shadow:var(--shadow-sm);font-weight:500}
 .seg--brand .seg__opt.is-active{background:linear-gradient(var(--brand),var(--brand-strong));color:#fff}
+/* 小号分段控件：总高与 --h-sm 按钮一致（外框 1px + 内边距 2px） */
+.seg--sm{padding:2px}
+.seg--sm .seg__opt{height:calc(var(--h-sm) - 6px);padding:0 10px}
 .seg--block{display:flex}
 .seg--block .seg__opt{flex:1}
 .seg--square{border-radius:var(--r-sm)}
@@ -143,7 +146,7 @@ a{color:var(--brand)}
 /* ===== Agent 胶囊 chip（首页设备、团队成员、选择器统一使用） ===== */
 .chip{position:relative;display:inline-flex;align-items:center;gap:10px;min-height:56px;padding:9px 16px 9px 12px;border:1px solid var(--line);border-radius:var(--r-pill);background:linear-gradient(120deg,var(--surface),var(--bg-subtle));text-align:left;transition:border-color .15s,background .15s,box-shadow .15s;min-width:0}
 .chip:hover{border-color:var(--line-strong);box-shadow:var(--shadow-sm)}
-.chip.is-selected{border-color:#329852;background:linear-gradient(140deg,var(--brand-softer),var(--brand-soft));color:var(--brand-ink)}
+.chip.is-selected{border-color:var(--brand-ring);background:linear-gradient(140deg,var(--brand-softer),var(--brand-soft));color:var(--brand-ink)}
 .chip__text{display:flex;flex-direction:column;min-width:0;flex:1}
 .chip__title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip__sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
@@ -279,6 +282,7 @@ a{color:var(--brand)}
 @media (prefers-reduced-motion:reduce){.typing i,.spinner{animation:none}.typing i{opacity:.65}}
 .reply-pending{color:var(--muted)}
 .reply-pending__status{display:flex;align-items:center;gap:8px;min-height:24px;font-size:var(--reply-detail-size)}
+.reply-pending__live{display:inline-flex;align-items:center;gap:8px}
 
 /* ===== 手机选择按钮 device-btn（侧栏 / 工作区共用） ===== */
 .device-btn{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:var(--r-md);text-align:left;transition:background .15s,filter .15s}

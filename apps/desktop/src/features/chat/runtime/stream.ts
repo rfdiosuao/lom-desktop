@@ -1,3 +1,4 @@
+import { contextRecovery } from './contextRecovery';
 import { evolvePersonalTurn } from '@/features/personal/runtime/evolution';
 import { syncScheduledMessages } from './scheduledMessage';
 import { applyAcpTool, toolImages } from './toolImages';
@@ -15,12 +16,14 @@ import { confirmationRemoved, onPermission } from './permissions';
 import { onAsk } from './questions';
 export { answerConfirmation, onPermission } from './permissions';
 import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
-import { checkGoalReached, compactNotice, goalWantsNextTurn } from './commands';
+import { checkGoalReached, goalWantsNextTurn } from './commands';
+import { settleCompaction } from './compaction';
 import { teammateMsg } from '@/features/teams/runtime/coreTeam';
 import { emitActivityEvent } from '@/features/teams/activity/activityEvents';
 import { quietError } from '@/shared/overlays/controller';
 import { hasInFlightSend, hasUnconfirmedSend, recordCompletedTurn } from './cancel';
 import { channelOf } from './channelSource';
+import { finishTiming } from './activityTiming';
 
 /* ===== lom-core 推送 → 界面状态 =====
  * message.stream 的 type：start / content / thought / tool_call / acp_permission / finish / error；
@@ -31,17 +34,19 @@ const convOf = (id: unknown): Conv | undefined => S.convs.find(c => c.remote && 
 /** 本轮最后一条消息是同一段流式回复时接着写，否则开一段新的 */
 function appendText(conv: Conv, msgId: string, chunk: string, type: 'assistant' | 'thinking') {
   const last = conv.messages[conv.messages.length - 1];
+  if (last?.streaming && last.type !== type) { finishTiming(last); last.streaming = false; }
   if (last && last.type === type && last.remoteId === msgId && last.streaming) {
     last.text = (last.text || '') + chunk;
     return;
   }
-  conv.messages.push({ id: uid('m'), type, at: Date.now(), text: chunk, agent: 'pc', streaming: true, remoteId: msgId });
+  const at = Date.now();
+  conv.messages.push({ id: uid('m'), type, at, timing: { startedAt: at }, text: chunk, agent: 'pc', streaming: true, remoteId: msgId });
 }
 
 /** 工具调用的终态；其他状态（如 running / pending）都当作「开始执行」 */
 const FINAL_STATUS = new Set(['completed', 'success', 'error', 'failed', 'cancelled', 'canceled']);
 
-const endStreaming = (conv: Conv) => conv.messages.forEach(m => { if (m.streaming) m.streaming = false; });
+const endStreaming = (conv: Conv) => conv.messages.forEach(m => { if (m.streaming) { finishTiming(m); m.streaming = false; } });
 
 function onToolCall(conv: Conv, d: Record<string, unknown>) {
   const callId = normCallId(d.call_id);
@@ -64,6 +69,7 @@ function onToolCall(conv: Conv, d: Record<string, unknown>) {
   if (!known) return;
   const ok = status === 'completed' || status === 'success';
   known.status = ok ? 'done' : 'error';
+  finishTiming(known);
   if (ok) known.images = toolImages(d);
   if (typeof d.output === 'string' && !known.output) known.output = d.output;
   const change = ok ? fileChangeOf(known.toolName || name, known.args || {}, conv.workspace) : null;
@@ -83,7 +89,11 @@ function onStream(sd: StreamData) {
   const d = sd.data || {};
   if (sd.turn_id) conv.turnId = sd.turn_id;
   switch (sd.type) {
-    case 'start': S.running[conv.id] = true; break;
+    case 'start': {
+      const user = conv.messages.findLast(m => m.type === 'user');
+      if (user) delete user.turnOutcome;
+      S.running[conv.id] = true; break;
+    }
     case 'content': appendText(conv, sd.msg_id, String(d.content ?? ''), 'assistant'); break;
     case 'thought': case 'thinking': appendText(conv, `${sd.msg_id}:t`, String(d.content ?? d.text ?? d.subject ?? ''), 'thinking'); break;
     case 'tool_call': onToolCall(conv, d); break;
@@ -95,7 +105,7 @@ function onStream(sd: StreamData) {
       endStreaming(conv);
       const lom = S.providers.find(p => p.name === LOM_PROVIDER_NAME);
       const usesLom = !!lom && conv.providerId === lom.id;
-      conv.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: friendlyModelError(errorText(d), usesLom), ic: 'info' });
+      conv.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: friendlyModelError(errorText(d), usesLom), ...contextRecovery(d), ic: 'info', turnOutcome: 'failed' });
       if (usesLom) void refreshPoints();
       break;
     }
@@ -119,32 +129,26 @@ function onUserCreated(d: Record<string, unknown>) {
   });
 }
 
-/** 压缩这一轮结束：「正在压缩上下文…」换成结果，引擎的英文回复不再单独显示 */
-function settleCompact(conv: Conv) {
-  const i = conv.messages.map(m => m.type === 'system' && m.text === '正在压缩上下文…').lastIndexOf(true);
-  if (i < 0) return;
-  const reply = conv.messages.slice(i + 1).find(m => m.type === 'assistant' && compactNotice(m.text));
-  conv.messages[i] = { ...conv.messages[i], text: compactNotice(reply?.text) || '压缩没有完成，可以稍后重试', ic: reply ? 'check' : 'info' };
-  if (reply) conv.messages = conv.messages.filter(m => m !== reply);
-}
-
 function onTurnCompleted(d: Record<string, unknown>) {
   const conv = convOf(d.conversation_id);
   if (!conv) return;
   if (typeof d.turn_id === 'string' && conv.turnId && d.turn_id !== conv.turnId) return;
-  if (typeof d.turn_id === 'string') recordCompletedTurn(conv.id, d.turn_id);
+  if (typeof d.turn_id === 'string') recordCompletedTurn(conv.id, d.turn_id, typeof d.status === 'string' ? d.status : undefined);
+  const user = conv.messages.findLast(m => m.type === 'user');
+  if (user && d.status) user.turnOutcome = d.status === 'finished' ? 'completed' : d.status === 'cancelled' ? 'cancelled' : 'failed';
   endStreaming(conv);
   const pendingSend = hasInFlightSend(conv.id) || hasUnconfirmedSend(conv.id);
   if (pendingSend) S.running[conv.id] = true;
   else delete S.running[conv.id];
   if (pendingSend) void import('./recovery').then(r => r.recoverTaskHistory(conv)).catch(e => quietError('stream.recover_failed', e));
+  // 整轮结束不是每个工具的结束时刻；缺失工具终态时保留不完整计时，界面显示未知。
   conv.messages.forEach(m => { if (m.type === 'tool' && m.status === 'running') m.status = d.status === 'finished' ? 'done' : 'error'; });
   if (conv.preview === 'building') conv.preview = conv.previewFile ? 'ready' : null;
   if (d.status && d.status !== 'finished' && d.status !== 'cancelled') {
-    conv.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: `这一轮没有正常完成（${String(d.status)}）`, ic: 'info' });
+    conv.messages.push({ id: uid('m'), type: 'system', at: Date.now(), text: `这一轮没有正常完成（${String(d.status)}）`, ic: 'info', turnOutcome: 'failed' });
   }
   conv.updated = Date.now();
-  settleCompact(conv);
+  settleCompaction(conv, typeof d.status === 'string' ? d.status : undefined, typeof d.turn_id === 'string' ? d.turn_id : undefined);
   const lastUser = conv.messages.findLastIndex(m => m.type === 'user');
   const lastReply = conv.messages.slice(lastUser + 1).findLast(m => m.type === 'assistant');
   if (d.status === 'finished') checkGoalReached(`conv:${conv.id}`, lastReply?.text);

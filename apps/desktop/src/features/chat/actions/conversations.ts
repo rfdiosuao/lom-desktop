@@ -1,6 +1,7 @@
 import { hideHistory } from '@/state/history';
 import { changePhoneChat } from '@/features/phones/runtime/phoneChat';
-import { deleteTask, exportMarkdown, renameTask } from '../runtime/tasks';
+import { deleteTask, renameTask } from '../runtime/tasks';
+import { conversationMarkdown, loadFullHistory, markdownFileName, saveMarkdown } from '../runtime/exportMarkdown';
 import { sim } from '@/demo/simulator';
 import { conv } from '@/state/selectors';
 import { S, update } from '@/state/store';
@@ -93,11 +94,15 @@ export function deleteGroup(id: string) {
   });
 }
 
-export function exportConv(id: string) {
+/** TEAM-MENU-01：先读完整记录再保存；真正保存了才提示成功，取消保存不提示，失败报错 */
+export async function exportConv(id: string) {
   const c = conv(id);
   if (!c) return;
-  exportMarkdown(c);
-  toast(`已导出「${c.title}.md」`, 'download');
+  const name = markdownFileName(c.title);
+  try {
+    await loadFullHistory(c);
+    if (await saveMarkdown(name, conversationMarkdown(c))) toast(`已导出「${name}」`, 'download');
+  } catch (e) { toastError('导出失败，没有生成文件', e); }
 }
 
 export const toggleConvSearch = () => update(s => { s.convSearch = !s.convSearch; if (!s.convSearch) s.q.conv = ''; });

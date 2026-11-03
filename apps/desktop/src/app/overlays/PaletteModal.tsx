@@ -20,7 +20,7 @@ export interface PaletteItem { group: string; label: string; desc?: string; ic?:
 export function paletteItems(): PaletteItem[] {
   const q = (S.q.palette || '').trim().toLowerCase();
   const ops: [string, string, () => void][] = [
-    ['新的任务', 'plus', newTask], ['定时任务', 'clock', () => go('schedule')], ['skillhub', 'grid', () => go('skillhub')], ['OPC 团队', 'people', () => go('teams')],
+    ['新的任务', 'plus', newTask], ['定时任务', 'clock', () => go('schedule')], ['插件 · 技能 · 智能体', 'grid', () => go('skillhub')], ['OPC 团队', 'people', () => go('teams')],
     ['新建团队', 'userPlus', newTeam], ['添加手机', 'phone', pair], ['设置', 'settings', () => go('settings')],
     [S.mode === 'desktop' ? '切换到手机模式' : '切换到电脑模式', 'sync', () => setMode(S.mode === 'desktop' ? 'phone' : 'desktop')],
     ['切换深色 / 浅色', 'moon', () => setTheme(S.theme === 'dark' ? 'light' : 'dark')], ['收起 / 展开侧栏', 'sidebar', toggleLeft], ['收起 / 展开工作区', 'panelRight', toggleRight], ['快捷键', 'keyboard', shortcuts],

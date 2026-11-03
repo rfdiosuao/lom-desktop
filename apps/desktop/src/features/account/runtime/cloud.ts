@@ -38,11 +38,11 @@ interface SessionData { session?: string; account: { id: string; email: string; 
 let session: string | null = null;
 
 /** 访问麓鸣云端（带账户会话）；配对与设备接口也经由这里（core/devices.ts） */
-export async function cloud<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export async function cloud<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, options?: { timeoutMs?: number }): Promise<T> {
   requireCloudService();
   let res: Response;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? 20000);
   try {
     res = await fetch(LOM_CLOUD_URL + path, {
       method, signal: controller.signal,
@@ -50,6 +50,7 @@ export async function cloud<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (e) {
+    if (controller.signal.aborted) throw new CloudError('cloud.timeout', '麓鸣服务响应超时，结果尚未确认');
     throw new CloudError('cloud.unreachable', `无法连接麓鸣服务（${e instanceof Error ? e.message : String(e)}）`);
   }
   finally { clearTimeout(timeout); }

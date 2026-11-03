@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 type Click = (e: MouseEvent<HTMLButtonElement>) => void;
 export type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghost' | 'link' | 'pill';
 
-export interface BtnProps extends Pick<AriaAttributes, 'aria-haspopup' | 'aria-expanded'> {
+export interface BtnProps extends Pick<AriaAttributes, 'aria-haspopup' | 'aria-expanded' | 'aria-describedby' | 'aria-label'> {
   label?: ReactNode; ic?: string; icRight?: string; variant?: BtnVariant; size?: 'sm' | 'lg';
   onClick?: Click; disabled?: boolean; title?: string; block?: boolean; active?: boolean; className?: string;
   /** 弱化显示但仍可点击：用于「当前没有可用档位」，点开能看到原因 */
@@ -18,7 +18,7 @@ export interface BtnProps extends Pick<AriaAttributes, 'aria-haspopup' | 'aria-e
 }
 
 /* 按钮：variant = primary | secondary | ghost | danger | danger-ghost | link | pill */
-export function Btn({ label, ic, icRight, variant = 'secondary', size, onClick, disabled, title, block, active, className, dim, 'aria-haspopup': hasPopup, 'aria-expanded': expanded }: BtnProps) {
+export function Btn({ label, ic, icRight, variant = 'secondary', size, onClick, disabled, title, block, active, className, dim, 'aria-haspopup': hasPopup, 'aria-expanded': expanded, 'aria-describedby': describedBy, 'aria-label': ariaLabel }: BtnProps) {
   return (
     <button
       type="button"
@@ -28,6 +28,8 @@ export function Btn({ label, ic, icRight, variant = 'secondary', size, onClick, 
       title={t(title)}
       aria-haspopup={hasPopup}
       aria-expanded={expanded}
+      aria-describedby={describedBy}
+      aria-label={ariaLabel}
       aria-pressed={active === undefined ? undefined : !!active}
     >
       {ic && <Icon name={ic} />}
@@ -38,8 +40,10 @@ export function Btn({ label, ic, icRight, variant = 'secondary', size, onClick, 
 }
 
 /* 图标按钮：必须有 label（无障碍名称 + 悬停提示） */
-export function IconBtn({ ic, label, onClick, variant, size, active, disabled, className }: {
+export function IconBtn({ ic, label, onClick, variant, size, active, disabled, className, title }: {
   ic: string; label: string; onClick?: Click; variant?: 'soft' | 'round'; size?: 'sm'; active?: boolean; disabled?: boolean; className?: string;
+  /** 悬停提示；默认与无障碍名称相同（如说明按钮为什么不可用） */
+  title?: string;
 }) {
   return (
     <button
@@ -47,7 +51,7 @@ export function IconBtn({ ic, label, onClick, variant, size, active, disabled, c
       className={cx('ibtn', variant && `ibtn--${variant}`, size && `ibtn--${size}`, active && 'is-active', className)}
       onClick={onClick}
       aria-label={t(label)}
-      title={t(label)}
+      title={t(title ?? label)}
       disabled={disabled}
     >
       <Icon name={ic} />
@@ -69,12 +73,12 @@ export function Dropdown({ label, ic, menu, ctx = {}, variant = 'pill', size, ti
   );
 }
 
-/* 导航行 */
-export function NavItem({ label, ic, onClick, active, trail, size, title }: {
-  label: string; ic?: string; onClick?: Click; active?: boolean; trail?: ReactNode; size?: 'sm'; title?: string;
+/* 导航行；onContextMenu 用于右键打开这一行的菜单 */
+export function NavItem({ label, ic, onClick, onContextMenu, active, trail, size, title }: {
+  label: string; ic?: string; onClick?: Click; onContextMenu?: Click; active?: boolean; trail?: ReactNode; size?: 'sm'; title?: string;
 }) {
   return (
-    <button type="button" className={cx('nav-item', size && `nav-item--${size}`, active && 'is-active')} onClick={onClick} aria-current={active ? 'page' : undefined} title={t(title)}>
+    <button type="button" className={cx('nav-item', size && `nav-item--${size}`, active && 'is-active')} onClick={onClick} onContextMenu={onContextMenu} aria-current={active ? 'page' : undefined} title={t(title)}>
       {ic && <Icon name={ic} />}
       <span className="nav-item__label">{t(label)}</span>
       {trail !== undefined && trail !== '' && <span className="nav-item__trail">{trail}</span>}
