@@ -1,6 +1,6 @@
 [package]
 name = "lom-desktop"
-version = "0.3.5"
+version = "0.3.6"
 description = "麓鸣 Lom 桌面外壳：窗口、系统对话框，并以 sidecar 方式启动 lom-core"
 edition = "2021"
 license = "AGPL-3.0-only"

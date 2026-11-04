@@ -10,8 +10,8 @@ android {
         applicationId = "top.heang.lom.pairing.preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1-ui"
+        versionCode = 2
+        versionName = "0.3.6-lan"
     }
     buildFeatures { compose = true }
     compileOptions {
