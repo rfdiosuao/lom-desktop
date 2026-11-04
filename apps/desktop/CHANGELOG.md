@@ -1,5 +1,13 @@
 # Desktop source changes
 
+## 0.3.6 — 2026-11-04
+
+Distribution refresh for the community desktop and the LAN pairing test package:
+
+- Rebuilt the Mac DMG at 0.3.6 with the same LAN pairing protocol introduced in 0.3.5.
+- Rebuilt the standalone Android pairing test package as version `0.3.6-lan` (versionCode 2); the preview package remains a pairing harness, not the full phone client.
+- No protocol or permission changes since 0.3.5.
+
 ## 0.3.5 — 2026-11-03
 
 Community LAN pairing, without the commercial account, cloud relay or pairing service:
