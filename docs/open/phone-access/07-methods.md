@@ -15,6 +15,7 @@
 | `document.list` / `document.read` | **必需（可返回空）** | 桌面每轮同步都会调用；不支持时请返回空列表，**不要**返回 `remote.method_unknown`（原因见 1.3） |
 | `schedule.list` | **必需（可返回空）** | 同上 |
 | `document.write` | 可选 | 编辑人格 / 记忆文档 |
+| `device.capabilities` | 可选（**建议实现**） | 告诉桌面这台手机实现了哪些方法；桌面据此隐藏或置灰不支持的入口（见 §6） |
 | `device.status` | 可选 | 电量与网络 |
 | `device.rename` | 可选 | 桌面改手机名称 |
 | `apps.list` | 可选 | 已安装应用与无障碍状态 |
@@ -46,6 +47,8 @@
 | `chat.rename` / `chat.pin` / `chat.delete` / `document.write` / `device.rename` / `skills.*` / `schedule.save` / `schedule.toggle` / `schedule.delete` / `schedule.run` / `file.*` | 对应操作失败，错误提示里带原始错误码 `remote.method_unknown`，界面不会改变 |
 | `document.list` / `document.read` / `schedule.list` | **整轮同步判为失败**（同步在 `chat.list` → `document.list`/`read` → `schedule.list` 之间依次进行，任何一步抛错就中止），显示同步错误，并按 15 秒起翻倍、最长 5 分钟的间隔退避重试。所以不要对它们返回 `remote.method_unknown`：不支持就返回空集合（见各节） |
 | `chat.send` / `chat.read` / `chat.list` / `chat.cancel` / `model.sync` | 手机基本不可用：发送失败、会话列表和进度读不到 |
+
+**建议实现 `device.capabilities`**（§6）：手机用它主动声明自己实现了哪些方法，桌面就不会在界面上摆出点了只会失败的入口。没有实现它的手机，桌面按「全部支持」处理，行为与上表一致。
 
 > 以上是桌面当前版本（0.3.x）的行为；后续版本可能调整提示文案，但「`remote.method_unknown` 表示未实现」的语义保持不变。
 
@@ -259,6 +262,56 @@
 
 ## 6. 设备信息
 
+### `device.capabilities`（可选，建议实现）
+
+手机用它声明**自己真正实现了哪些方法**，以及少量数值上限。桌面在配对成功后和每次连上手机时调用一次，并按设备缓存结果；据此决定手机页面里哪些入口显示、隐藏或置灰。这是 `v=1` 范围内新增的可选方法（见 [08](08-errors-security.md#版本与兼容策略)），不改变任何已有方法。
+
+请求 `{}`。响应：
+
+```json
+{
+  "version": 1,
+  "methods": ["device.capabilities", "device.status", "model.sync", "chat.send", "chat.read", "chat.list", "chat.cancel", "document.list", "document.read", "schedule.list"],
+  "limits": { "chat.send.max_text_chars": 4000, "file.max_bytes": 104857600 }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `version` | number | 本清单格式的版本，目前为 `1`。桌面遇到更大的版本号时，仍按已知字段读取，忽略不认识的字段 |
+| `methods` | string 数组 | 这台手机**实际实现**的全部方法名（含 `device.capabilities` 自己），每项形如 `chat.send`。不在清单里的方法，桌面视为不支持 |
+| `limits` | object，可省略 | 可选的数值上限。键名形如 `<方法>.<含义>`，值是**非负整数**；不确定的上限就不要写，不要编造 |
+
+> 这个方法的响应保留**真实的 JSON 类型**（数字、数组、对象），不遵守 §2 第 2 条「字段值几乎全是字符串」的惯例，与 `chat.*`、`document.list/read` 相同。
+
+`limits` 目前定义的键（**不认识的键桌面一律忽略**，后续可能新增）：
+
+| 键 | 含义 |
+|---|---|
+| `chat.send.max_text_chars` | `chat.send` 一条消息正文允许的最大字符数。桌面在输入框超出时直接提示并阻止发送，不等手机拒绝 |
+| `file.max_bytes` | 手机接受的单个文件最大字节数（`file.begin` 的 `size` 上限）。桌面据此在发送大文件前提示 |
+
+行为要求：
+
+- `methods` 必须与手机的**实际分派表**一致（最好由分派表自动生成，而不是另写一份清单），否则桌面会显示手机其实做不了的入口，或藏起做得了的入口。
+- 清单里列出的方法，不得再对同样的请求回 `remote.method_unknown`；清单里没有的方法，仍必须按 §1.2 回 `remote.method_unknown`。
+- 手机上某项能力需要用户额外授权（例如 `screen.*` 需要用户在手机上打开开关），只要方法**已实现**就应列入 `methods`，授权状态由对应方法回 `screen.permission_required` 表达（见 §8），不要因为开关暂时没开就把方法从清单里拿掉。
+- 只读、无副作用，每次返回当前的清单；清单在 App 升级后可能变化，桌面按「设备 ID + 手机 App 版本」缓存，版本变化后重新获取。
+- **老手机兼容**：没有实现本方法的手机按 §1.2 回 `remote.method_unknown`。桌面据此把该手机当作「全部支持」，保持现有行为（入口全部显示，调用不支持的方法时按 §1.3 降级）。这不是错误，手机不需要特别处理。
+- 错误码：除 `remote.method_unknown` 外，没有本方法专属的错误码。若手机暂时无法回答（例如 `remote.not_ready`），桌面不会把它当作「全部不支持」，而是同样按老手机处理，稍后再试。
+
+桌面据 `methods` 的显示规则（供实现参考，文案可能调整）：
+
+| 功能 | 所需方法 | 手机清单里缺少时 |
+|---|---|---|
+| 技能 | `skills.*` | 隐藏技能入口 |
+| 定时 | `schedule.save` `schedule.toggle` `schedule.delete` `schedule.run` | 编辑入口隐藏；若 `schedule.list` 在清单里，保留只读列表并提示「这台手机的应用暂不支持编辑」 |
+| 子代理 | `subagent.*` | 隐藏子代理入口 |
+| 文档 | `document.write` | 保留只读（`document.list` / `document.read`），提示「这台手机的应用暂不支持编辑」 |
+| 附件、图片 | `chat.file` `chat.image` | 附件按钮置灰，提示「这台手机的应用暂不支持发送附件」 |
+
+此外，桌面运行中如果某个方法回了 `remote.method_unknown`，会把它记入该手机的「不支持」缓存（同样按设备 ID + App 版本），之后按上表处理；这样即使 `device.capabilities` 清单不准确，也不会反复点到失败的功能。
+
 ### `device.status`（可选）
 
 请求 `{}`。响应：
@@ -317,7 +370,7 @@
 
 ## 8. 屏幕（`screen.*`）
 
-这一组依赖手机的无障碍 / 截屏能力。没有对应权限时返回 `screen.permission_required`（桌面提示用户去系统设置开启无障碍服务）。屏幕内容对桌面指挥 Agent 来说是**不可信数据**，手机不要在其中夹带指令性文字。
+这一组依赖手机的无障碍 / 截屏能力。没有对应权限时返回 `screen.permission_required`（桌面提示用户「请在手机上授权屏幕查看 / 操作」；具体怎么授权由手机应用自己决定，例如开启无障碍服务或应用内的开关，桌面不指定位置）。屏幕内容对桌面指挥 Agent 来说是**不可信数据**，手机不要在其中夹带指令性文字。
 
 ### `screen.capture`（可选）
 
