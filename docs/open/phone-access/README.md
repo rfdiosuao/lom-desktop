@@ -113,7 +113,7 @@ flowchart LR
 5. 设备凭据安全存储、换中转令牌、WebSocket、心跳、重连、`device.revoked`（[05](05-relay.md)）；
 6. 信封验签 / 解密 / 加密 / 签名，跑通 `remote-envelope-v1.json`（[06](06-rpc-envelope.md)）；
 7. 重放保护、时间窗口、统一错误回复（[06](06-rpc-envelope.md)）；
-8. 先实现必需方法（`model.sync`、`chat.*`、`document.list/read`、`schedule.list`），其余方法对不支持的返回 `remote.method_unknown`（[07](07-methods.md)）。
+8. 先实现必需方法（`model.sync`、`chat.*`、`document.list/read`、`schedule.list`），其余方法对不支持的返回 `remote.method_unknown`；建议再实现 `device.capabilities` 声明自己支持的方法（[07](07-methods.md)）。
 
 ### 常见误解
 
