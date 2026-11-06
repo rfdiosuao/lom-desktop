@@ -84,3 +84,17 @@ run_in_repo "$override_repo" 0 "skipping migration immutability check" \
     env AIONCORE_MIGRATION_BASE_REF=main AIONCORE_ALLOW_MAIN_MIGRATION_EDIT=1 bash "$script"
 
 echo "Migration immutability script tests passed"
+
+# The exported workspace lives below core/ in the community monorepo.
+monorepo="$(init_case_repo monorepo)"
+(
+    cd "$monorepo"
+    mkdir core
+    git mv crates core/
+    git commit -q -m "move core into monorepo"
+    git branch -f main HEAD
+    printf '%s\n' '-- forbidden nested edit' >> core/crates/aionui-db/migrations/001_initial_schema.sql
+)
+run_in_repo "$monorepo/core" 1 "Existing migration files from main must not be modified or deleted" \
+    env AIONCORE_MIGRATION_BASE_REF=main bash "$script"
+echo "Monorepo migration immutability test passed"

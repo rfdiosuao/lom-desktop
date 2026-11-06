@@ -1,0 +1,28 @@
+/* ===== TEAM-CHAT-01 群聊视图：消息沿用聊天界面样式，这里只排版容器、成员条和接收者条 ===== */
+.team-chat{flex:1;min-height:0;display:flex;flex-direction:column}
+.team-chat__head{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);overflow-x:auto;flex:none;scrollbar-width:thin}
+.team-chat__person{display:flex;align-items:center;gap:6px;flex:none;max-width:300px;padding:4px 10px 4px 4px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--surface);color:var(--text);font-size:var(--fs-sm);cursor:pointer}
+.team-chat__person:hover:not(:disabled){border-color:var(--brand)}
+.team-chat__person:disabled{opacity:.55;cursor:not-allowed}
+.team-chat__name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.team-chat__role{color:var(--muted);white-space:nowrap}
+.team-chat__scroll{flex:1;min-height:0;overflow:auto;padding:18px clamp(14px,3vw,36px) 12px;scrollbar-width:thin}
+.team-chat__inner{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.team-chat__inner>*{flex-shrink:0}
+.team-chat__note{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:var(--fs-sm)}
+.team-chat__direct>.team-chat__note{justify-content:flex-end}
+.team-chat__reply>.team-chat__note{padding-left:var(--msg-indent)}
+.team-chat__deliveries{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px;margin-top:4px;font-size:var(--fs-sm)}
+.team-chat__delivery{color:var(--muted)}
+.team-chat__delivery.is-failed,.team-chat__target.is-invalid{color:var(--danger)}
+.team-chat__empty{color:var(--muted);font-size:var(--fs-md);text-align:center;padding:40px 0}
+.team-chat__foot{flex:none;padding:8px clamp(14px,3vw,36px) 14px;max-width:892px;width:100%;margin:0 auto}
+.team-chat__targets{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
+.team-chat__target{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 2px;border-radius:var(--r-pill);background:var(--bg-subtle);font-size:var(--fs-sm)}
+/* 01C 成员状态：只用令牌色；运行中带加载动画，其余静止 */
+.team-chat__status{display:inline-flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
+.team-chat__status.is-typing,.team-chat__status.is-tool,.team-chat__status.is-running,.team-chat__status.is-completed{color:var(--brand)}
+.team-chat__status.is-waiting,.team-chat__status.is-unconfirmed,.team-chat__status.is-disconnected{color:var(--warn)}
+.team-chat__status.is-failed{color:var(--danger)}
+.team-chat__asking{display:flex;align-items:center;gap:6px;margin:0 0 6px var(--msg-indent);padding:6px 10px;border-radius:var(--r-sm);background:var(--warn-soft);color:var(--text);font-size:var(--fs-sm)}
+.team-chat__foot .member-wait{margin-bottom:6px}

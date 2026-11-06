@@ -14,6 +14,7 @@ import { agent, freqText, phone, scheduleDetail } from '@/state/selectors';
 import { update, useStore } from '@/state/store';
 import { ago } from '@/shared/lib/util';
 import { Page } from '@/shared/ui/Page';
+import { phoneFeature, unsupportedText } from '@/features/phones/runtime/phoneCapabilities';
 
 /* ===== 定时任务（电脑与手机共用一个页面实现） ===== */
 export function SchedulePage() {
@@ -25,12 +26,13 @@ export function SchedulePage() {
   if (!phoneScope && s.schedFilter !== 'all') list = list.filter(x => (s.schedFilter === 'pc' ? x.exec === 'pc' : x.exec !== 'pc'));
   if (s.q.sched) list = list.filter(x => (x.name + x.prompt).includes(s.q.sched));
   const exec = phoneScope ? p.id : 'pc';
+  const readOnly = phoneScope && p.real && !phoneFeature(p.id, 'scheduleEdit'); // 手机应用不支持编辑定时：只读（PHONE-CAPS-01）
   return (
     <Page>
       <PageHead title={phoneScope ? `${p.name} 的定时任务` : '定时任务'}
         desc={phoneScope ? (p.real ? '任务在手机本机执行，关闭电脑后仍保留；请允许手机后台运行。' : '示例手机任务不实际执行。') : '电脑任务与 Agent 创建的任务实时同步；请保持 Lom 运行。'}
-        actions={<Btn label="新建定时任务" ic="plus" variant="primary" onClick={() => editSched({ exec })} />}
-        extra={<div className="row" style={{ marginTop: 8 }}>{phoneScope && <SyncState phone={p} />}<DemoNote text={phoneScope && p.real ? (list.some(x => x.exact === false) ? "手机未授予精确闹钟权限，任务可能延迟；请在手机设置中开启" : `手机本机任务 · ${list[0]?.timezone || '手机本地时区'}`) : "示例手机仅用于演示，真实设备任务在设备上执行"} /></div>} />
+        actions={readOnly ? undefined : <Btn label="新建定时任务" ic="plus" variant="primary" onClick={() => editSched({ exec })} />}
+        extra={<div className="row" style={{ marginTop: 8 }}>{phoneScope && <SyncState phone={p} />}{readOnly && <Badge text={unsupportedText('scheduleEdit')} tone="warn" />}<DemoNote text={phoneScope && p.real ? (list.some(x => x.exact === false) ? "手机未授予精确闹钟权限，任务可能延迟；请在手机设置中开启" : `手机本机任务 · ${list[0]?.timezone || '手机本地时区'}`) : "示例手机仅用于演示，真实设备任务在设备上执行"} /></div>} />
       {s.cloudScheduleError && <p className="form-error" role="alert">{s.cloudScheduleError}<Btn label="重新同步" size="sm" onClick={() => void repairBuiltin()} /></p>}
       <div className="toolbar">
         {!phoneScope && <Seg options={[{ value: 'all', label: '全部' }, { value: 'pc', label: '电脑主控' }, { value: 'phone', label: '手机' }]} value={s.schedFilter} onChange={v => update(x => { x.schedFilter = v; })} />}
@@ -46,14 +48,14 @@ export function SchedulePage() {
                 <div className="sched-meta" style={{ justifyContent: 'flex-end' }} title={scheduleDetail(x) || undefined}><Icon name="repeat" />{freqText(x)}</div>
                 <div className="sched-meta" style={{ justifyContent: 'flex-end' }}><Icon name={x.runIn === 'same' ? 'message' : 'plus'} />{x.runIn === 'same' ? '原窗口继续' : '新开窗口'} · {x.last ? `上次 ${ago(x.last)}` : '未运行'}</div>
               </>}
-              actions={<>
+              actions={readOnly ? undefined : <>
                 <Toggle on={x.enabled} onChange={() => toggleSched(x.id)} label={`启用${x.name}`} size="sm" />
                 <IconBtn ic="play" label="立即运行" onClick={() => runSched(x.id)} />
                 <IconBtn ic="more" label="更多" onClick={e => openMenu('sched', e.currentTarget, { id: x.id, key: `sc${x.id}`, align: 'end' })} />
               </>} />
           ))}
         </div>
-      ) : <Empty ic="clock" title="还没有定时任务" desc="比如：每天 9 点整理选题，每 2 小时巡检评论区。" actions={<Btn label="新建定时任务" ic="plus" variant="primary" onClick={() => editSched({ exec })} />} />}
+      ) : <Empty ic="clock" title="还没有定时任务" desc="比如：每天 9 点整理选题，每 2 小时巡检评论区。" actions={readOnly ? undefined : <Btn label="新建定时任务" ic="plus" variant="primary" onClick={() => editSched({ exec })} />} />}
     </Page>
   );
 }

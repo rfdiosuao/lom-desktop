@@ -19,7 +19,7 @@ let parent: Conv;
 let serial = 0;
 beforeEach(() => {
   vi.useFakeTimers(); vi.resetAllMocks(); serial++;
-  parent = { id: `parent-admission-${serial}`, owner: 'pc', title: 'Parent', updated: 1, remote: true, messages: [] };
+  parent = { id: `parent-admission-${serial}`, owner: 'pc', title: 'Parent', updated: 1, remote: true, messages: [], workspace: '/work' };
   S.convs = [parent]; S.running = { [parent.id]: true }; S.teams = []; S.agentPins = ['codex']; S.agentPick = '';
   S.cloud = 'signed-in'; S.account = { id: 'admission-account', name: 'Test', email: '' };
   S.agentCatalog = [{ id: 'codex', name: 'Codex', backend: 'codex', agent_type: 'acp', agent_source: 'external', installed: true, enabled: true, status: 'online' }];

@@ -15,6 +15,7 @@ import { recoverLoadedTasks, retryDeferredRecovery } from '@/features/chat/runti
 import { quietError } from '@/shared/overlays/controller';
 import type { Endpoint } from '@/core/types';
 import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
+import { startTurnBaseline } from '@/features/workspace/runtime/turnBase';
 import { emitActivityReconnect } from '@/features/teams/activity/activityEvents';
 
 /* ===== 启动：找到 lom-core → 拉取模型服务与任务 → 订阅实时事件 ===== */
@@ -41,7 +42,7 @@ export async function startCore() {
     setEndpoint(ep);
     update(s => {
       s.homeDir = ep.homeDir;
-      if (!s.folder && ep.defaultFolder) s.folder = ep.defaultFolder;
+      // WS-REQUIRED-01：核心的默认目录只进候选列表，不再悄悄当作工作区；新任务必须由用户选择（或沿用上次选过的）
       if (ep.defaultFolder && !s.recentFolders.includes(ep.defaultFolder)) s.recentFolders.push(ep.defaultFolder);
     });
     await Promise.all([refreshProviders(), refreshTaskList()]);
@@ -54,6 +55,7 @@ export async function startCore() {
     startPhoneSync();
     startSupervision();
     startFeishuRelay();
+    startTurnBaseline();
   } catch (e) {
     const msg = e instanceof CoreError ? `${e.message}（${e.code}）` : e instanceof Error ? e.message : String(e);
     update(s => { s.conn = 'offline'; s.connError = msg; });

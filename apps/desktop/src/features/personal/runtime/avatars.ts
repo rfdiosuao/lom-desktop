@@ -9,6 +9,8 @@ export const avatarUrl = (id?: string) => `/mascots/deer-${id && isAvatar(id) ? 
 
 /** 自定义头像只保存处理后的 256px 小图，避免把原图写进本机存储和模型上下文。 */
 export const MAX_AVATAR_DATA_URL = 300_000;
+/** 新保存的头像上限：比读取上限更严，旧版本留下的 200～300KB 头像仍能读出，下次保存时自动压缩（PA-AVATAR-02） */
+export const AVATAR_SAVE_BUDGET = 200_000;
 const CUSTOM_AVATAR_PREFIX = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 export type AvatarLike = { avatar?: string; avatarImage?: string };
 export const isAvatarImage = (value: unknown): value is string =>

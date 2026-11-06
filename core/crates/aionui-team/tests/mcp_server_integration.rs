@@ -1501,3 +1501,26 @@ async fn tsr3_send_message_without_sentinel_rejects_without_live_team_run_servic
 
     env.server.stop();
 }
+
+#[tokio::test]
+async fn content_read_rejects_conflicting_and_orphan_offsets() {
+    let env = setup().await;
+    let mut stream = connect_and_init(env.server.port(), "test-token-123", "worker-1").await;
+    for (id, args, expected) in [
+        (
+            2,
+            json!({"message_id":"m", "since_message_id":"s"}),
+            "Invalid params: message_id and since_message_id are mutually exclusive",
+        ),
+        (
+            3,
+            json!({"content_offset": 0}),
+            "Invalid params: content_offset requires message_id",
+        ),
+    ] {
+        let response = call_tool(&mut stream, id, "team_read_messages", args).await;
+        assert!(is_error_response(&response));
+        assert_eq!(extract_text(&response), expected);
+    }
+    env.server.stop();
+}

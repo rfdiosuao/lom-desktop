@@ -21,10 +21,11 @@ import { applyTeamMode, restartCoreSession } from '@/features/teams/runtime/core
 import { S, update, watchStore } from '@/state/store';
 import type { Attachment, Conv, DraftAttachment, Msg } from '@/state/types';
 import { uid } from '@/shared/lib/util';
-import { api, getEndpoint } from '@/core/client';
+import { api } from '@/core/client';
+import { folderOrNotify } from '@/features/workspace/runtime/required';
 import { hasUnconfirmedSend, isCompletedTurn, isTaskStopping, sendBlocker, trackPendingSend } from './cancel';
 import { sendReceipt } from './sendReceipt';
-import { channelEnvelope, isChannel, type ChannelSource } from './channelSource';
+import { messageEnvelope, type ChannelSource } from './channelSource';
 export { stopTask } from './cancel';
 import { convFromCore, loadHistory } from './history';
 import { approvePermission, confirmationRemoved, onPermission } from './permissions';
@@ -34,18 +35,17 @@ import { ensureTaskModel, recordTaskModel, modelChanges } from './taskModel';
 import { ensureLomSelection } from '@/features/account/runtime/cloud';
 import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
 import { sideChatContext } from './sideChat';
+import { turtleRetryRequest } from './turtlePrompt';
 
 /* ===== 电脑任务（lom-core 里的内置 Agent 会话）的操作 ===== */
 
 const userMsg = (text: string, attachments: Attachment[]): Msg => ({ id: uid('m'), type: 'user', at: Date.now(), text, attachments });
 
-/** 附件：本机文件以绝对路径交给 Agent（它用自己的读文件工具读取） */
 /** 附件：本机文件给绝对路径（local）；粘贴、拖入的内容已上传到核心托管目录（upload） */
 const filesOf = (atts: DraftAttachment[]) => {
   const files = expandContextFiles(atts).filter(a => a.path).map(a => ({ kind: a.kind || 'local', path: a.path }));
   return [...new Map(files.map(file => [file.path, file])).values()];
 };
-
 
 function markSent(c: Conv, message: Msg | undefined, hasOtherSends: () => boolean, turnId?: string) {
   update(s => {
@@ -105,7 +105,7 @@ async function send(c: Conv, text: string, atts: DraftAttachment[], message?: Ms
       const side = sideChatContext(c);
       if (parentCurrent && !parentCurrent()) throw new Error('总指挥已停止，未向成员发送任务');
       receipt.dispatched(); onDispatched?.();
-      const sent = await api<{ turn_id?: string }>('POST', `/api/conversations/${c.id}/messages`, { content: `${publicationPolicy(c)}\n\n${roster}${goalContext(`conv:${c.id}`)}${side?.text ?? ''}${history}${personalIdentityContext(c)}${memory?.text ?? ''}${isChannel(message?.source) ? channelEnvelope(message.source) : ''}${text}`, files: filesOf([...atts, ...(ownHistory ? ownHistoryFiles(c) : [])]) });
+      const sent = await api<{ turn_id?: string }>('POST', `/api/conversations/${c.id}/messages`, { content: `${publicationPolicy(c)}\n\n${roster}${goalContext(`conv:${c.id}`)}${side?.text ?? ''}${history}${personalIdentityContext(c)}${memory?.text ?? ''}${messageEnvelope(message)}${text}`, files: filesOf([...atts, ...(ownHistory ? ownHistoryFiles(c) : [])]) });
       checkAccount();
       side?.commit();
       if (team) rosterDelivered(team, roster);
@@ -165,7 +165,7 @@ export async function startDesktopTask(text: string, atts: DraftAttachment[], op
     openModal('addKey');
     return null;
   }
-  const folder = options.folder || S.folder || getEndpoint()?.defaultFolder || '';
+  const folder = folderOrNotify(options); if (!folder) return null;
   const title = options.title || text.replace(/\s+/g, ' ').slice(0, 18) || '新的任务';
   let created: CoreConversation;
   const signedIn = S.cloud === 'signed-in';
@@ -197,7 +197,7 @@ export async function startDesktopTask(text: string, atts: DraftAttachment[], op
 /** 用外部 Agent 新建任务：会话类型为 ACP，由核心启动这个 CLI；勾选手机的新会话使用独立手机工具授权 */
 async function startAgentTask(a: AgentRow, text: string, atts: DraftAttachment[], options: TaskOptions = {}): Promise<string | null> {
   if (!usable(a)) { toast(`${a.name} 现在不可用，请到「设置 → Agents」测试连接`, 'info'); return null; }
-  const folder = options.folder || S.folder || getEndpoint()?.defaultFolder || '';
+  const folder = folderOrNotify(options); if (!folder) return null;
   const title = options.title || text.replace(/\s+/g, ' ').slice(0, 18) || '新的任务';
   const phones = [...(options.phones || attached('home'))].filter(id => S.agents[id]?.real);
   let created: CoreConversation;
@@ -249,12 +249,12 @@ export function sendToTask(c: Conv, text: string, atts: DraftAttachment[], paren
 }
 
 /** FEISHU-02 / PA04：飞书、微信发来的消息或个人助理派的活送进会话；发送成功返回这条用户消息（用来跟踪回复），否则返回 null */
-export async function sendFromChannel(c: Conv, text: string, source: ChannelSource, parentCurrent?: () => boolean, onDispatched?: () => void) {
+export async function sendFromChannel(c: Conv, text: string, source: ChannelSource | 'team_chat', parentCurrent?: () => boolean, onDispatched?: () => void, extra?: Pick<Msg, 'teamChat' | 'dispatchOf'>) {
   const auth = source === 'personal' ? () => true : authAccount();
   const valid = () => auth() && S.convs.includes(c) && (!parentCurrent || parentCurrent());
   // Recheck in this stack after every wake: two channels may wake together.
   // send() claims running synchronously, before its first asynchronous preflight.
-  while (source !== 'personal' && valid() && S.running[c.id] && !sendBlocker(c.id)) {
+  while (source !== 'personal' && source !== 'phone_receipt' && source !== 'dispatch_done' && valid() && S.running[c.id] && !sendBlocker(c.id)) {
     await new Promise<void>(resolve => {
       let stop = () => {}, stopAuth = () => {};
       const check = () => {
@@ -265,7 +265,7 @@ export async function sendFromChannel(c: Conv, text: string, source: ChannelSour
   }
   if (!valid()) return null;
   if (sendBlocker(c.id) || (parentCurrent && !parentCurrent())) return null;
-  const message: Msg = { ...userMsg(text, []), source };
+  const message: Msg = { ...userMsg(text, []), source, ...extra };
   update(() => { c.messages.push(message); });
   return await send(c, text, [], message, parentCurrent, onDispatched) ? message : null;
 }
@@ -276,7 +276,9 @@ export function retryTaskMessage(c: Conv, message: Msg) {
   if (S.running[c.id] || modelChanges.has(c.id)) throw new Error('请等待当前任务结束后再重试');
   const attachments = message.attachments || [];
   if (attachments.some(a => !a.path)) throw new Error('原附件无法直接重新发送，请重新添加附件');
-  return send(c, message.text || '', attachments, message);
+  const text = turtleRetryRequest(message.text || '');
+  if (text !== message.text) update(() => { message.text = text; });
+  return send(c, text, attachments, message);
 }
 
 /** 历史记录把还没确认的写文件也记成了完成：撤回它在「修改了文件」卡片里的那一项 */

@@ -97,3 +97,48 @@ it('ST08 after the account switched the install dialog shows no charge toast and
   expect(document.querySelector('[role="alert"]')?.textContent).toContain('账号已切换');
   expect(S.points?.total).toBe(200);
 });
+
+const detail = { id: 'sk1', name: '写作', summary: '写文章', category: '写作', version: 1, downloads: 0, price: 5, owned: false, readme: '', files: [] };
+const clickInstall = async () => {
+  const install = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '安装技能')!;
+  await act(async () => install.click());
+};
+
+it('SKILL-PURCHASE-02 a purchase sends an idempotency key', async () => {
+  m.cloud.mockResolvedValueOnce({ owned: true, charged: 5, points: points(45) });
+  await purchaseSkill('sk1', 'buy-key-0001');
+  expect(m.cloud).toHaveBeenCalledWith('POST', '/v1/skills/sk1/purchase', { purchase_id: 'buy-key-0001' });
+});
+
+it('SKILL-PURCHASE-02 #451 charged but not installed says so and reinstalls without paying again', async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  m.detail.mockResolvedValue(detail);
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  await act(async () => root.render(<MarketDetailModal p={{ id: 'sk1' }} />));
+  m.cloud.mockResolvedValueOnce({ owned: true, charged: 5, points: points(45) });
+  m.install.mockRejectedValueOnce(new Error('skill.install_unconfirmed：本机未确认安装「写作」，请刷新已安装列表后重试'));
+  await clickInstall();
+  const alert = document.querySelector('[role="alert"]')?.textContent ?? '';
+  expect(alert).toContain('已扣 5 积分');
+  expect(alert).toContain('技能已归你所有');
+  expect(alert).toContain('不会再扣积分');
+  expect(alert).not.toContain('skill.');
+
+  m.install.mockResolvedValueOnce('已安装到当前电脑：写作');
+  await clickInstall();
+  expect(m.cloud).toHaveBeenCalledTimes(1);
+  expect(m.install).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[role="status"]')?.textContent).toContain('已安装');
+});
+
+it('SKILL-PURCHASE-02 #451 a failed purchase shows a plain reason, not an error code', async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  m.detail.mockResolvedValue(detail);
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  await act(async () => root.render(<MarketDetailModal p={{ id: 'sk1' }} />));
+  m.cloud.mockRejectedValueOnce(new Error('points.insufficient'));
+  await clickInstall();
+  const alert = document.querySelector('[role="alert"]')?.textContent ?? '';
+  expect(alert).toBe('积分不足，请充值后再试');
+  expect(m.install).not.toHaveBeenCalled();
+});

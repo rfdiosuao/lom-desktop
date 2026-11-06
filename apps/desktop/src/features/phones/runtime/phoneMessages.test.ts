@@ -41,3 +41,12 @@ it('D08 手机历史恢复保留图片正文与附件定位，纯图片回复也
   expect(history[0].attachments?.[0].phoneFile).toEqual({ device: 'dev_a', session: 'session', message: 'image', index: 0 });
   expect(phoneMessages({ id: 'image', role: 'assistant', text: '', at: 1, attachments: ['result.png'] }, 'dev_a', 2, 'session')[0].type).toBe('assistant');
 });
+
+it('hides blank and internal continuation rows while keeping attachment-only user messages', () => {
+  const user = { id: 'u', role: 'user', text: '  ', at: 1 };
+  expect(phoneMessages(user, 'dev_a', 2, 'session')).toEqual([]);
+  const continuation = { ...user, text: '[LOM_GOAL_CONTINUE]\n继续推进\n[/LOM_GOAL_CONTINUE]' };
+  expect(phoneMessages(continuation, 'dev_a', 2, 'session')).toEqual([]);
+  expect(phoneMessages({ ...user, attachments: ['photo.png'] }, 'dev_a', 2, 'session')[0]?.attachments?.[0])
+    .toMatchObject({ name: 'photo.png', phoneFile: { device: 'dev_a', session: 'session', message: 'u', index: 0 } });
+});

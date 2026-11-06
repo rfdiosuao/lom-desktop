@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { closeModal, openModal } from '@/shared/overlays/controller';
+import { t } from '@/shared/i18n/index';
 import { feedback } from '@/features/settings/actions/settings';
 import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Controls';
@@ -79,7 +80,7 @@ export function NoticeSection() {
   const s = useStore();
   return (
     <Section title="公告" extra={<Btn label="意见反馈" ic="message" variant="ghost" size="sm" onClick={feedback} />}>
-      <div className="list">{s.notices.length ? s.notices.map(n => <Row key={n.id} n={n} />) : <div className="list-row muted">现在没有公告</div>}</div>
+      <div className="list">{s.notices.length ? s.notices.map(n => <Row key={n.id} n={n} />) : <div className="list-row muted">{t('现在没有公告')}</div>}</div>
     </Section>
   );
 }

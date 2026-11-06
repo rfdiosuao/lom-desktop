@@ -1,5 +1,6 @@
 import { resendToConversation } from '../runtime/conversationSend';
 import { sendPhone, stopPhone } from '@/features/phones/runtime/phoneChat';
+import { phoneSendBlock } from '@/features/phones/runtime/phoneCapabilities';
 import { loadCommandSkills } from '../runtime/commandSkills';
 import { hasUploading } from './attachments';
 import { takeDraft } from './drafts';
@@ -10,6 +11,7 @@ import { pickFiles, pickFolder } from '@/core/platform';
 import { api } from '@/core/client';
 import { applyModeToTask, applyModelToTask, approveTask, sendToTask, startDesktopTask, stopTask } from '../runtime/tasks';
 import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
+import { ensureWorkspace, mustPickWorkspace } from '@/features/workspace/runtime/required';
 import { sim } from '@/demo/simulator';
 import { agent, attached, conv, normalizeConvId, model, perm, team } from '@/state/selectors';
 import { S, update } from '@/state/store';
@@ -19,6 +21,7 @@ import { go, navigate } from '@/app/navigation';
 import { closeMenu, openMenu, toast, toastError } from '@/shared/overlays/controller';
 import { conversationOf, convOfKey, sendToTeam } from '@/features/teams/runtime/team';
 import { editSched } from '@/features/schedules/actions/schedule';
+import { sendTeamChatDraft } from '@/features/teams/actions/teamChat';
 import { unavailable } from '@/shared/lib/unavailable';
 import { authRevision } from '@/features/account/runtime/authScope';
 
@@ -56,6 +59,7 @@ export async function send(key: string) {
   if (S.turtles[key] && !S.turtles[key].active) text = `海龟汤提问模式已结束，请按普通助手方式处理以下新消息：\n${text}`;
 
   const clearDraft = () => takeDraft(key);
+  if (key.startsWith('teamchat:')) return sendTeamChatDraft(key, text, atts, clearDraft);
   if (key.startsWith('team:')) {
     const [, tid, mid] = key.split(':');
     const t = team(tid), m = t?.members.find(x => x.mid === mid);
@@ -66,13 +70,19 @@ export async function send(key: string) {
     return;
   }
   /* 电脑任务：真实的 lom-core 会话 */
+  // WS-REQUIRED-01：新任务没有工作区就不发送，直接弹出系统文件夹选择框；草稿原样保留
+  if (mustPickWorkspace(key) && !await ensureWorkspace(key, browseFolder)) return;
   const desktopHome = key === 'home' && S.mode === 'desktop';
   const existing = convOfKey(key);
   if (key.startsWith('personal:') && !existing?.remote) { toast('助理会话未就绪，请重新打开面板', 'info'); return; }
   if (desktopHome || existing?.remote) return sendDesktopDraft(key, text, atts, existing);
   /* 手机会话：在手机本体执行，电脑显示回执和增量内容 */
   const target = key === 'home' ? S.phoneId : existing?.owner;
-  if (target && agent(target)?.real) return sendPhoneDraft(key, target, text, atts, existing);
+  if (target && agent(target)?.real) {
+    const block = phoneSendBlock(target, text, atts);
+    if (block) { toast(block, 'info'); return; } // 草稿原样保留
+    return sendPhoneDraft(key, target, text, atts, existing);
+  }
   clearDraft();
   const user = mk('user', { text, attachments: atts.map(a => ({ name: a.name, ic: a.ic as Attachment['ic'], preview: a.preview })) });
   let c: Conv;

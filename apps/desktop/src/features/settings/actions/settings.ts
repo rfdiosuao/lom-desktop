@@ -120,7 +120,7 @@ export const deleteKey = (id: string) => confirm({
 });
 
 export const exportData = () => unavailable('完整数据导出');
-export const clearCache = () => confirm({ title: '清除预览缓存？', desc: '只清除预览快照，不影响任务和设置。', okText: '清除', onOk: () => { update(s => { s.previewHtml = ''; }); toast('缓存已清除', 'trash'); } });
+export const clearCache = () => confirm({ title: '清除预览缓存？', desc: '只清除预览快照，不影响任务和设置。', okText: '清除', onOk: () => { update(s => { s.previewHtml = ''; }); toast('预览缓存已清除', 'trash'); } });
 /** 只恢复示例团队：真实团队、偏好、目标、文件夹和模型选择等本机设置都保留（示例手机和定时任务本来就不保存） */
 export function restoreDemoTeams<T extends Record<string, unknown>>(saved: T): T & { teams: Team[] } {
   const real = Array.isArray(saved.teams) ? (saved.teams as Team[]).filter(t => t.real) : [];

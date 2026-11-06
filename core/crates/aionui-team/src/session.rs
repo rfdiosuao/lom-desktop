@@ -2006,6 +2006,17 @@ impl TeamSession {
         &self.mailbox
     }
 
+    pub(crate) async fn read_agent_content_message(
+        &self,
+        slot_id: &str,
+        message_id: &str,
+    ) -> Result<Option<MailboxMessage>, TeamError> {
+        self.scheduler.get_agent(slot_id).await?;
+        self.mailbox
+            .read_content_message(&self.team.id, slot_id, message_id)
+            .await
+    }
+
     pub(crate) async fn peek_agent_messages(&self, slot_id: &str) -> Result<AgentInboxPeek, TeamError> {
         self.scheduler.get_agent(slot_id).await?;
         // Capture the owning batch before reading so the caller can prove a later
@@ -2144,6 +2155,30 @@ pub(crate) async fn attach_member_runtime(
         lease,
         notify_leader_on_failure,
         true,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn attach_member_runtime_with_mode(
+    service: Arc<TeamSessionService>,
+    session: Arc<TeamSession>,
+    user_id: String,
+    agent: TeamAgent,
+    task_manager: Arc<dyn IWorkerTaskManager>,
+    lease: AttachLease,
+    mode: String,
+) -> AttachOutcome {
+    attach_member_runtime_inner(
+        service,
+        session,
+        user_id,
+        agent,
+        task_manager,
+        lease,
+        false,
+        true,
+        Some(mode),
     )
     .await
 }
@@ -2169,6 +2204,7 @@ pub(crate) async fn attach_member_runtime_after_kill(
         lease,
         notify_leader_on_failure,
         false,
+        None,
     )
     .await
 }
@@ -2183,6 +2219,7 @@ async fn attach_member_runtime_inner(
     lease: AttachLease,
     notify_leader_on_failure: bool,
     kill_existing: bool,
+    required_mode: Option<String>,
 ) -> AttachOutcome {
     let started_at = Instant::now();
     let operation_id = lease.operation_id();
@@ -2209,15 +2246,29 @@ async fn attach_member_runtime_inner(
         "team member runtime attach started"
     );
 
-    let attach_result = TeamSession::attach_spawned_agent_process(
-        &service,
-        &agent,
-        session.mcp_stdio_config(&agent.slot_id),
-        &user_id,
-        &task_manager,
-        kill_existing,
-    )
-    .await;
+    let attach_result = if let Some(mode) = required_mode.as_deref() {
+        service
+            .provisioner()
+            .attach_agent_process_with_mode(
+                &user_id,
+                &agent,
+                session.mcp_stdio_config(&agent.slot_id),
+                &task_manager,
+                kill_existing,
+                Some(mode),
+            )
+            .await
+    } else {
+        TeamSession::attach_spawned_agent_process(
+            &service,
+            &agent,
+            session.mcp_stdio_config(&agent.slot_id),
+            &user_id,
+            &task_manager,
+            kill_existing,
+        )
+        .await
+    };
     let mcp_fingerprint = attach_result.as_ref().ok().and_then(|value| value.clone());
     if let Err(error) = attach_result {
         service

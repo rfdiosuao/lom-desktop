@@ -7,7 +7,7 @@ import { Shell } from './Shell';
 import { resetLayout } from './layout';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const openFolder = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock('@/features/workspace/runtime/workspace', async original => ({ ...await original<typeof import('@/features/workspace/runtime/workspace')>(), openInSystem: openFolder }));
+vi.mock('@/features/workspace/runtime/workspace', async original => ({ ...await original<typeof import('@/features/workspace/runtime/workspace')>(), openFolderInSystem: openFolder }));
 let host: HTMLDivElement, root: Root;
 beforeEach(async()=>{
   Object.assign(S,initialState()); S.route={name:'home'}; S.mode='desktop';
@@ -46,4 +46,32 @@ it('UI-HEADER-01 folder shortcut uses the active workspace and is disabled witho
   expect(folder().disabled).toBe(false);
   await act(async()=>folder().click());
   expect(openFolder).toHaveBeenCalledWith('/test/workspace');
+});
+
+it('WS-ENTRY-01 #406 the folder menu offers two different ways: open the folder or copy its path',async()=>{
+  await act(async()=>update(s=>{s.folder='/test/workspace';}));
+  openFolder.mockClear();
+  const writeText=vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator,'clipboard',{value:{writeText},configurable:true});
+  const chevron=host.querySelector<HTMLButtonElement>('[aria-label="更多打开方式"]')!;
+  expect(chevron.disabled).toBe(false);
+  await act(async()=>chevron.click());
+  expect(S.menu?.id).toBe('workspaceFolder');
+  const { MENUS } = await import('@/app/overlays/menu-registry');
+  const items = MENUS.workspaceFolder({}) as { label: string; checked?: boolean; onSelect: () => void }[];
+  expect(items.map(i=>i.label)).toEqual([expect.stringMatching(/打开/),'复制路径']);
+  expect(items.some(i=>i.checked)).toBe(false);
+  await act(async()=>items[0].onSelect());
+  expect(openFolder).toHaveBeenCalledWith('/test/workspace');
+  await act(async()=>items[1].onSelect());
+  expect(writeText).toHaveBeenCalledWith('/test/workspace');
+});
+
+it('WS-ENTRY-01 #406 the top bar names the folder it will open',async()=>{
+  await act(async()=>update(s=>{s.folder='/test/my-project';}));
+  expect(host.querySelector('.folder-split')?.textContent).toContain('my-project');
+});
+
+it('WIN-TITLEBAR-01 the folder chevron is disabled without a workspace folder',()=>{
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="更多打开方式"]')!.disabled).toBe(true);
 });

@@ -51,15 +51,23 @@ fn is_deterministic() {
 #[test]
 fn casing_folds_per_platform() {
     let mixed = canonicalize("file:///Users/developer/Aion").unwrap();
-    let lower = canonicalize("file:///users/me/aion").unwrap();
+    let lower = canonicalize("file:///users/developer/aion").unwrap();
     if IGNORE_PATH_CASING {
         // macOS / Windows: same folder.
         assert_eq!(mixed, lower);
-        assert_eq!(mixed.as_str(), "file:///users/me/aion");
+        assert_eq!(mixed.as_str(), "file:///users/developer/aion");
     } else {
         // Linux: two distinct folders.
         assert_ne!(mixed, lower);
     }
+}
+
+#[test]
+fn different_user_folders_remain_distinct_after_case_folding() {
+    assert_ne!(
+        canonicalize("file:///Users/developer/Aion").unwrap(),
+        canonicalize("file:///users/other/aion").unwrap()
+    );
 }
 
 #[test]

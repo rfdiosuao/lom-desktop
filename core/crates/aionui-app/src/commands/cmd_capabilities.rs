@@ -168,6 +168,10 @@ fn data() -> Value {
                 "description": "Internal per-conversation Lom search MCP stdio bridge; forwards lom_search/lom_fetch to the local runtime route."
             },
             {
+                "name": "mcp-oauth-stdio",
+                "description": "Internal stdio bridge for an authorized remote MCP connection."
+            },
+            {
                 "name": "mcp-team-stdio",
                 "description": "Internal team MCP stdio server."
             },

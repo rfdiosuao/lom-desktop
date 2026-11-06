@@ -13,7 +13,7 @@ import { regenerate, send } from './composer';
 const file: DraftAttachment = { name: 'only-copy.md', path: '/selected/only-copy.md', kind: 'local' };
 const task = (): Conv => ({ id: 'draft-task', owner: 'pc', title: 'Task', updated: 1, remote: true, messages: [] });
 beforeEach(() => {
-  vi.clearAllMocks(); S.mode = 'desktop'; S.convs = [task()]; S.running = {}; S.toast = null;
+  vi.clearAllMocks(); S.mode = 'desktop'; S.folder = '/work'; S.convs = [task()]; S.running = {}; S.toast = null;
   S.drafts = { 'conv:draft-task': '  original draft  ' }; S.attachments = { 'conv:draft-task': [file] };
 });
 

@@ -113,6 +113,7 @@ fn make_acp_options(conversation_id: &str, agent_type: AgentType, config: AcpBui
             session_snapshot: None,
         })),
         _ => AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+            required_mode_on_resume: None,
             config,
             team: None,
             belongs_to_team: false,

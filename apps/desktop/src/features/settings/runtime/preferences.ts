@@ -1,7 +1,8 @@
 import { personalFullAccess } from '@/features/personal/runtime/permissions';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { S, update } from '@/state/store';
-import { effectiveMode, installAffected, installBlockers, permissionPlan } from './permissionPlan';
+import { installBlockers, permissionPlan } from './permissionPlan';
+import { applied, applyInstallPolicy, resetApprovals } from './installPolicy';
 import { api } from '@/core/client';
 import { nativeFullAccess } from '@/state/selectors';
 import type { Conv } from '@/state/types';
@@ -13,12 +14,6 @@ export async function syncStartupPreference() {
   update(s => { s.prefs.launchAtLogin = value; });
 }
 const pending = new Set<string>();
-const applied = new Map<string, string>();
-async function resetApprovals(id: string) {
-  const info = await api<{ runtime?: { has_task?: boolean; is_processing?: boolean } }>('GET', `/api/conversations/${id}`);
-  if (info.runtime?.is_processing) throw new Error('任务正在执行，未更改权限');
-  await api('POST', `/api/conversations/${id}/runtime/${info.runtime?.has_task ? 'restart' : 'ensure'}`, {});
-}
 /** `restarted`：调用方刚在本次发送里重启过这个运行时（PA-LATENCY-01），旧的「总是允许」已经清掉，不再重启第二次 */
 export async function ensureTaskPermissions(c: Conv, restarted = false) {
   const plan = permissionPlan(c);
@@ -50,14 +45,8 @@ export async function savePreference(name: string, value: string | number | bool
       if (!['ask', 'allow', 'deny'].includes(String(value))) throw new Error('无效权限');
       // REFACTOR-01 模块 4：只有受这项设置影响的任务在运行时才拒绝；手机、外部 Agent、个人助理、侧边聊天不受影响
       if (installBlockers().length) throw new Error('请先停止正在执行的任务，再调整命令权限');
-      // Saved only after existing desktop runtimes acknowledge the policy. Every send reapplies it too.
-      for (const t of S.teams) if (t.core) await api('POST', `/api/teams/${t.core.id}/session-mode`, { mode: effectiveMode(S.permission, String(value)) });
-      for (const c of installAffected(String(value))) {
-        const plan = permissionPlan(c, String(value))!;
-        await resetApprovals(c.id);
-        await api('PUT', `/api/conversations/${c.id}/config-options/mode`, { value: plan.mode });
-        applied.set(c.id, plan.policy);
-      }
+      // 全部会话确认后才保存设置；任一失败则恢复已改的会话（SET-PERM-01 #425）。每次发送也会重新应用。
+      await applyInstallPolicy(String(value));
     }
     update(s => { s.prefs[name] = value; });
     if (name === 'lang') document.documentElement.lang = value === 'English' ? 'en' : value === '繁體中文' ? 'zh-Hant' : 'zh-Hans';
@@ -75,7 +64,7 @@ export function publicationPolicy(c?: Conv) {
 }
 
 export function stripSettingsContext(text: string) {
-  /* 顺序必须和发送时拼接的顺序一致（tasks.ts send）：设置 → 团队名单 → 目标 → 侧边聊天 → 历史前缀 → 个人助理身份 → 记忆 → 渠道来源 → 正文，
+  /* 顺序必须和发送时拼接的顺序一致（tasks.ts send）：设置 → 团队名单 → 目标 → 侧边聊天 → 历史前缀 → 个人助理身份 → 记忆 → 渠道来源 → 群聊信封 → 正文，
    * 正文可能就是目标自动推进块，所以历史前缀要在它之前剥掉，否则隐藏的推进消息会漏成用户消息。 */
   return text.replace(/^\[LOM_SETTINGS_V1\]\n【Lom 用户设置】[^\n]*\n\[\/LOM_SETTINGS_V1\]\n\n/, '')
     .replace(/^\[LOM_TEAM_V1\]\n[\s\S]*?\n\[\/LOM_TEAM_V1\]\n\n/, '') // OPC 团队名单（core/team.ts rosterContext）
@@ -85,5 +74,6 @@ export function stripSettingsContext(text: string) {
     .replace(/^\[LOM_PERSONAL_IDENTITY_V1\]\n[\s\S]*?\n\[\/LOM_PERSONAL_IDENTITY_V1\]\n\n/, '') // Personal 产品身份与工具查找规则
     .replace(/^\[LOM_PERSONAL_MEMORY_V1\]\n[\s\S]*?\n\[\/LOM_PERSONAL_MEMORY_V1\]\n\n/, '') // PA03 版本化记忆，文档正文按 JSON 转义
     .replace(/^\[LOM_CHANNEL_V1\]\n[\s\S]*?\n\[\/LOM_CHANNEL_V1\]\n\n/, '') // FEISHU-02 飞书 / 微信来源（chat/runtime/channelSource.ts）
+    .replace(/^\[LOM_TEAM_CHAT_V1\]\n[\s\S]*?\n\[\/LOM_TEAM_CHAT_V1\]\n\n/, '') // TEAM-CHAT-01 群聊信封（teams/chat/envelope.ts）
     .replace(/^\[LOM_GOAL_CONTINUE\][\s\S]*?\[\/LOM_GOAL_CONTINUE\]\s*$/, ''); // 目标自动推进（core/tasks.ts GOAL_CONTINUE）
 }

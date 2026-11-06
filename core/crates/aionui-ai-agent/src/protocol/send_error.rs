@@ -656,6 +656,22 @@ fn classify_agent_lifecycle(lower: &str) -> Option<ClassifiedError> {
 }
 
 fn classify_provider_text(lower: &str) -> Option<ClassifiedError> {
+    // Request-body limits can reject image payloads before token limits apply.
+    static HTTP_413: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?x)\b(?:(?:http(?:/\d(?:\.\d)?)?(?:\s+(?:error|status)(?:\s+code)?)?|api(?:\s+error)?|status(?:\s+code)?)\s*[:=]?\s*413\b|413\s+(?:payload|content|request\s+entity)\s+too\s+large\b)",
+        )
+        .expect("valid HTTP 413 classification regex")
+    });
+    if HTTP_413.is_match(lower) {
+        return Some(provider_error(
+            "The request is too large for the model provider",
+            AgentErrorCode::UserLlmProviderContextTooLarge,
+            false,
+            AgentErrorResolutionKind::ReduceContext,
+            None,
+        ));
+    }
     if contains_sso_expired_auth_signature(lower) {
         return Some(provider_error(
             "The model provider rejected the request",
@@ -832,7 +848,10 @@ fn classify_provider_text(lower: &str) -> Option<ClassifiedError> {
             Some(AgentErrorResolutionTarget::ProviderSettings),
         ));
     }
-    if contains_any(lower, &["429", "rate limit", "rate_limit", "quota"]) {
+    if contains_any(
+        lower,
+        &["429", "rate limit", "rate_limit", "quota", "频率限制", "使用量已超出"],
+    ) {
         return Some(provider_error(
             "The model provider rate limited the request",
             AgentErrorCode::UserLlmProviderRateLimited,
@@ -1837,6 +1856,16 @@ mod tests {
     }
 
     #[test]
+    fn team_orch_01_372_localized_429_quota_text_is_rate_limited() {
+        assert_classification(
+            "429 您的使用量已超出频率限制，将在 2026-11-05 17:01:12 UTC+8 重置，您也可以切换其他模型继续使用。",
+            AgentErrorCode::UserLlmProviderRateLimited,
+            AgentErrorOwnership::UserLlmProvider,
+            AgentErrorResolutionKind::Retry,
+        );
+    }
+
+    #[test]
     fn classifies_provider_auth_credentials_before_config() {
         assert_classification(
             "API error 401: Invalid authentication credentials",
@@ -1859,6 +1888,37 @@ mod tests {
                 AgentErrorOwnership::UserLlmProvider,
                 AgentErrorResolutionKind::CheckProviderCredentials,
             );
+        }
+    }
+
+    #[test]
+    fn http_413_requires_context_reduction_without_retry() {
+        for detail in [
+            "Aionrs agent error: Provider error: API error 413: Request Entity Too Large",
+            "HTTP 413: Payload Too Large",
+            "413 Content Too Large",
+            "HTTP/1.1 413 Request Entity Too Large",
+            "status code: 413",
+            "status=413",
+            "API error: 413",
+        ] {
+            let error = classify_upstream_detail(detail);
+            assert_eq!(error.code(), Some(AgentErrorCode::UserLlmProviderContextTooLarge));
+            assert_eq!(error.ownership(), Some(AgentErrorOwnership::UserLlmProvider));
+            assert_eq!(error.stream_error().retryable, Some(false));
+            assert_eq!(
+                error.stream_error().resolution.as_ref().map(|r| r.kind),
+                Some(AgentErrorResolutionKind::ReduceContext)
+            );
+        }
+    }
+
+    #[test]
+    fn incidental_413_duration_is_not_an_oversized_request() {
+        for detail in ["provider timed out after 413 ms", "provider timeout after 413 ms"] {
+            let error = classify_upstream_detail(detail);
+            assert_ne!(error.code(), Some(AgentErrorCode::UserLlmProviderContextTooLarge));
+            assert_eq!(error.stream_error().retryable, Some(true));
         }
     }
 

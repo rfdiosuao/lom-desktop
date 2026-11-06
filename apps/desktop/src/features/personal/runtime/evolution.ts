@@ -7,6 +7,7 @@ import { S, update } from '@/state/store';
 import type { Conv } from '@/state/types';
 import { uid } from '@/shared/lib/util';
 import { loadAssistants } from './catalog';
+import { isHumanSource } from './humanSource';
 const seen = new Set<string>();
 const queues = new Map<string, Promise<void>>();
 onAuthChange(() => { seen.clear(); queues.clear(); });
@@ -22,8 +23,8 @@ export function evolvePersonalTurn(c: Conv, turn: string): Promise<void> {
   const userIndex = c.messages.findLastIndex(m => m.type === 'user');
   const user = c.messages[userIndex];
   const reply = c.messages.slice(userIndex + 1).filter(m => m.type === 'assistant').map(m => m.text || '').join('\n');
-  // 定时任务的提示词不是用户说的话，不从中学偏好
-  if (!user?.text?.trim() || user.source === 'schedule' || !reply.trim()) return Promise.resolve();
+  // 定时任务、其他助理和本机回执都不是用户说的话，不从中学偏好
+  if (!user?.text?.trim() || !isHumanSource(user.source) || !reply.trim()) return Promise.resolve();
   const request = { user: user.text, reply, evidence: `${turn}:${user.remoteId || user.id}`, model: c.modelId?.startsWith(`${c.providerId}::`) ? c.modelId.slice(`${c.providerId}::`.length) : undefined, provider: c.providerId };
   const pending = (queues.get(key) ?? Promise.resolve()).then(async () => {
     if (!current()) return;

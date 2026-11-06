@@ -331,15 +331,17 @@ fn tool_specs() -> Vec<TeamToolSpec> {
         TeamToolSpec {
             name: TeamToolName::TeamReadMessages,
             permission: TeamToolPermission::AnyTeamAgent,
-            description: "Peek at your own unread team mailbox messages. Returns at most the oldest 50 unread messages in FIFO order, each with a message_id. When has_more is true, call again with since_message_id set to the returned next_since_message_id to read the following page. Messages returned in full are marked read only if the current turn completes successfully; failed or cancelled turns preserve them for retry. A message with content_truncated=true is a preview only: it stays unread and is redelivered in full on a later turn, so do not act on it yet.",
+            description: "Peek at your own unread team mailbox messages. Returns at most the oldest 50 unread messages in FIFO order, each with a message_id. When has_more is true, call again with since_message_id set to the returned next_since_message_id to read the following page. Messages returned in full are marked read only if the current turn completes successfully; failed or cancelled turns preserve them for retry. A message with content_truncated=true is a preview only: it stays unread and is redelivered in full on a later turn, so do not act on the preview alone. To read full content now, pass its read_content arguments (message_id and content_offset) to this tool, then follow next_read_content until null. Each chunk is at most 4000 Unicode scalars; chunk reads remain available after acknowledgement and never mark messages read. Do not combine message_id with since_message_id. An unavailable since_message_id returns an explicit error; acknowledged cursors remain valid while retained in your mailbox.",
             input_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "since_message_id": {
                         "type": "string",
-                        "description": "Resume after this message_id; use the next_since_message_id from the previous page"
-                    }
+                        "description": "Resume after this addressed message_id; use next_since_message_id from the previous page"
+                    },
+                    "message_id": {"type": "string", "description": "Read bounded content for this addressed message; mutually exclusive with since_message_id"},
+                    "content_offset": {"type": "integer", "minimum": 0, "description": "Unicode scalar offset; requires message_id and defaults to zero"}
                 }
             }),
             cli_command: &["read-messages"],
@@ -638,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn read_messages_schema_exposes_only_an_optional_cursor() {
+    fn read_messages_schema_exposes_optional_cursor_and_content_read() {
         let descriptor = team_tool_descriptor("team_read_messages").expect("read messages descriptor");
         assert_eq!(descriptor.permission, TeamToolPermission::AnyTeamAgent);
         assert_eq!(descriptor.input_schema["additionalProperties"], json!(false));
@@ -647,10 +649,12 @@ mod tests {
             "every argument must stay optional so a bare call still works"
         );
         let properties = descriptor.input_schema["properties"].as_object().unwrap();
+        let mut property_names = properties.keys().map(String::as_str).collect::<Vec<_>>();
+        property_names.sort_unstable();
         assert_eq!(
-            properties.keys().collect::<Vec<_>>(),
-            vec!["since_message_id"],
-            "the cursor is the only accepted argument"
+            property_names,
+            vec!["content_offset", "message_id", "since_message_id"],
+            "list and bounded content modes must be discoverable"
         );
         assert!(
             descriptor.description.contains("oldest 50"),

@@ -1,91 +1,87 @@
-<div align="center">
+<p align="center"><img src="apps/desktop/public/logo.png" width="88" alt="麓鸣 Lom"></p>
 
-# 麓鸣 Lom
+<h1 align="center">麓鸣 Lom</h1>
+<p align="center">把模型、Agent、工具和手机，放进同一个工作台。</p>
+<p align="center"><a href="README.md">English</a> · <a href="https://lom-cn.heang.top/">官方产品</a> · <a href="https://github.com/rfdiosuao/lom-desktop/releases">下载社区版</a> · <a href="BUILDING.md">自行构建</a> · <a href="https://github.com/rfdiosuao/lom-desktop/issues">反馈问题</a></p>
 
-**麓鸣 Lom 是桌面 AI 工作台：一个总指挥带多个电脑 Agent（Codex、Claude Code、Gemini CLI 等）和 Android 手机 Agent 协作。**
+选一个工作文件夹，接上自己的模型或本机 Agent，就可以在麓鸣里对话、调用工具、查看文件改动，也能把多个 Agent 组成团队一起工作。
 
-**Lom is a desktop AI workspace where one commander leads computer agents and Android phone agents as a single team.**
+这里是 **Lom 社区版**：桌面客户端、Rust 本地执行内核、Android 源码和设备协议。默认不连接麓鸣官方云服务。商业账号、积分订阅、模型网关、手机云中转及运营后台不在这个仓库中。
 
-[官网](https://lom.entermodetwo.com/) · [English](README.md) · [使用文档](https://lom.entermodetwo.com/docs/) · [下载](https://lom.entermodetwo.com/#download) · [手机 Agent 接入文档](https://lom.entermodetwo.com/docs/phone-access/)
+<p align="center">
+<a href="https://github.com/rfdiosuao/lom-desktop/releases"><img alt="社区版下载" src="https://img.shields.io/badge/community-macOS%20%C2%B7%20Android-22a35a"></a>
+<a href="LICENSE"><img alt="桌面界面许可证" src="https://img.shields.io/badge/desktop%20UI-AGPL--3.0-blue"></a>
+<a href="https://github.com/rfdiosuao/lom-desktop/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/rfdiosuao/lom-desktop?style=flat"></a>
+</p>
 
-[![官网](https://img.shields.io/badge/官网-lom.entermodetwo.com-111112)](https://lom.entermodetwo.com/)
-[![桌面端界面许可证：AGPL-3.0](https://img.shields.io/badge/桌面端界面-AGPL--3.0-blue)](LICENSE)
-[![平台：macOS · Android](https://img.shields.io/badge/平台-macOS%20%C2%B7%20Android-lightgrey)](https://lom.entermodetwo.com/#download)
-[![Stars](https://img.shields.io/github/stars/rfdiosuao/lom-desktop?style=flat)](https://github.com/rfdiosuao/lom-desktop/stargazers)
+<p align="center"><img src="docs/images/lom-workspace.jpg" alt="麓鸣桌面工作台：选择任务、模型、工作区和手机" width="860"></p>
 
-<img src="docs/images/lom-workspace.jpg" alt="麓鸣 Lom 桌面端工作台：选择参与本次任务的手机、工作区文件夹，并输入目标" width="760">
+截图来自麓鸣官方桌面版；社区版包含的能力与服务依赖见下文。
 
-</div>
+## 可以做什么
 
-## 麓鸣能做什么
+- **使用自己的模型和 Agent**：配置模型服务的 API Key，或接入已安装的本机 Agent CLI。外部 CLI 需要自行安装、登录，麓鸣会检测本机的实际可用状态。
+- **在一个工作台里干活**：对话、工作区、文件改动、工具调用、历史和权限集中展示，按真实状态反馈执行结果。
+- **管理工具与角色**：配置 MCP、使用本地技能和智能体模板。可选接入自行部署的 Activepieces；社区版不预填维护者的连接器地址。
+- **组成 Agent 团队**：第一个加入的电脑 Agent 担任主控，可在并排、看板、单个和群聊视图里查看协作。
+- **局域网扫码配对手机**：电脑和社区 Android 配对客户端在同一私有网络内直连，RPC 使用签名加密信封。独立配对 APK 用于验证连接，**不是完整手机 Agent**。
 
-麓鸣装在你的电脑上，当总指挥。你说出目标，它把活拆开，派给合适的 Agent，读回真实结果再汇报给你。付款、下单、发布、私信这类对外操作，一定先问你。
+依赖账号的 Personal Agent 功能仍需要兼容服务，客户端代码不能代替服务端。手机能做什么取决于实际连接的客户端，配对成功不代表完整手机自动化已经通过实机验证。
 
-- **电脑 Agent**：直接用你电脑上已安装的 Agent CLI，例如 Codex CLI、Claude Code、Gemini CLI、Kimi、Qwen、OpenCode。麓鸣自动检测本机已装的 Agent，每个 Agent 仍用它自己的模型和登录。
-- **手机 Agent**：Android 手机扫码配对。官方手机端和第三方 Mika（麓鸣版）都可以接桌面派来的活；配对协议是公开的，你也可以做自己的手机端，见[手机 Agent 接入文档](docs/open/phone-access/README.md)。
-- **个人助理**：有自己独立的对话与记忆，能定时办事，也能把活派给你的 OPC 团队。让 Jev 管理它的上下文即将推出。
-- **OPC 团队群聊**：桌面 0.3.8 起，在一条时间线里 @队长，看活怎么派、怎么回报。手机成员在群聊里的呈现即将推出。
-- **技能与 MCP**：技能市场、MCP、快捷命令，以及每个任务可选的四档权限。
+<p align="center"><img src="docs/images/lom-agent-menu.jpg" alt="麓鸣 Agent 菜单：显示本机检测到的 Agent 与可用状态" width="680"></p>
 
-<p align="center"><img src="docs/images/lom-agent-menu.jpg" alt="麓鸣 Agent 下拉菜单：列出这台电脑上检测到的 Agent CLI 及是否可用" width="640"></p>
+## 下载与平台状态
 
-> 以上描述的是麓鸣官方版。本仓库是社区源码，**不包含**商业账户、积分、模型网关和云配对中转，依赖这些服务的功能在社区构建里不可用（见下文）。
+在 [GitHub Releases](https://github.com/rfdiosuao/lom-desktop/releases) 下载已有版本，安装前查看发布说明并核对 SHA-256。
 
-## 下载
+| 平台 | 社区版分发状态 |
+| --- | --- |
+| macOS · Apple 芯片 | 社区桌面版 DMG |
+| Android | 局域网配对验证 APK；完整 Agent 源码需要另外准备原生构建环境 |
+| Windows | **暂未上线**，当前不分发 Windows 安装包与更新 |
+| iPhone / iPad | 暂无 Lom 版本；保留的上游 iOS 源码不代表已支持 |
 
-macOS（Apple 芯片）和 Android 的官方安装包在官网：**<https://lom.entermodetwo.com/#download>**。Windows 版暂未上线。
+社区版使用独立的应用标识、数据目录和凭据命名空间，不读取商业桌面版的账号与用户数据。官方自动更新已关闭。
 
-## 快速开始
+另行分发的官方产品及托管服务见[国内官网](https://lom-cn.heang.top/)与[官网文档](https://lom-cn.heang.top/docs/)。社区安装包仍从上方 GitHub Releases 获取。
 
-使用官方版：到官网下载安装，按[快速上手](https://lom.entermodetwo.com/docs/)操作。从本仓库源码构建桌面端界面：
+## 开发与构建
+
+桌面前端使用 Node.js 24 LTS：
 
 ```sh
-cd apps/desktop
+git clone --recurse-submodules https://github.com/rfdiosuao/lom-desktop.git
+cd lom-desktop/apps/desktop
 npm ci
-npm run typecheck
 npm test -- --maxWorkers=2
 npm run build
 ```
 
-本地 Rust 内核、Tauri 外壳和 Android 手机端各有自己的工具链，见 [BUILDING.md](BUILDING.md)。
+要运行完整桌面应用，还需要编译 Rust 内核并准备校验过的 Lark CLI sidecar。完整步骤、前端开发、Android 原生依赖和发布检查见 [BUILDING.md](BUILDING.md)。前端构建成功不等于完整应用已经打包或通过实机验收。
 
-## 关于本仓库
+局域网配对仅用于可信私有网络：配对和控制层使用明文 HTTP，配对受一次性扫码密钥和设备令牌保护，RPC 载荷另行签名加密。不要把监听端口暴露到公网。这里没有实现公网自建中转、USB 通道或 VPN 配置。
 
-桌面端、运行内核、手机端和设备协议集中在同一仓库，供社区自行构建和继续开发。商业账户、积分订阅、模型网关、云配对中转、运营后台及部署模块不在发布范围。社区版桌面端和 Android 手机端可以在局域网内扫码配对，局域网消息使用签名加密的信封。
-
-**默认不连接官方云。** 桌面普通任务请自行配置模型服务。依赖账户的 Personal Agent 功能仍需要兼容的服务；但桌面与手机的局域网配对在本地实现：桌面端开启一次性二维码会话，手机在同一私有网络里直接连接。手机端也保留了本地功能和协议源码，其上游的开发调试接口不能代替麓鸣的局域网配对。
-
-局域网配对只适合受信任的私有网络：配对和控制的 HTTP 流量是明文，使用一次性二维码密钥和设备令牌；远程 RPC 载荷是签名加密的信封。不要把局域网端口暴露到公网或不受信任的网络。
-
-### 目录与许可证
+## 源码结构与许可证
 
 | 目录 | 内容 | 许可证 |
 | --- | --- | --- |
-| `apps/desktop` | React/TypeScript 界面与 Tauri 桌面外壳 | AGPL-3.0-only |
-| `core` | 本地 Rust 运行内核，基于 AionCore | Apache-2.0，见组件声明 |
-| `apps/android` | 基于 OpenMinis 的手机端源码，麓鸣的改动面向 Android | GPL-3.0，见第三方许可证 |
-| `protocol` | 设备协议定义、生成的绑定和测试向量 | MIT OR Apache-2.0 |
+| [`apps/desktop`](apps/desktop) | React / TypeScript 界面与 Tauri 外壳 | AGPL-3.0-only |
+| [`core`](core) | 基于 AionCore 的 Rust 本地执行 API | Apache-2.0，以组件声明为准 |
+| [`apps/android`](apps/android) | 基于 OpenMinis 的手机端 | GPL-3.0，保留第三方许可 |
+| [`protocol`](protocol) | 设备协议、生成代码与测试向量 | MIT OR Apache-2.0 |
 
-这些是通过协议通信的独立程序，并不是对各组件许可证的重新授权。再分发时请保留各组件的声明。仓库里的 iOS 源码来自上游，不代表麓鸣支持 iPhone 配对。
-
-来源版本见 [SOURCE_SNAPSHOTS.md](docs/SOURCE_SNAPSHOTS.md)，发布边界见 [OPEN_SOURCE_SCOPE.md](docs/OPEN_SOURCE_SCOPE.md)。私有 Git 历史和商业服务端源码没有导入；历史公开提交仍保留在本仓库的 Git 历史中。
-
-发布修改前，请运行 `python3 tools/audit-source.py` 和相关组件的测试。审计只报告路径和规则名，不会打印匹配到的密钥内容；它只是审查的一层，不保证源码里没有任何敏感数据。
-
-## 文档
-
-- [官网文档](https://lom.entermodetwo.com/docs/)：快速上手、手机端配置、电脑端功能、OPC 团队、常见问题和更新日志。
-- [手机 Agent 接入文档](docs/open/phone-access/README.md)（[官网版](https://lom.entermodetwo.com/docs/phone-access/)）：二维码与深链格式、配对、身份密钥、中转、加密信封、RPC 方法和测试向量，不接触任何私有代码就能做出可以和麓鸣桌面端配对的手机 App。
-- [BUILDING.md](BUILDING.md)、[CONTRIBUTING.md](CONTRIBUTING.md)、[SECURITY.md](SECURITY.md)。
+各程序通过协议通信，集中到同一个仓库不改变各自的许可证。感谢 AionCore / AionUi、OpenMinis、Lark CLI 及组件声明中列出的上游作者与贡献者；再分发时请保留原有署名和许可。
 
 ## 致谢
 
-麓鸣建立在开源项目之上，感谢这些项目的作者与贡献者：
+感谢 [AionUi / AionCore](https://github.com/iOfficeAI/AionUi)、[OpenMinis](https://github.com/OpenMinis/OpenMinis)、[Lark CLI](https://github.com/larksuite/cli) 及各项目贡献者；仓库内的组件继续保留原有署名与许可。
 
-- [AionUi](https://github.com/iOfficeAI/AionUi)：桌面核心基于它构建。
-- [OpenMinis](https://github.com/OpenMinis/OpenMinis)：手机端基于它构建。
-- [Mika](https://github.com/wangzan101/Mika)（作者 wangzan101，Apache-2.0）：麓鸣版 Mika 所基于的第三方手机 Agent。麓鸣版不是原作者发布的版本，也不代表原作者。
+[Mika](https://github.com/wangzan101/Mika)（作者 wangzan101，[Apache-2.0](https://github.com/wangzan101/Mika/blob/main/LICENSE)）是相关的独立分发手机客户端，其源码不属于本次快照。麓鸣版与原作者发布的版本分别维护。
 
-## 许可证
+## 一起完善
 
-许可证按组件分别适用，见上表和各组件的声明。桌面端界面与外壳为 AGPL-3.0-only，见 [LICENSE](LICENSE)。
+提 Issue 时带上社区版版本号、系统、复现步骤和脱敏后的报错。不要提交 API Key、登录凭据或私人聊天记录。参与方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+源码以可审查的版本快照同步，保留社区适配层，不导入私有 Git 历史、用户数据或签名密钥，也不预填生产服务地址。发布前同时检查工作区和暂存区，并执行相应组件的测试；扫描器只输出文件路径和规则名，不输出命中的密钥值。
+
+[同步来源](docs/SOURCE_SNAPSHOTS.md) · [开源边界](docs/OPEN_SOURCE_SCOPE.md) · [验证记录与限制](docs/VERIFICATION.md) · [手机接入协议](docs/open/phone-access/README.md)

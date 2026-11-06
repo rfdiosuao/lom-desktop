@@ -152,7 +152,7 @@ it('TEAM-FOCUS-01 AC-6 the empty board offers 和 Leader 说目标, which opens 
 
 it.each([['board', '点「和 Leader 说目标」开工'], ['side', '在 Leader 窗格里说目标即可开工'], ['single', '在 Leader 窗格里说目标即可开工']] as const)(
   'TEAM-FOCUS-01 AC-7 the create-team hint matches the %s view the user lands in', (view, hint) => {
-    S.teamView = view; S.form = { name: '新团队', folder: '', members: [{ mid: 'new-lead', agent: 'pc', role: '主控', leader: true }], roles: {} };
+    S.teamView = view; S.form = { name: '新团队', folder: '/work', members: [{ mid: 'new-lead', agent: 'pc', role: '主控', leader: true }], roles: {} };
     createTeam();
     expect(S.route).toMatchObject({ name: 'team' });
     expect(S.toast?.text).toBe(`团队「新团队」已创建，${hint}`);

@@ -1,6 +1,10 @@
 import { syncPhoneName } from './deviceName';
-import { dropLink, lanMode, observeDevice } from './deviceLink';
+import { lanMode, observeDevice } from './deviceLink';
 import { syncDeviceStatus } from './deviceStatus';
+import { setPhoneAppVersion } from './phoneCapabilities';
+import { ensurePhoneSelected, forgetPhone } from './phoneForget';
+import { ensurePhoneCapabilities } from './phoneCapabilitiesSync';
+import { cleanText, phoneProfile, syncPhoneProfile } from './phoneProfile';
 import { DeviceTransitions } from './deviceTransitions';
 import { toast } from '@/shared/overlays/controller';
 const transitions = new DeviceTransitions();
@@ -105,12 +109,7 @@ function addPhone(s: AppState, id: string) {
 }
 
 export function dropPhone(s: AppState, id: string) {
-  dropLink(id);
-  s.phoneOrder = s.phoneOrder.filter(x => x !== id);
-  delete s.lit[id];
-  delete s.agents[id];
-  if (s.phoneId === id) s.phoneId = s.phoneOrder[0];
-  s.teams.forEach(t => { t.members = t.members.filter(m => m.agent !== id); });
+  forgetPhone(s, id);
   saveDeviceAccount(s);
 }
 
@@ -126,13 +125,16 @@ export function applyDevices(list: CloudDevice[]) {
         ...old, id: d.id, kind: 'phone', name: d.name, persona: old?.persona || '', real: true,
         status: d.online ? 'online' : 'offline', device: [d.info.model, d.info.os].filter(Boolean).join(' · '),
         lastSeen: d.last_seen_at * 1000, model: old?.model || s.phoneModel,
+        appVersion: cleanText(d.info.app_version, 20) || undefined, ...phoneProfile(d.id),
       };
       if (!d.online) { next.battery = undefined; next.network = undefined; }
       s.agents[d.id] = next;
       observeDevice(d.id, !!d.online);
+      setPhoneAppVersion(d.id, d.info.app_version || '');
       if (!s.phoneOrder.includes(d.id)) addPhone(s, d.id);
     }
     for (const id of [...s.phoneOrder]) if (s.agents[id]?.real && !ids.has(id)) dropPhone(s, id);
+    ensurePhoneSelected(s);
   });
   restoreLegacyDeviceMembers(new Set(list.map(d => d.id)));
   saveDeviceAccount();
@@ -154,6 +156,7 @@ export async function syncDevices() {
       applyDevices(list);
       for (const d of list) if (d.online) {
         void syncDeviceStatus(d.id);
+        void ensurePhoneCapabilities(d.id).then(() => syncPhoneProfile(d.id));
         void syncPhoneName(d.id, d.name).catch(() => { /* Old/offline APK: retry next refresh, never claim synced. */ });
       }
     } catch (e) {

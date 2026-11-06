@@ -4,9 +4,14 @@ $repoRoot = (git rev-parse --show-toplevel)
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
-Set-Location $repoRoot
+$corePrefix = ""
+if (Test-Path (Join-Path $repoRoot "core/crates/aionui-db/migrations")) {
+    $corePrefix = "core/"
+}
+$coreRoot = Join-Path $repoRoot $corePrefix
+Set-Location $coreRoot
 
-$migrationDir = Join-Path $repoRoot "crates/aionui-db/migrations"
+$migrationDir = Join-Path $coreRoot "crates/aionui-db/migrations"
 $duplicateVersions = Get-ChildItem -LiteralPath $migrationDir -File -Filter "*.sql" |
     ForEach-Object {
         if ($_.Name -match '^([0-9]+)_') {
@@ -62,7 +67,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$changed = git diff --name-status --diff-filter=DMR $baseCommit -- "crates/aionui-db/migrations/*.sql"
+$changed = git -C $repoRoot diff --name-status --diff-filter=DMR $baseCommit -- "${corePrefix}crates/aionui-db/migrations/*.sql"
 if (-not [string]::IsNullOrWhiteSpace(($changed -join "`n"))) {
     [Console]::Error.WriteLine("Existing migration files from main must not be modified or deleted.")
     [Console]::Error.WriteLine("")

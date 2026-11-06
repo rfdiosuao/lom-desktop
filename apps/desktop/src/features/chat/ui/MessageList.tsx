@@ -80,11 +80,11 @@ const CARD_TYPES = new Set<Msg['type']>(['plan', 'question', 'approval', 'files'
 /** 正文、用户消息、系统提示和桌面紧凑思考不算卡片 */
 const isCard = (m: Msg, compactThinking: boolean) => CARD_TYPES.has(m.type) || (m.type === 'thinking' && !compactThinking);
 
-interface TurnView { ctxId: string; desktopReply: boolean; settled: boolean; last: boolean }
+interface TurnView { ctxId: string; desktopReply: boolean; settled: boolean; last: boolean; actions: boolean }
 
 
 /** 一轮（两条用户消息之间）的显示：思考、工具与文件改动连成一个执行过程，其他消息按原顺序 */
-function turnNodes(turn: Msg[], { ctxId, desktopReply, settled, last }: TurnView): ReactNode[] {
+function turnNodes(turn: Msg[], { ctxId, desktopReply, settled, last, actions }: TurnView): ReactNode[] {
   // UI-AUDIT-05 F-10：这一轮还没结束时，其中的工具组和执行过程默认保持展开
   const out: ReactNode[] = [], fences = fenceCarry(turn), live = last && !settled;
   let speaker: string | undefined;
@@ -120,11 +120,12 @@ function turnNodes(turn: Msg[], { ctxId, desktopReply, settled, last }: TurnView
     j++;
   }
   const reply = turn.findLast(m => m.type === 'assistant');
-  if (reply && turnFinished(turn, last && !settled)) out.push(<TurnActions key={`actions:${reply.id}`} ctxId={ctxId} reply={reply} text={replyText(turn)} />);
+  if (actions && reply && turnFinished(turn, last && !settled)) out.push(<TurnActions key={`actions:${reply.id}`} ctxId={ctxId} reply={reply} text={replyText(turn)} />);
   return out;
 }
 
-export function MessageList({ msgs, ctxId }: { msgs: Msg[]; ctxId: string }) {
+/** actions=false：不显示整轮的复制/重新生成（群聊里重新生成会绕过群聊再投一次） */
+export function MessageList({ msgs, ctxId, actions = true }: { msgs: Msg[]; ctxId: string; actions?: boolean }) {
   const s = useStore();
   const c = conv(ctxId.replace(/^conv:/, ''));
   const desktopReply = !!c && c.owner === 'pc' && !c.phoneSession;
@@ -137,7 +138,7 @@ export function MessageList({ msgs, ctxId }: { msgs: Msg[]; ctxId: string }) {
     const turn = msgs.slice(i, end);
     // CHAT-ACTIVITY-01：这一轮搜索返回过的站点，链接和工具行才自动加载站点图标
     out.push(<IconHosts.Provider key={`turn:${turn[0].id}`} value={searchHostsOf(turn)}>
-      {turnNodes(turn, { ctxId, desktopReply, settled: !unsettled, last: end === msgs.length })}
+      {turnNodes(turn, { ctxId, desktopReply, settled: !unsettled, last: end === msgs.length, actions })}
     </IconHosts.Provider>);
     i = end;
   }

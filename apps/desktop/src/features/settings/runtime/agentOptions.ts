@@ -33,8 +33,13 @@ export function cachedOptions(agentId?: string): AgentOption[] | undefined {
   try { const v = JSON.parse(localStorage.getItem(KEY(agentId)) || 'null'); return Array.isArray(v) ? v : undefined; }
   catch { return undefined; }
 }
+/** 本机缓存的这份可选列表是什么时候读到的（毫秒）；旧缓存没有记录时返回 undefined。 */
+export function cachedOptionsAt(agentId?: string): number | undefined {
+  if (!agentId) return undefined;
+  try { const v = Number(localStorage.getItem(`${KEY(agentId)}:at`)); return v > 0 ? v : undefined; } catch { return undefined; }
+}
 function remember(agentId: string, opts: AgentOption[]) {
-  try { localStorage.setItem(KEY(agentId), JSON.stringify(opts)); } catch { /* 隐私模式：下次重新读取 */ }
+  try { localStorage.setItem(KEY(agentId), JSON.stringify(opts)); localStorage.setItem(`${KEY(agentId)}:at`, String(Date.now())); } catch { /* 隐私模式：下次重新读取 */ }
 }
 
 /** 等会话把模型列表报上来（通常 1–3 秒）；拿不到就返回已有的 */

@@ -101,3 +101,43 @@ it('UI-AUDIT-02 UI-08 未支持的导出不提供可点击入口', () => {
   expect(btn?.disabled).toBe(true);
   expect(host.textContent).not.toContain('加密压缩包');
 });
+
+const leaky = row('Leaky', { status: 'offline', last_check_error_message: 'spawn /Users/example/.local/bin/leaky ENOENT; Authorization: Bearer abc.def; api_key=hunter2' });
+const copyButton = () => [...host.querySelectorAll('button')].find(b => b.textContent === '复制诊断')!;
+const toastText = () => S.toast?.text;
+
+it('SET-AGENT-01 #436 copies a redacted diagnostic and confirms only after the clipboard accepted it', async () => {
+  S.conn = 'ready'; S.agentCatalog = [leaky]; S.toast = null;
+  const writeText = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  act(() => root.render(<AgentsPage />));
+  await act(async () => copyButton().click());
+  const copied = (writeText.mock.calls[0] as unknown as [string])[0];
+  expect(copied).toContain('/Users/[用户]/.local/bin/leaky');
+  expect(copied).not.toMatch(/heang|abc\.def|hunter2/);
+  expect(host.querySelector('.agent-diag__raw')?.textContent).not.toMatch(/heang|abc\.def|hunter2/);
+  expect(toastText()).toContain('诊断已复制');
+});
+
+it('SET-AGENT-01 #436 tells the user when the clipboard rejects the write, without claiming success', async () => {
+  S.conn = 'ready'; S.agentCatalog = [leaky]; S.toast = null;
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => { throw new Error('NotAllowedError'); }) }, configurable: true });
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  act(() => root.render(<AgentsPage />));
+  await act(async () => copyButton().click());
+  expect(toastText()).toContain('复制诊断失败');
+  expect(toastText()).not.toContain('已复制');
+  expect((S.toast as { tone?: string } | null)?.tone).toBe('error');
+  logged.mockRestore();
+});
+
+it('SET-AGENT-01 #436 tells the user when there is no clipboard at all', async () => {
+  S.conn = 'ready'; S.agentCatalog = [leaky]; S.toast = null;
+  Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  act(() => root.render(<AgentsPage />));
+  await act(async () => copyButton().click());
+  expect(toastText()).toContain('复制诊断失败');
+  expect(toastText()).toContain('剪贴板');
+  logged.mockRestore();
+});

@@ -49,12 +49,16 @@ pub struct SendMessageInput {
 }
 
 /// Arguments for the `team_read_messages` MCP tool call. `since_message_id` is a
-/// FIFO cursor: the page starts at the unread message right after it.
+/// FIFO cursor: the page starts at unread messages after its stable mailbox position.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadMessagesInput {
     #[serde(default)]
     pub since_message_id: Option<String>,
+    #[serde(default)]
+    pub message_id: Option<String>,
+    #[serde(default)]
+    pub content_offset: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

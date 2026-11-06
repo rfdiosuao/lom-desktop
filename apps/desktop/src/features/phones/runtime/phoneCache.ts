@@ -1,3 +1,4 @@
+import { isEmptyPhoneUserMessage } from './phoneMessages';
 import { toast } from '@/shared/overlays/controller';
 import { readJson, writeJson } from '@/features/account/runtime/localCache';
 import { lanMode } from './deviceLink';
@@ -47,7 +48,11 @@ export function loadPhoneCache() {
   if (read.status === 'missing') return;
   const data = read.value;
   update(s => {
-    s.convs.push(...data.convs.filter(c => c.owner.startsWith('dev_')));
+    for (const conv of data.convs) {
+      if (!conv.owner.startsWith('dev_')) continue;
+      if (Array.isArray(conv.messages)) conv.messages = conv.messages.filter(message => !isEmptyPhoneUserMessage(message));
+      s.convs.push(conv);
+    }
     Object.assign(s.souls, data.souls); Object.assign(s.memories, data.memories);
     // 手机离线时也能看到它的定时任务列表；手机上线后以手机为准重新同步
     s.schedules.push(...(data.schedules || []).filter(x => x.phoneTask && x.exec.startsWith('dev_') && !s.schedules.some(y => y.id === x.id)));

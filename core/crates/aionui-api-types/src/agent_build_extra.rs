@@ -128,8 +128,8 @@ pub struct AionrsBuildExtra {
     pub max_tool_call_failure_turns: Option<usize>,
     #[serde(default)]
     pub session_mode: Option<String>,
-    /// Lom: reasoning effort for the model (`low` / `medium` / `high`), forwarded to the
-    /// aionrs engine as the request's `reasoning_effort`. Absent = provider default.
+    /// Lom: reasoning effort (`none` / `low` / `medium` / `high`), forwarded to the engine.
+    /// `none` explicitly requests no reasoning; absent = provider default. Model support varies.
     #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]

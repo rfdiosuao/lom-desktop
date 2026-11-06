@@ -5,6 +5,7 @@ import { S } from '@/state/store';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { recordRpc } from './deviceLink';
 import { lanMode } from './deviceLink';
+import { recordUnsupported } from './phoneCapabilities';
 
 /** Payloads never enter UI state/logging/storage. Only encrypted envelopes cross the cloud. */
 export async function phoneRpc<T>(device: string, method: string, payload: unknown): Promise<T> {
@@ -36,6 +37,7 @@ export async function phoneRpc<T>(device: string, method: string, payload: unkno
     /* 文案会翻译 sync.conflict；保留原始错误码给调用方区分“确定未执行”和“结果未知” */
     const error = new Error(data.error === 'sync.conflict' ? '手机内容已更新，未覆盖。请保留草稿并重新载入手机版本。' : data.error) as Error & { code?: string };
     error.code = data.error;
+    if (data.error === 'remote.method_unknown') recordUnsupported(device, method); // PHONE-CAPS-01：记入该手机的「不支持」缓存
     throw error;
   }
   return JSON.parse(data.payload) as T;

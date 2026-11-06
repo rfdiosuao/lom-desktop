@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "麓鸣 Lom",
   "mainBinaryName": "Lom",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "identifier": "org.lom.community.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",

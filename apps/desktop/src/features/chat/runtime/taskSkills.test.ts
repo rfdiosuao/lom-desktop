@@ -6,7 +6,7 @@ vi.mock('@/core/client', () => ({ api: vi.fn(), getEndpoint: () => null }));
 beforeEach(() => {
   vi.resetAllMocks();
   S.cloud = 'signed-out'; S.account = null; S.model = 'own::fixture'; S.agentPick = '';
-  S.convs = []; S.running = {}; S.effortPick = '';
+  S.convs = []; S.running = {}; S.effortPick = ''; S.folder = '/work';
   S.providers = [{ id: 'own', name: 'Own', platform: 'openai', base_url: '', models: ['fixture'], enabled: true, created_at: 1 }];
   vi.mocked(api).mockImplementation(async (method, path, body: any) => {
     if (path === '/api/skills') return [{ name: 'local-writer', source: 'custom' }];

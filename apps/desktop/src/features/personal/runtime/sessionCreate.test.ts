@@ -49,3 +49,10 @@ it('PA-SESSION-02 only a paired real device can produce a prepared phone draft',
   expect(await createSession(self, { title: 'phone blank', agent_id: 'dev_live' }, () => true)).toMatchObject({ status: 'prepared', remote_created: false });
   expect(m.cache).toHaveBeenCalledTimes(1); expect(m.api).not.toHaveBeenCalled();
 });
+
+it('WS-REQUIRED-01 AC4 an assistant dispatch with no workspace fails with workspace.required and creates nothing', async () => {
+  delete (self as { workspace?: string }).workspace; (self.personal as { directory: string }).directory = '';
+  await expect(createSession(self, { title: 'blank' }, () => true)).rejects.toThrow('workspace.required');
+  expect(m.api).not.toHaveBeenCalled();
+  expect(S.convs).toEqual([self]);
+});

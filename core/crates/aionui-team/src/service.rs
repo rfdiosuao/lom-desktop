@@ -53,7 +53,7 @@ use crate::runtime_tools::{
 };
 use crate::session::{
     AgentMessageQueueResult, TeamSession, attach_member_runtime, attach_member_runtime_after_kill,
-    spawn_attach_agent_process_bg,
+    attach_member_runtime_with_mode, spawn_attach_agent_process_bg,
 };
 use crate::team_run::TeamRunManager;
 use crate::types::{Team, TeamAgent, TeamTask, TeammateRole};
@@ -170,6 +170,9 @@ pub struct TeamSessionService {
     /// callers cannot read-modify-write the `agents` JSON or rebuild a runtime
     /// session from a stale roster snapshot.
     add_agent_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Serializes explicit config choices so an idle mode rebuild cannot kill
+    /// a target while another user config operation is still in flight.
+    config_set_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Per-team mutex serializing `ensure_session` so concurrent callers cannot
     /// race and start two sessions for the same team.
     ensure_session_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -302,6 +305,7 @@ impl TeamSessionService {
             prompt_dump,
             sessions: Arc::new(DashMap::new()),
             add_agent_locks: Arc::new(DashMap::new()),
+            config_set_locks: Arc::new(DashMap::new()),
             ensure_session_locks: Arc::new(DashMap::new()),
             project_service: Arc::new(RwLock::new(None)),
             user_order: Arc::new(RwLock::new(None)),
@@ -1885,6 +1889,12 @@ impl TeamSessionService {
         option_id: &str,
         request: SetConfigOptionRequest,
     ) -> Result<SetConfigOptionResponse, TeamError> {
+        let config_lock = self
+            .config_set_locks
+            .entry(conversation_id.to_owned())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _config_guard = config_lock.lock().await;
         let row = self.load_owned_team_row(user_id, team_id).await?;
         let team = Team::from_row(&row)?;
         let member = team
@@ -1896,7 +1906,20 @@ impl TeamSessionService {
             return Err(Self::member_runtime_starting_error(team_id, member));
         }
 
-        let options = self.conversation_port.get_config_options(conversation_id).await?;
+        let options = match self.conversation_port.get_config_options(conversation_id).await {
+            Ok(options) => options,
+            // TEAM-ORCH-02 (#371): a member that never started has no runtime to
+            // ask, but its model is still a stored preference. Save it so the first
+            // start uses it; otherwise "switch model" stays blocked exactly when the
+            // current model is what is failing.
+            Err(TeamError::RuntimeNotReady { .. }) if option_id == "model" => {
+                let slot_id = member.slot_id.clone();
+                return self
+                    .save_model_for_member_without_runtime(user_id, team_id, conversation_id, &slot_id, &request.value)
+                    .await;
+            }
+            Err(error) => return Err(error),
+        };
         let is_global_mode = member.role == TeammateRole::Lead
             && options.config_options.iter().any(|option| {
                 option.id == option_id && (option.category.as_deref() == Some("mode") || option.id == "mode")
@@ -1921,10 +1944,41 @@ impl TeamSessionService {
         // readback would persist the model the user just switched away from.
         let requested_model = is_model_option.then(|| request.value.trim().to_owned());
 
-        let response = self
-            .conversation_port
-            .set_config_option(conversation_id, option_id, request)
-            .await?;
+        let response = if member.backend == "qoder"
+            && option_id == "mode"
+            && request.value.trim() == "yolo"
+            && options
+                .config_options
+                .iter()
+                .find(|option| option.id == "mode")
+                .and_then(|option| option.current_value.as_deref())
+                != Some("yolo")
+        {
+            // Explicit operation only: retain the user's existing conversation
+            // and reject busy/queued work before stopping its runtime.
+            self.restart_agent_runtime_inner(user_id, team_id, &slot_id, false, Some("yolo"))
+                .await?;
+            let confirmed = self.conversation_port.get_config_options(conversation_id).await?;
+            if confirmed
+                .config_options
+                .iter()
+                .find(|option| option.id == "mode")
+                .and_then(|option| option.current_value.as_deref())
+                != Some("yolo")
+            {
+                return Err(TeamError::InvalidRequest(
+                    "Qoder permission mode was not confirmed after runtime restart".into(),
+                ));
+            }
+            SetConfigOptionResponse {
+                confirmation: aionui_api_types::ConfigOptionConfirmation::Observed,
+                config_options: Some(confirmed.config_options),
+            }
+        } else {
+            self.conversation_port
+                .set_config_option(conversation_id, option_id, request)
+                .await?
+        };
 
         // The runtime accepted the switch, so the roster and the persisted
         // conversation state must follow — including for `PendingNextTurn`, where
@@ -1954,6 +2008,50 @@ impl TeamSessionService {
         }
 
         Ok(response)
+    }
+
+    /// Persist a model choice for a member whose runtime is not running. The value
+    /// takes effect at the member's next start, which the response states
+    /// (`PendingNextTurn`) instead of claiming a live switch happened.
+    async fn save_model_for_member_without_runtime(
+        &self,
+        user_id: &str,
+        team_id: &str,
+        conversation_id: &str,
+        slot_id: &str,
+        model: &str,
+    ) -> Result<SetConfigOptionResponse, TeamError> {
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(TeamError::InvalidRequest("model must not be empty".into()));
+        }
+        // A model the agent does not offer would only fail later, at the member's
+        // first start. With a stored catalog, refuse it now and say what is offered.
+        match self.conversation_port.offline_model_catalog(conversation_id).await? {
+            Some(ids) if !ids.iter().any(|id| id == model) => {
+                return Err(TeamError::InvalidRequest(format!(
+                    "model `{model}` is not in the agent's model catalog; available: {}",
+                    ids.iter().take(20).cloned().collect::<Vec<_>>().join(", ")
+                )));
+            }
+            Some(_) => {}
+            None => warn!(
+                team_id,
+                slot_id,
+                model,
+                "no stored model catalog; model saved without validation and will be checked at first start"
+            ),
+        }
+        self.persist_member_model_selection(user_id, team_id, slot_id, model, ModelPersistTrigger::ExplicitRequest)
+            .await?;
+        info!(
+            team_id,
+            slot_id, model, "model saved for member without a running runtime"
+        );
+        Ok(SetConfigOptionResponse {
+            confirmation: aionui_api_types::ConfigOptionConfirmation::PendingNextTurn,
+            config_options: None,
+        })
     }
 
     fn member_runtime_is_starting(&self, team_id: &str, slot_id: &str) -> bool {
@@ -2544,6 +2642,17 @@ impl TeamSessionService {
             .ok_or_else(|| TeamError::SessionNotFound(team_id.to_owned()))
     }
 
+    pub(crate) async fn read_agent_content_message(
+        &self,
+        team_id: &str,
+        slot_id: &str,
+        message_id: &str,
+    ) -> Result<Option<crate::types::MailboxMessage>, TeamError> {
+        self.published_session(team_id)?
+            .read_agent_content_message(slot_id, message_id)
+            .await
+    }
+
     pub(crate) async fn peek_agent_messages(
         &self,
         team_id: &str,
@@ -2634,7 +2743,8 @@ impl TeamSessionService {
     /// terminal outcome so callers only receive success once the runtime is
     /// ready.
     pub async fn restart_agent_runtime(&self, user_id: &str, team_id: &str, slot_id: &str) -> Result<(), TeamError> {
-        self.restart_agent_runtime_inner(user_id, team_id, slot_id, false).await
+        self.restart_agent_runtime_inner(user_id, team_id, slot_id, false, None)
+            .await
     }
 
     pub(crate) async fn restart_agent_runtime_for_mcp_refresh(
@@ -2643,7 +2753,8 @@ impl TeamSessionService {
         team_id: &str,
         slot_id: &str,
     ) -> Result<(), TeamError> {
-        self.restart_agent_runtime_inner(user_id, team_id, slot_id, true).await
+        self.restart_agent_runtime_inner(user_id, team_id, slot_id, true, None)
+            .await
     }
 
     async fn restart_agent_runtime_inner(
@@ -2652,6 +2763,7 @@ impl TeamSessionService {
         team_id: &str,
         slot_id: &str,
         allow_queued: bool,
+        required_mode: Option<&str>,
     ) -> Result<(), TeamError> {
         let team = self.load_owned_team(user_id, team_id).await?;
         let requested_agent = team
@@ -2715,6 +2827,15 @@ impl TeamSessionService {
             RuntimeRestartRejection::SessionStopped => TeamError::SessionNotFound(team_id.to_owned()),
         })?;
 
+        if required_mode.is_some()
+            && self.task_manager.get_task(&agent.conversation_id).is_none_or(|task| {
+                task.status() == Some(ConversationStatus::Running) || task.live_background_tasks() > 0
+            })
+        {
+            session.work_coordinator().abort_runtime_restart(slot_id, &restart_gate);
+            return Err(busy_error());
+        }
+
         let lease = match session.member_runtimes().reserve_restart(slot_id) {
             ReserveAttach::Start(lease) => lease,
             ReserveAttach::Join(_) | ReserveAttach::AlreadyReady => {
@@ -2740,17 +2861,30 @@ impl TeamSessionService {
             conversation_id = agent.conversation_id,
             "team member runtime restart requested"
         );
-        match attach_member_runtime(
-            service,
-            Arc::clone(&session),
-            user_id.to_owned(),
-            agent.clone(),
-            self.task_manager.clone(),
-            lease,
-            false,
-        )
-        .await
-        {
+        let outcome = if let Some(mode) = required_mode {
+            attach_member_runtime_with_mode(
+                service,
+                Arc::clone(&session),
+                user_id.to_owned(),
+                agent.clone(),
+                self.task_manager.clone(),
+                lease,
+                mode.to_owned(),
+            )
+            .await
+        } else {
+            attach_member_runtime(
+                service,
+                Arc::clone(&session),
+                user_id.to_owned(),
+                agent.clone(),
+                self.task_manager.clone(),
+                lease,
+                false,
+            )
+            .await
+        };
+        match outcome {
             AttachOutcome::Ready => Ok(()),
             AttachOutcome::Failed(failure) => Err(TeamError::MemberRuntimeFailed {
                 team_id: team_id.to_owned(),
@@ -3280,6 +3414,7 @@ mod tests {
         event_tx: broadcast::Sender<AgentStreamEvent>,
         status: Option<ConversationStatus>,
         last_activity_at: TimestampMs,
+        background_tasks: usize,
     }
 
     impl ModeSettingAgent {
@@ -3300,6 +3435,7 @@ mod tests {
                 event_tx,
                 status: None,
                 last_activity_at: now_ms(),
+                background_tasks: 0,
             }
         }
 
@@ -3352,6 +3488,10 @@ mod tests {
 
         fn last_activity_at(&self) -> TimestampMs {
             self.last_activity_at
+        }
+
+        fn live_background_tasks(&self) -> usize {
+            self.background_tasks
         }
 
         fn subscribe(&self) -> broadcast::Receiver<AgentStreamEvent> {
@@ -3585,6 +3725,127 @@ mod tests {
         svc.stop_session("user-test", &created.id).await.unwrap();
     }
 
+    /// Real framed TCP calls exercise the published service/session path. SQLite
+    /// ownership checks are separately exercised by mailbox_integration.
+    #[tokio::test]
+    async fn team_query_tcp_reassembles_acknowledged_content_and_resumes_acknowledged_cursor() {
+        use crate::mcp::protocol::{read_frame, write_frame};
+        use serde_json::{Value, json};
+        use tokio::net::TcpStream;
+
+        async fn request(stream: &mut TcpStream, value: Value) -> Value {
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                write_frame(stream, &serde_json::to_vec(&value).unwrap()).await.unwrap();
+                serde_json::from_slice(&read_frame(stream).await.unwrap()).unwrap()
+            })
+            .await
+            .expect("TCP team query must complete")
+        }
+        async fn query(stream: &mut TcpStream, id: u64, arguments: Value) -> Value {
+            let response = request(
+                stream,
+                json!({"jsonrpc":"2.0", "id":id, "method":"tools/call",
+                "params":{"name":"team_read_messages", "arguments":arguments}}),
+            )
+            .await;
+            assert!(response.get("error").is_none(), "JSON-RPC error: {response}");
+            assert_ne!(response["result"]["isError"], true, "tool error: {response}");
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+        }
+
+        let (svc, repo, _manager, _conversations) = setup_with_factory_metadata_team_repo_and_conversation_repo();
+        let team = svc
+            .create_team("user-test", single_agent_team_request("TCP Query Contract"))
+            .await
+            .unwrap();
+        svc.ensure_session("user-test", &team.id).await.unwrap();
+        let session = svc.published_session(&team.id).unwrap();
+        let slot = &team.assistants[0].slot_id;
+        let config = session.mcp_stdio_config(slot);
+        let mut stream = TcpStream::connect(("127.0.0.1", config.port)).await.unwrap();
+        let initialized = request(
+            &mut stream,
+            json!({"jsonrpc":"2.0", "id":1, "method":"initialize",
+            "params":{"auth_token":config.token, "slot_id":slot}}),
+        )
+        .await;
+        assert!(initialized.get("error").is_none(), "initialize: {initialized}");
+
+        let original = "测试界🦀\n".repeat(2100);
+        let message = session
+            .mailbox()
+            .write(&team.id, slot, "user", MailboxMessageType::Message, &original, None)
+            .await
+            .unwrap();
+        let preview = query(&mut stream, 2, json!({})).await;
+        assert_eq!(preview["messages"][0]["message_id"], message.id);
+        assert_eq!(preview["messages"][0]["content_truncated"], true);
+        let mut arguments = preview["messages"][0]["read_content"].clone();
+        assert_eq!(arguments, json!({"message_id":message.id, "content_offset":0}));
+        // Persist the same read state produced by successful delivery before
+        // following the advertised entry point. It must not disappear.
+        session
+            .mailbox()
+            .mark_read_batch(&team.id, std::slice::from_ref(&message.id))
+            .await
+            .unwrap();
+        let mut reconstructed = String::new();
+        let mut id = 3;
+        loop {
+            let chunk = query(&mut stream, id, arguments).await;
+            assert_eq!(chunk["message_id"], message.id);
+            assert_eq!(chunk["total_content_chars"], original.chars().count());
+            let text = chunk["content"].as_str().unwrap();
+            assert!(text.chars().count() <= 4000);
+            reconstructed.push_str(text);
+            if chunk["next_read_content"].is_null() {
+                break;
+            }
+            arguments = chunk["next_read_content"].clone();
+            id += 1;
+        }
+        assert_eq!(reconstructed, original);
+        assert!(session.mailbox().peek_unread(&team.id, slot).await.unwrap().is_empty());
+
+        // Fixed timestamp and explicit IDs exercise the stable tie breaker,
+        // independent of UUID generation timing or insertion order.
+        for (message_id, content, read) in [
+            ("tcp-anchor", "acknowledged", false),
+            ("tcp-z-next", "next unread", false),
+        ] {
+            repo.write_message(
+                "user-test",
+                &aionui_db::models::MailboxMessageRow {
+                    id: message_id.into(),
+                    team_id: team.id.clone(),
+                    to_agent_id: slot.clone(),
+                    from_agent_id: "user".into(),
+                    msg_type: "message".into(),
+                    content: content.into(),
+                    summary: None,
+                    files: None,
+                    read,
+                    created_at: 100,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let before_ack = query(&mut stream, id + 1, json!({})).await;
+        assert_eq!(before_ack["messages"][0]["message_id"], "tcp-anchor");
+        let anchor_id = before_ack["messages"][0]["message_id"].as_str().unwrap().to_owned();
+        session
+            .mailbox()
+            .mark_read_batch(&team.id, std::slice::from_ref(&anchor_id))
+            .await
+            .unwrap();
+        let resumed = query(&mut stream, id + 2, json!({"since_message_id":anchor_id})).await;
+        assert_eq!(resumed["returned_count"], 1);
+        assert_eq!(resumed["messages"][0]["message_id"], "tcp-z-next");
+        assert_eq!(resumed["messages"][0]["content"], "next unread");
+        svc.stop_session("user-test", &team.id).await.unwrap();
+    }
+
     #[tokio::test]
     async fn stop_sessions_for_user_keeps_other_user_sessions() {
         let (svc, _repo, _task_manager, _conv_repo) = setup_with_factory_metadata_team_repo_and_conversation_repo();
@@ -3698,6 +3959,236 @@ mod tests {
             .map(|event| event.data.get("status").and_then(serde_json::Value::as_str).unwrap())
             .collect();
         assert_eq!(worker_statuses, vec!["dormant"]);
+    }
+
+    #[tokio::test]
+    async fn explicit_permission_setter_routes_only_qoder_yolo_and_confirms() {
+        for (backend, mode, should_restart) in [
+            ("qoder", "yolo", true),
+            ("qoder", "default", false),
+            ("acp", "yolo", false),
+        ] {
+            let tasks = Arc::new(MutableTaskManager::new());
+            let (svc, _, _, conv_repo, _) =
+                setup_with_factory_metadata_team_repo_conversation_repo_broadcaster_and_task_manager(tasks.clone());
+            let mut request = single_agent_team_request("Mode Setter");
+            request.agents[0].backend = Some(backend.into());
+            let team = svc.create_team("user-test", request).await.unwrap();
+            let lead = team.assistants.first().unwrap();
+            svc.ensure_session("user-test", &team.id).await.unwrap();
+            tasks.insert_mode_agent(&lead.conversation_id);
+            tasks.reset_kills();
+            let response = svc
+                .set_conversation_config_option(
+                    "user-test",
+                    &team.id,
+                    &lead.conversation_id,
+                    "mode",
+                    SetConfigOptionRequest { value: mode.into() },
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.confirmation, ConfigOptionConfirmation::Observed);
+            assert_eq!(!tasks.kills().is_empty(), should_restart);
+            if should_restart {
+                let observed = response
+                    .config_options
+                    .unwrap()
+                    .into_iter()
+                    .find(|option| option.id == "mode")
+                    .unwrap()
+                    .current_value;
+                assert_eq!(observed.as_deref(), Some("yolo"));
+                assert_eq!(
+                    conv_repo
+                        .get_extra(&lead.conversation_id)
+                        .unwrap()
+                        .get("observed_mode")
+                        .and_then(serde_json::Value::as_str),
+                    Some("yolo")
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_permission_resume_rejects_untracked_live_runtime_work() {
+        for background in [false, true] {
+            let tasks = Arc::new(MutableTaskManager::new());
+            let (svc, _, _, _, _) =
+                setup_with_factory_metadata_team_repo_conversation_repo_broadcaster_and_task_manager(tasks.clone());
+            let team = svc
+                .create_team("user-test", single_agent_team_request("Runtime Work Guard"))
+                .await
+                .unwrap();
+            let lead = team.assistants.first().unwrap();
+            svc.ensure_session("user-test", &team.id).await.unwrap();
+            let mut task = ModeSettingAgent::accepts_mode(&lead.conversation_id);
+            if background {
+                task.background_tasks = 1;
+            } else {
+                task.status = Some(ConversationStatus::Running);
+            }
+            tasks
+                .tasks
+                .lock()
+                .unwrap()
+                .insert(lead.conversation_id.clone(), AgentInstance::Mock(Arc::new(task)));
+            tasks.reset_kills();
+            let result = svc
+                .restart_agent_runtime_inner("user-test", &team.id, &lead.slot_id, false, Some("yolo"))
+                .await;
+            assert!(matches!(result, Err(TeamError::MemberBusy { .. })));
+            assert!(tasks.kills().is_empty());
+            let session = Arc::clone(&svc.sessions.get(&team.id).unwrap().session);
+            assert!(matches!(
+                session.member_runtimes().snapshot(&lead.slot_id),
+                crate::member_runtime::MemberRuntimeSnapshot::Ready
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_permission_setter_busy_retains_mode_without_kill() {
+        let tasks = Arc::new(MutableTaskManager::new());
+        let (svc, _, _, conv_repo, _) =
+            setup_with_factory_metadata_team_repo_conversation_repo_broadcaster_and_task_manager(tasks.clone());
+        let mut request = single_agent_team_request("Busy Mode Setter");
+        request.agents[0].backend = Some("qoder".into());
+        let team = svc.create_team("user-test", request).await.unwrap();
+        let lead = team.assistants.first().unwrap();
+        svc.ensure_session("user-test", &team.id).await.unwrap();
+        let session = Arc::clone(&svc.sessions.get(&team.id).unwrap().session);
+        let lease = session
+            .work_coordinator()
+            .acquire_enqueue(EnqueueRequest {
+                slot_id: lead.slot_id.clone(),
+                role: TeamRunTargetRole::Lead,
+                source: WorkSource::UserMessage,
+                binding: CausalBinding::UserVisible,
+            })
+            .unwrap();
+        session
+            .work_coordinator()
+            .commit_enqueue(&lease, Some("existing-command".into()))
+            .unwrap();
+        tasks.reset_kills();
+        let error = svc
+            .set_conversation_config_option(
+                "user-test",
+                &team.id,
+                &lead.conversation_id,
+                "mode",
+                SetConfigOptionRequest { value: "yolo".into() },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, TeamError::MemberBusy { .. }));
+        assert!(tasks.kills().is_empty());
+        assert!(
+            conv_repo
+                .get_extra(&lead.conversation_id)
+                .unwrap()
+                .get("observed_mode")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_permission_resume_confirms_before_ready_and_preserves_failures() {
+        for outcome in ["success", "mismatch", "failure"] {
+            let task_manager = Arc::new(MutableTaskManager::new());
+            let (svc, _repo, _, conv_repo, broadcaster) =
+                setup_with_factory_metadata_team_repo_conversation_repo_broadcaster_and_task_manager(
+                    task_manager.clone(),
+                );
+            let created = svc
+                .create_team("user-test", single_agent_team_request("Explicit Permission Resume"))
+                .await
+                .unwrap();
+            let lead = created.assistants.first().unwrap();
+            svc.ensure_session("user-test", &created.id).await.unwrap();
+            task_manager.insert_mode_agent(&lead.conversation_id);
+            task_manager.reset_kills();
+            let patch = match outcome {
+                "mismatch" => serde_json::json!({"required_mode_mismatch":true}),
+                "failure" => serde_json::json!({"runtime_attach_failed":true}),
+                _ => serde_json::json!({}),
+            };
+            svc.conversation_port
+                .patch_runtime_config(&lead.conversation_id, patch)
+                .await
+                .unwrap();
+            let result = svc
+                .restart_agent_runtime_inner("user-test", &created.id, &lead.slot_id, false, Some("yolo"))
+                .await;
+            let extra = conv_repo.get_extra(&lead.conversation_id).unwrap();
+            if outcome == "success" {
+                result.unwrap();
+                assert_eq!(
+                    extra.get("observed_mode").and_then(serde_json::Value::as_str),
+                    Some("yolo")
+                );
+            } else {
+                assert!(matches!(result, Err(TeamError::MemberRuntimeFailed { .. })));
+                assert!(extra.get("observed_mode").is_none());
+                let statuses = broadcaster.events_by_name("team.agentRuntimeStatusChanged");
+                assert_eq!(
+                    statuses
+                        .last()
+                        .unwrap()
+                        .data
+                        .get("status")
+                        .and_then(serde_json::Value::as_str),
+                    Some("failed")
+                );
+            }
+            assert!(task_manager.kills().contains(&lead.conversation_id));
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_permission_resume_rejects_active_and_queued_without_kill() {
+        for active in [false, true] {
+            let task_manager = Arc::new(MutableTaskManager::new());
+            let (svc, _, _, _, _) =
+                setup_with_factory_metadata_team_repo_conversation_repo_broadcaster_and_task_manager(
+                    task_manager.clone(),
+                );
+            let created = svc
+                .create_team("user-test", single_agent_team_request("Busy Permission Resume"))
+                .await
+                .unwrap();
+            let lead = created.assistants.first().unwrap();
+            svc.ensure_session("user-test", &created.id).await.unwrap();
+            task_manager.insert_mode_agent(&lead.conversation_id);
+            let session = Arc::clone(&svc.sessions.get(&created.id).unwrap().session);
+            let lease = session
+                .work_coordinator()
+                .acquire_enqueue(EnqueueRequest {
+                    slot_id: lead.slot_id.clone(),
+                    role: TeamRunTargetRole::Lead,
+                    source: WorkSource::UserMessage,
+                    binding: CausalBinding::UserVisible,
+                })
+                .unwrap();
+            session
+                .work_coordinator()
+                .commit_enqueue(&lease, Some("message-existing".into()))
+                .unwrap();
+            if active {
+                assert!(matches!(
+                    session.work_coordinator().next(&lead.slot_id),
+                    ReconcileDecision::Claim(_)
+                ));
+            }
+            task_manager.reset_kills();
+            let result = svc
+                .restart_agent_runtime_inner("user-test", &created.id, &lead.slot_id, false, Some("yolo"))
+                .await;
+            assert!(matches!(result, Err(TeamError::MemberBusy { .. })));
+            assert!(task_manager.kills().is_empty());
+        }
     }
 
     #[tokio::test]
@@ -5014,6 +5505,101 @@ mod tests {
                 conversation_id: ref id
             } if id == &conversation_id
         ));
+    }
+
+    /// TEAM-ORCH-02 (#371): a member whose runtime never started must still accept
+    /// a model change, otherwise "switch the model" is unavailable exactly when the
+    /// current model is the thing that is broken.
+    #[tokio::test]
+    async fn team_orch_02_371_model_switch_is_saved_for_member_without_runtime() {
+        let (svc, _repo, _task_manager, conv_repo) = setup_with_factory_metadata_team_repo_and_conversation_repo();
+        let created = svc
+            .create_team("user-test", single_agent_team_request("Model Without Runtime"))
+            .await
+            .unwrap();
+        let conversation_id = created.assistants[0].conversation_id.clone();
+        conv_repo.mark_runtime_not_ready(&conversation_id);
+
+        let response = svc
+            .set_conversation_config_option(
+                "user-test",
+                &created.id,
+                &conversation_id,
+                "model",
+                SetConfigOptionRequest {
+                    value: "hy3".to_owned(),
+                },
+            )
+            .await
+            .expect("an idle member must accept a model change");
+
+        assert_eq!(response.confirmation, ConfigOptionConfirmation::PendingNextTurn);
+        let team = svc.get_team("user-test", &created.id).await.unwrap();
+        let member = team
+            .assistants
+            .iter()
+            .find(|agent| agent.conversation_id == conversation_id)
+            .expect("member stays on the roster");
+        assert_eq!(member.model, "hy3");
+    }
+
+    /// TEAM-ORCH-02 (#371): with a stored catalog an offline switch must name a
+    /// model the agent offers; otherwise the member would fail at first start.
+    #[tokio::test]
+    async fn team_orch_02_371_offline_model_must_be_in_the_stored_catalog() {
+        let (svc, _repo, _task_manager, conv_repo) = setup_with_factory_metadata_team_repo_and_conversation_repo();
+        let created = svc
+            .create_team("user-test", single_agent_team_request("Catalog Check"))
+            .await
+            .unwrap();
+        let conversation_id = created.assistants[0].conversation_id.clone();
+        conv_repo.mark_runtime_not_ready(&conversation_id);
+        conv_repo.set_extra_value(&conversation_id, "model_catalog", serde_json::json!(["hy4free", "hy3"]));
+        let request = |value: &str| SetConfigOptionRequest {
+            value: value.to_owned(),
+        };
+
+        let err = svc
+            .set_conversation_config_option("user-test", &created.id, &conversation_id, "model", request("nope"))
+            .await
+            .expect_err("a model outside the catalog must be refused");
+        assert!(matches!(err, TeamError::InvalidRequest(ref msg) if msg.contains("hy4free") && msg.contains("hy3")));
+        let team = svc.get_team("user-test", &created.id).await.unwrap();
+        assert_ne!(team.assistants[0].model, "nope", "a refused model must not be saved");
+
+        svc.set_conversation_config_option("user-test", &created.id, &conversation_id, "model", request("hy3"))
+            .await
+            .expect("a catalogued model is accepted");
+        let team = svc.get_team("user-test", &created.id).await.unwrap();
+        assert_eq!(team.assistants[0].model, "hy3");
+    }
+
+    /// TEAM-ORCH-02 (#371): only the model is saved offline; other options still
+    /// need a live runtime and keep reporting that distinctly.
+    #[tokio::test]
+    async fn team_orch_02_371_non_model_option_still_needs_runtime() {
+        let (svc, _repo, _task_manager, conv_repo) = setup_with_factory_metadata_team_repo_and_conversation_repo();
+        let created = svc
+            .create_team("user-test", single_agent_team_request("Mode Without Runtime"))
+            .await
+            .unwrap();
+        let conversation_id = created.assistants[0].conversation_id.clone();
+        conv_repo.mark_runtime_not_ready(&conversation_id);
+
+        let err = svc
+            .set_conversation_config_option(
+                "user-test",
+                &created.id,
+                &conversation_id,
+                "mode",
+                SetConfigOptionRequest {
+                    value: "full_auto".to_owned(),
+                },
+            )
+            .await
+            .expect_err("mode needs a live runtime");
+
+        assert!(matches!(err, TeamError::RuntimeNotReady { .. }));
     }
 
     #[tokio::test]

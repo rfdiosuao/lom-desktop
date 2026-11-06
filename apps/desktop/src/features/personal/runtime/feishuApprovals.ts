@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { approvePermission } from '@/features/chat/runtime/permissions';
+import { redactSecrets } from '@/shared/lib/redact';
 import { confirm } from '@/shared/overlays/controller';
 import { S, update, watchStore } from '@/state/store';
 import type { Conv, Msg } from '@/state/types';
@@ -14,11 +15,6 @@ interface Pending {
 const pending = new Map<string, Pending>();
 const lastUser = (c: Conv) => c.messages.findLast(m => m.type === 'user');
 const nonce = () => crypto.randomUUID().replaceAll('-', '');
-const sanitize = (s: string) => s
-  .replace(/(?:sk-|oc_sk_)[A-Za-z0-9_-]+/g, '[已隐藏密钥]')
-  .replace(/((?:Bearer|Basic)\s+)\S+/gi, '$1[已隐藏]')
-  .replace(/(["']?[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|device[_-]?code)[\w-]*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1[已隐藏]')
-  .replace(/([?&](?:code|token|key|secret)=)[^&\s]+/gi, '$1[已隐藏]');
 function finishNotice(p: Pending) {
   if (S.cloud === 'signed-in' && S.account?.id === p.account) void invoke('feishu_notice_finish', { account: p.account, assistantId: p.assistantId, appId: p.appId, generation: p.generation, nonce: p.nonce, outcome: p.outcome || 'resolved' }).catch(() => console.warn('feishu.approval_card_update_failed'));
 }
@@ -60,7 +56,7 @@ async function create(c: Conv, summary: string, extraGuard: () => boolean, apply
     const p: Pending = { account, assistantId, appId, generation: status.generation, nonce: id, current, decide: apply, finish: resolve, used: false, expires: Date.now() + 30 * 60_000, timer: setTimeout(() => { discard(p, false, 'expired'); }, 30 * 60_000) };
     pending.set(id, p);
     if (turn?.source === 'feishu') {
-      void invoke('feishu_owner_notice', { account, assistantId, appId, generation: status.generation, nonce: id, summary: sanitize(`${c.personal!.name}：${summary}`) })
+      void invoke('feishu_owner_notice', { account, assistantId, appId, generation: status.generation, nonce: id, summary: redactSecrets(`${c.personal!.name}：${summary}`) })
         .then(() => { if (p.outcome) finishNotice(p); })
         .catch(() => { if (!desktop) discard(p); }); // Core confirmation remains available on desktop.
     }

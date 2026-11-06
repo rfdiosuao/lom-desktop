@@ -117,6 +117,13 @@ pub trait TeamConversationProvisioningPort: Send + Sync {
 
     async fn save_acp_runtime_mode(&self, conversation_id: &str, mode: &str) -> Result<(), TeamError>;
 
+    /// Model ids the conversation's agent is known to offer, from its stored
+    /// catalog. `None` means no catalog is stored, which is not the same as an
+    /// empty one: callers must not treat it as "every model is invalid".
+    async fn offline_model_catalog(&self, _conversation_id: &str) -> Result<Option<Vec<String>>, TeamError> {
+        Ok(None)
+    }
+
     async fn get_config_options(&self, conversation_id: &str) -> Result<GetConfigOptionsResponse, TeamError>;
 
     async fn set_config_option(
@@ -144,6 +151,18 @@ pub trait TeamConversationProvisioningPort: Send + Sync {
         conversation_id: &str,
         task_manager: &Arc<dyn IWorkerTaskManager>,
     ) -> Result<(), TeamError>;
+
+    async fn warmup_agent_process_with_mode(
+        &self,
+        _user_id: &str,
+        _conversation_id: &str,
+        _task_manager: &Arc<dyn IWorkerTaskManager>,
+        _mode: &str,
+    ) -> Result<(), TeamError> {
+        Err(TeamError::InvalidRequest(
+            "Explicit idle permission rebuild is unavailable".into(),
+        ))
+    }
 
     /// Resolve ONE assistant's effective MCP binding (its fixed default list, or
     /// the user's last selection in auto mode) into the two create-time request
@@ -489,6 +508,19 @@ impl TeamAgentProvisioner {
         task_manager: &Arc<dyn IWorkerTaskManager>,
         kill_existing: bool,
     ) -> Result<Option<String>, TeamError> {
+        self.attach_agent_process_with_mode(user_id, agent, mcp_stdio_cfg, task_manager, kill_existing, None)
+            .await
+    }
+
+    pub(crate) async fn attach_agent_process_with_mode(
+        &self,
+        user_id: &str,
+        agent: &TeamAgent,
+        mcp_stdio_cfg: TeamMcpStdioConfig,
+        task_manager: &Arc<dyn IWorkerTaskManager>,
+        kill_existing: bool,
+        required_mode: Option<&str>,
+    ) -> Result<Option<String>, TeamError> {
         let team_id = mcp_stdio_cfg.team_id.clone();
         let (transport, capabilities) = self.resolve_team_tool_transport(user_id, agent).await?;
         info!(
@@ -516,25 +548,61 @@ impl TeamAgentProvisioner {
             .await?;
         match transport {
             TeamToolTransport::Mcp => {
-                self.write_team_mcp_runtime_config(user_id, agent, mcp_stdio_cfg, !kill_existing, &mcp_resolution)
-                    .await?
+                self.write_team_mcp_runtime_config(
+                    user_id,
+                    agent,
+                    mcp_stdio_cfg,
+                    !kill_existing || required_mode.is_some(),
+                    &mcp_resolution,
+                )
+                .await?
             }
             TeamToolTransport::CliAssumed => {
-                self.write_team_cli_runtime_config(user_id, agent, !kill_existing, &mcp_resolution)
-                    .await?
+                self.write_team_cli_runtime_config(
+                    user_id,
+                    agent,
+                    !kill_existing || required_mode.is_some(),
+                    &mcp_resolution,
+                )
+                .await?
             }
         }
         if kill_existing {
             task_manager
-                .kill_and_wait(&agent.conversation_id, Some(AgentKillReason::TeamMcpRebuild))
+                .kill_and_wait(
+                    &agent.conversation_id,
+                    Some(if required_mode.is_some() {
+                        AgentKillReason::RuntimeRestart
+                    } else {
+                        AgentKillReason::TeamMcpRebuild
+                    }),
+                )
                 .await;
         }
-        self.conversation_port
-            .warmup_agent_process(user_id, &agent.conversation_id, task_manager)
-            .await
-            .map_err(|e| {
-                TeamError::InvalidRequest(format!("failed to warm up rebuilt agent {}: {e}", agent.slot_id))
-            })?;
+        if let Some(mode) = required_mode {
+            self.conversation_port
+                .warmup_agent_process_with_mode(user_id, &agent.conversation_id, task_manager, mode)
+                .await?;
+            let observed = self
+                .conversation_port
+                .get_config_options(&agent.conversation_id)
+                .await?;
+            if observed
+                .config_options
+                .iter()
+                .find(|option| option.id == "mode")
+                .and_then(|option| option.current_value.as_deref())
+                != Some(mode)
+            {
+                return Err(TeamError::InvalidRequest(
+                    "Permission mode was not observed after the reserved idle resume".into(),
+                ));
+            }
+        } else {
+            self.conversation_port
+                .warmup_agent_process(user_id, &agent.conversation_id, task_manager)
+                .await?;
+        }
         info!(
             team_id = %team_id,
             slot_id = %agent.slot_id,

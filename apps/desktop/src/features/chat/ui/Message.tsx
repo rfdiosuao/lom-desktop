@@ -7,6 +7,7 @@ import { compactTask, visibleReply } from '../runtime/commands';
 import { MemberAvatar } from '@/features/teams/ui/MemberAvatar';
 import { agentRow } from '@/features/settings/runtime/agents';
 import { openMessagePath } from '@/features/workspace/runtime/workspace';
+import { pathTitle } from '@/features/workspace/runtime/required';
 import { ReplyImage } from '@/shared/ui/ReplyImage';
 import { UserMessage } from './UserMessage';
 import { EventCard } from './EventCard';
@@ -57,7 +58,7 @@ export function Message({ m, ctxId, continued = false, headerOnly = false, compa
           {continued ? <span className="msg__gutter" aria-hidden="true" /> : conversation?.personal ? <AssistantAvatar assistant={{ avatar: conversation.personal.avatar, avatarImage: conversation.personal.image }} className="pa-message-avatar" alt={`${conversation.personal.name}头像`} /> : conversation?.agentId ? <MemberAvatar id={`ag:${conversation.agentId}`} name={conversation.agentName} size="sm" /> : <Avatar agent={a} size="sm" />}
           <div className="msg__body">
             {!continued && <div className="msg__meta"><span className="msg__name">{conversation?.agentId ? external?.name || conversation.agentName || 'Agent' : conversation?.personal?.name || m.role || a?.name}</span>{a?.kind === 'phone' && !a.real && <Badge text={modelName(a.model || 'lom-mini')} />}<span>{fmtTime(m.at)}</span></div>}
-            {!headerOnly && <><div className="msg__text"><Markdown text={visibleReply(m.text, m.streaming)} streaming={m.streaming} fenceFrom={fence?.from} fenceOpenEnd={fence?.openEnd} file={conversation?.remote && !conversation.phoneSession ? (path, label, key) => <button key={key} type="button" className="message-path" title={`在侧栏打开：${path}`} onClick={() => void openMessagePath(path, conversation.workspace)}>{label}</button> : undefined} image={(source, alt, key) => <ReplyImage key={`${imageContext.account}:${ctxId}:${key}:${source}`} source={source} alt={alt} context={imageContext} ready={!m.streaming} />} />{m.streaming && <Typing inline />}</div>
+            {!headerOnly && <><div className="msg__text"><Markdown text={visibleReply(m.text, m.streaming)} streaming={m.streaming} fenceFrom={fence?.from} fenceOpenEnd={fence?.openEnd} file={conversation?.remote && !conversation.phoneSession ? (path, label, key) => <button key={key} type="button" className="message-path" title={pathTitle(path, conversation.workspace)} onClick={() => void openMessagePath(path, conversation.workspace)}>{label}</button> : undefined} image={(source, alt, key) => <ReplyImage key={`${imageContext.account}:${ctxId}:${key}:${source}`} source={source} alt={alt} context={imageContext} ready={!m.streaming} />} />{m.streaming && <Typing inline />}</div>
             {m.attachments?.filter(a => a.phoneFile && /\.(png|jpe?g|webp|gif)$/i.test(a.name)).map((a, i) => <ReplyImage key={`${imageContext.account}:${ctxId}:attachment-${i}`} source={a.name} alt={a.name}
               context={{ ...imageContext, attachment: { session_id: a.phoneFile!.session, message_id: a.phoneFile!.message, index: String(a.phoneFile!.index) } }} ready={!m.streaming} />)}</>}
           </div>

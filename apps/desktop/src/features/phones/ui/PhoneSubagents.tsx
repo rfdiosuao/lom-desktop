@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { deleteSub, editSub, toggleSub } from '../actions/subagents';
 import { loadPhoneSubagents, phoneSubagents } from '../runtime/phoneSubagents';
 import { phone } from '@/state/selectors';
+import { phoneFeature, unsupportedText } from '../runtime/phoneCapabilities';
 import { S, useStore } from '@/state/store';
 import { phoneGuard } from '../runtime/deviceLink';
 import { Avatar } from '@/shared/ui/Agent';
@@ -11,7 +12,7 @@ import { Empty, ListRow, PageHead } from '@/shared/ui/Layout';
 import { Page } from '@/shared/ui/Page';
 
 export function PhoneSubagents() {
-  const s = useStore(), p = phone(), state = phoneSubagents(p.id);
+  const s = useStore(), p = phone(), state = phoneSubagents(p.id), supported = phoneFeature(p.id, 'subagents');
   const [error, setError] = useState('');
   const disabled = state.busy || p.status !== 'online' || !state.loaded;
   async function reload() {
@@ -23,9 +24,10 @@ export function PhoneSubagents() {
   useEffect(() => {
     let active = true;
     setError('');
-    if (p.real && !phoneSubagents(p.id).busy) void loadPhoneSubagents(p.id).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
+    if (p.real && supported && !phoneSubagents(p.id).busy) void loadPhoneSubagents(p.id).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { active = false; };
-  }, [p.id, p.real, p.status, s.account?.id, s.cloud]);
+  }, [p.id, p.real, supported, p.status, s.account?.id, s.cloud]);
+  if (p.real && !supported) return <Page><PageHead title={`${p.name} 的子代理`} desc={unsupportedText('subagents')} /><Empty ic="people" title="这台手机暂不支持子代理" desc="手机应用更新后会自动恢复入口。" /></Page>;
   return <Page>
     <PageHead title={`${p.name} 的子代理`} desc="管理手机上真实的子代理配置。启用或停用只影响后续委派，不会立即运行或终止现有任务。"
       actions={p.real ? <><Btn label={state.busy ? '正在同步…' : '刷新'} ic="refresh" disabled={state.busy} onClick={() => void reload()} /><Btn label="新建子代理" ic="plus" variant="primary" disabled={disabled} onClick={() => editSub()} /></> : undefined} />

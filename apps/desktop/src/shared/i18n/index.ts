@@ -9,3 +9,8 @@ export function t<T>(value: T): T {
   if (interval) return `Every ${interval[1]} min` as T;
   return value;
 }
+
+/** 带变量的文案：整句作键，`{名字}` 为占位符。中文界面只替换变量，英文界面先查整句译文再替换。 */
+export function tf(template: string, vars: Record<string, string | number>): string {
+  return t(template).replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
+}

@@ -1,0 +1,8 @@
+.modal.connector-modal{width:600px}
+.connector-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px 16px;padding:12px 0 4px}
+.connector-form label{display:grid;gap:8px;min-width:0;color:var(--text-strong);font-size:var(--fs-sm)}
+.connector-form label:nth-child(n+3),.connector-advanced{grid-column:1/-1}
+.connector-form .input,.connector-form .textarea{width:100%;min-width:0}
+.connector-form .textarea{min-height:120px}
+.connector-modal [role=alert]{color:var(--danger)}
+@media(max-width:540px){.connector-form{grid-template-columns:minmax(0,1fr)}}

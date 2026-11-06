@@ -50,6 +50,7 @@ pub struct McpRouterState {
     pub sync_service: McpSyncService,
     pub connection_test_service: McpConnectionTestService,
     pub oauth_service: McpOAuthService,
+    pub oauth_flows: crate::oauth_desktop::OAuthFlows,
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,7 @@ pub struct McpRouterState {
 /// All routes require authentication (applied by the caller).
 pub fn mcp_routes(state: McpRouterState) -> Router {
     Router::new()
+        .merge(crate::oauth_desktop::routes())
         .route("/api/mcp/servers", get(list_servers).post(add_server))
         .route("/api/mcp/servers/import", post(batch_import))
         .route(
@@ -199,7 +201,17 @@ async fn test_connection(
     body: Result<Json<TestMcpConnectionRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     let Json(req) = body.map_err(ApiError::from)?;
-    let transport = McpServerTransport::from(req.transport);
+    let mut transport = McpServerTransport::from(req.transport);
+    if let McpServerTransport::Http { url, headers } = &transport
+        && let Some(helper) =
+            lom_mcp_oauth::helper(&user.id, url, headers).map_err(|e| ApiError::BadRequest(e.0.into()))?
+    {
+        transport = McpServerTransport::Stdio {
+            command: helper.command.to_string_lossy().into_owned(),
+            args: helper.args,
+            env: helper.env,
+        };
+    }
     let result = state
         .connection_test_service
         .test_connection_with_runtime_scope(

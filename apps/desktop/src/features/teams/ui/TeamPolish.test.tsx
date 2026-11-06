@@ -113,7 +113,7 @@ it('TEAM-LEADER-01 AC1 first computer Agent stays leader when Lom joins later', 
   localStorage.setItem('lom.agent-options:ext', '[]');
   newTeam(); pickAssist('ag:ext'); pickAssist('pc');
   expect(S.form.members.map((m: {leader:boolean}) => !!m.leader)).toEqual([true, false]);
-  S.form.name = '首位主控'; createTeam();
+  S.form.name = '首位主控'; S.form.folder = '/work'; createTeam();
   expect(S.teams[0].members[0]).toMatchObject({agent:'ag:ext', leader:true});
   expect(S.teams[0].members).toHaveLength(2);
   localStorage.setItem('lom.agent-options:ext', '[]');
@@ -126,10 +126,10 @@ it('TEAM-LEADER-01 AC1 external-only team does not silently gain Lom; phones can
   const { createTeam } = await import('../actions/teams');
   S.agentCatalog = [{ id: 'ext', name: 'External', backend: 'codex', installed: true, status: 'online', enabled: true, agent_type: 'acp', agent_source: 'builtin' }];
   localStorage.setItem('lom.agent-options:ext', '[]');
-  newTeam(); pickAssist('ag:ext'); S.form.name = '外部主控'; createTeam();
+  newTeam(); pickAssist('ag:ext'); S.form.name = '外部主控'; S.form.folder = '/work'; createTeam();
   expect(S.teams[0].members.map(m => m.agent)).toEqual(['ag:ext']);
   const count = S.teams.length;
-  newTeam(); pickAssist('p1'); S.form.name = '手机'; createTeam();
+  newTeam(); pickAssist('p1'); S.form.name = '手机'; S.form.folder = '/work'; createTeam();
   expect(S.teams).toHaveLength(count);
   expect(S.toast?.text).toContain('电脑 Agent');
 });

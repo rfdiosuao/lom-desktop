@@ -1,5 +1,6 @@
 import { cloudConfigured } from '@/features/account/runtime/serviceConfig';
 import { NoPhone } from '@/features/phones/ui/NoPhone';
+import { phoneEntryVisible, type PhoneEntry } from '@/features/phones/runtime/phoneCapabilities';
 import { ImportedHistoryRows } from '@/features/history/ui/ImportedHistoryRows';
 import { beginConversationDrag, refreshHistory } from '@/features/history/runtime/historyImport';
 import { HistoryHeader } from '@/features/chat/ui/HistoryHeader';
@@ -30,7 +31,7 @@ import { cx } from '@/shared/lib/util';
 
 /* ===== 左侧栏：电脑模式 / 手机模式 / 设置 ===== */
 
-export const SETTING_PAGES: [string, string, string][] = [['account', '账号', 'person'], ['general', '通用', 'settings'], ['agents', 'Agents', 'compass'], ['models', '模型与额度', 'cube'], ['connections', '手机与连接', 'phone'], ['agent', 'Agent 默认配置', 'people'], ['security', '权限与安全', 'shield'], ['data', '数据与备份', 'database']];
+export const SETTING_PAGES: [string, string, string][] = [['account', '账号', 'person'], ['general', '通用', 'settings'], ['agents', 'Agents', 'compass'], ['models', '模型与额度', 'cube'], ['connections', '手机与连接', 'phone'], ['servers', '服务器管理', 'database'], ['agent', 'Agent 默认配置', 'people'], ['security', '权限与安全', 'shield'], ['data', '数据与缓存', 'database']];
 
 /** 顶部：macOS 红绿灯位置留空（桌面外壳里由系统绘制）+ 搜索 + 收起 */
 function SidebarTop() {
@@ -43,7 +44,7 @@ function SidebarTop() {
   );
 }
 
-const Brand = () => <div className="brand"><img src="/logo.png" alt="Lom" /><span>Lom</span></div>;
+const Brand = () => <div className="brand" onMouseDown={dragWindow}><img src="/logo.png" alt="Lom" /><span>Lom</span></div>;
 
 function ModeSwitch() {
   const s = useStore();
@@ -164,13 +165,14 @@ export function PhoneSidebar() {
     { key: 'earlier', name: '更早', items: rest.filter(c => c.updated < today0 - day) },
   ];
   const nav = (label: string, ic: string, route: string) => <NavItem key={route} label={label} ic={ic} onClick={() => go(route)} active={r === route} />;
+  const show = (entry: PhoneEntry) => !p.real || phoneEntryVisible(p.id, entry); // 真实手机按它支持的功能显示入口（PHONE-CAPS-01）
   return (
     <aside className="sidebar" aria-label="侧边栏">
       <SidebarTop /><Brand /><ModeSwitch />
       <div className="sidebar__body">
         <DeviceButton phone={p} variant="sidebar" />
         <div className="sidebar__section" style={{ borderTop: 0, paddingTop: 2 }}>
-          {nav('定时任务', 'clock', 'phone-schedule')}{nav('技能', 'grid', 'phone-skills')}{nav('子代理', 'people', 'phone-subagents')}{nav('人格 · SOUL.md', 'person', 'phone-soul')}{nav('记忆', 'database', 'phone-memory')}
+          {show('schedule') && nav('定时任务', 'clock', 'phone-schedule')}{show('skills') && nav('技能', 'grid', 'phone-skills')}{show('subagents') && nav('子代理', 'people', 'phone-subagents')}{show('soul') && nav('人格 · SOUL.md', 'person', 'phone-soul')}{show('memory') && nav('记忆', 'database', 'phone-memory')}
         </div>
         <div className="sidebar__section">
           <div className="sidebar__label">

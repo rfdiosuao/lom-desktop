@@ -1,6 +1,6 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { openMenu } from '../overlays/controller';
-import { personaOf } from '@/state/selectors';
+import { phoneAppText } from '@/state/selectors';
 import type { Agent } from '@/state/types';
 import { cx } from '../lib/util';
 import { Dot } from './Controls';
@@ -8,7 +8,7 @@ import { Icon } from './Icon';
 
 /* ===== Agent 相关控件：头像、选择标记、Agent 胶囊、手机选择按钮 ===== */
 
-type AvatarAgent = Pick<Agent, 'kind' | 'name'> & { status?: Agent['status']; avatar?: string; real?: boolean };
+type AvatarAgent = Pick<Agent, 'kind' | 'name'> & { status?: Agent['status']; avatar?: string; logo?: string; real?: boolean };
 
 /* 头像：电脑主控 / 手机 / 用户 统一 */
 export function Avatar({ agent, size, crown, status }: { agent?: AvatarAgent | null; size?: 'sm' | 'lg'; crown?: boolean; status?: boolean }) {
@@ -20,6 +20,7 @@ export function Avatar({ agent, size, crown, status }: { agent?: AvatarAgent | n
   return (
     <span className={cx('avatar', `avatar--${kind}`, size && `avatar--${size}`, off && 'is-offline')} aria-hidden="true">
       {kind === 'user' && agent.avatar ? <img key={agent.avatar} className="avatar__image" src={agent.avatar} alt="" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none'; }} /> : null}
+      {kind === 'phone' && agent.logo ? <img key={agent.logo} className="avatar__image" src={agent.logo} alt="" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none'; }} /> : null}
       {kind === 'computer' ? <Icon name="monitor" /> : kind === 'phone' ? <Icon name="phone" /> : (agent.name || '?').slice(0, 1)}
       {crown && <span className="avatar__crown"><Icon name="crown" /></span>}
       {dot && <span className={cx('avatar__status', off && 'is-offline')} />}
@@ -86,8 +87,8 @@ export function ChipAdd({ label = '添加手机', onClick }: { label?: string; o
 export function DeviceButton({ phone, variant = 'sidebar', menuKey }: { phone: Agent; variant?: 'sidebar' | 'panel'; menuKey?: string }) {
   const online = phone.status === 'online';
   const sub = variant === 'sidebar'
-    ? `${phone.name} · ${personaOf(phone)}`
-    : `${personaOf(phone)} · ${phone.network || '网络未知'}${online ? ` · ${Number.isFinite(phone.battery) ? `电量 ${phone.battery}%` : '电量暂不可用'}` : ''}`;
+    ? `${phone.name} · ${phoneAppText(phone)}`
+    : `${phoneAppText(phone)} · ${phone.network || '网络未知'}${online ? ` · ${Number.isFinite(phone.battery) ? `电量 ${phone.battery}%` : '电量暂不可用'}` : ''}`;
   const open = (e: MouseEvent<HTMLButtonElement>) => openMenu('phonePick', e.currentTarget, { matchWidth: '1', key: menuKey || `pick${variant}` });
   return (
     <button type="button" className={`device-btn device-btn--${variant}`} onClick={open} aria-label={`选择手机，当前：${phone.name}`}>

@@ -8,7 +8,7 @@ import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Typing } from '@/shared/ui/Controls';
 import { Icon, InfinityLogo } from '@/shared/ui/Icon';
 import { Empty } from '@/shared/ui/Layout';
-import { agent, attached, conv, personaOf, phone, phones, phoneModelName } from '@/state/selectors';
+import { agent, attached, conv, phone, phoneAppText, phones, phoneModelName } from '@/state/selectors';
 import { externalAgentName } from '@/features/settings/runtime/agents';
 import { useStore } from '@/state/store';
 import { Composer } from './Composer';
@@ -72,11 +72,11 @@ export function Home() {
             {phones().map(p => desk
               ? (
                 <div key={p.id} className="chip-group">
-                  <Chip agent={p} sub={personaOf(p)} selected={!!s.lit[p.id]} onClick={() => toggleAttachPhone('home', p.id)} select="multi" label={`${p.name}：${s.lit[p.id] ? '已加入这个任务' : '未加入这个任务'}`} />
+                  <Chip agent={p} sub={phoneAppText(p)} selected={!!s.lit[p.id]} onClick={() => toggleAttachPhone('home', p.id)} select="multi" label={`${p.name}：${s.lit[p.id] ? '已加入这个任务' : '未加入这个任务'}`} />
                   <IconBtn ic="message" label={`和${p.name}一对一对话`} onClick={() => enterPhone(p.id)} size="sm" className="chip__enter ibtn--round" />
                 </div>
               )
-              : <Chip key={p.id} agent={p} sub={personaOf(p)} selected={s.phoneId === p.id} onClick={() => pickPhone(p.id)} select="single" label={`当前对话的 Agent：${p.name}`} />)}
+              : <Chip key={p.id} agent={p} sub={phoneAppText(p)} selected={s.phoneId === p.id} onClick={() => pickPhone(p.id)} select="single" label={`当前对话的 Agent：${p.name}`} />)}
             <ChipAdd label="配对新手机" onClick={pair} />
           </div>
           <p className="hero__hint"><Icon name="info" />{desk ? '勾选真实手机后，支持手机工具的 Agent 可发送图片、查看画面和派发任务' : '切换卡片会切换对话对象，左侧栏跟着换成这台手机的会话和设置'}</p>

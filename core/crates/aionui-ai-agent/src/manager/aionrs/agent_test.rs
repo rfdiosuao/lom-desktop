@@ -97,6 +97,26 @@ max_tokens = 3456
 }
 
 #[test]
+fn resolve_aionui_config_owns_auto_compaction_policy() {
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        project.path().join(".aionrs.toml"),
+        "[compact]\nenabled = false\ncontext_window = 65536\nautocompact_threshold_pct = 95\nrequest_byte_budget = 0\n",
+    )
+    .unwrap();
+    let args = make_cli_args(project.path().to_path_buf(), "openai", "gpt-test");
+    let standalone = Config::resolve(&args).unwrap();
+    assert!(!standalone.compact.enabled);
+    assert_eq!(standalone.compact.request_byte_budget, 0);
+    assert_eq!(standalone.compact.autocompact_threshold_pct, Some(95));
+    let embedded = resolve_aionui_config(&args).unwrap();
+    assert!(embedded.compact.enabled);
+    assert_eq!(embedded.compact.request_byte_budget, 2 * 1024 * 1024);
+    assert_eq!(embedded.compact.autocompact_threshold_pct, Some(75));
+    assert_eq!(embedded.compact.context_window, standalone.compact.context_window);
+}
+
+#[test]
 fn resolve_aionui_config_keeps_builtin_provider_max_token_policy() {
     let project = tempfile::tempdir().unwrap();
     fs::write(

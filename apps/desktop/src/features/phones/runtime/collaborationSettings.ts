@@ -1,3 +1,5 @@
+import { tickPersonalPhoneReceipts } from '@/features/personal/runtime/phoneReceipt';
+import { tickDispatchHooks } from '@/features/personal/runtime/dispatchHook';
 import { S, update } from '@/state/store';
 import { phoneRpc } from './phoneRpc';
 import { toast } from '@/shared/overlays/controller';
@@ -57,4 +59,4 @@ export async function tickSupervision(now = Date.now()) {
   } finally { busy = false; }
 }
 let timer: ReturnType<typeof setInterval> | undefined;
-export function startSupervision() { timer ??= setInterval(() => { void tickSupervision(); }, 5000); }
+export function startSupervision() { timer ??= setInterval(() => { void tickSupervision(); void tickPersonalPhoneReceipts(); void tickDispatchHooks(); }, 5000); }

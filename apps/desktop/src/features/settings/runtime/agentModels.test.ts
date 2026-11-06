@@ -18,7 +18,7 @@ const options = [
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear();
-  S.cloud = 'signed-in'; S.agentCatalog = [codex]; S.agentPick = 'ag_codex'; S.agentModelPick = {}; S.agentEffortPick = {}; S.agentOptions = {}; S.convs = [];
+  S.cloud = 'signed-in'; S.folder = '/work'; S.agentCatalog = [codex]; S.agentPick = 'ag_codex'; S.agentModelPick = {}; S.agentEffortPick = {}; S.agentOptions = {}; S.convs = [];
   m.api.mockImplementation(async (method: string, path: string, body?: Record<string, unknown>) => {
     if (method === 'POST' && path === '/api/conversations') return { id: body?.name === 'lom-probe' ? 'probe1' : 'c1', name: 't', type: 'acp', created_at: 1, modified_at: 1, extra: body?.extra };
     if (path.endsWith('/runtime/ensure')) return { config_options: options };

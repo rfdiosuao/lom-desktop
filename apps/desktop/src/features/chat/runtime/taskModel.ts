@@ -13,10 +13,11 @@ export function recordTaskModel(c: Conv, remote: CoreConversation) {
 }
 
 /** 每次发送前确认凭据归属；同步失败就停止发送，绝不改用另一家的模型。 */
-export async function ensureTaskModel(c: Conv, m: ModelOption) {
+export async function ensureTaskModel(c: Conv, m: ModelOption, stillCurrent: () => boolean = () => true) {
   if (!m.providerId || !m.model || m.unavailable) throw new Error('所选模型不可用，请重新连接或选择模型');
   const auth = authRevision(), owner = S.account?.id;
-  const current = () => { if (!auth() || S.account?.id !== owner) throw new Error('账号已切换，未确认旧模型'); };
+  const current = () => { if (!stillCurrent() || !auth() || S.account?.id !== owner) throw new Error('账号已切换，未确认旧模型'); };
+  current();
   let remote = await api<CoreConversation>('GET', `/api/conversations/${c.id}`);
   current();
   if (remote.model?.provider_id !== m.providerId || remote.model?.model !== m.model || remote.extra?.lom_tier !== m.lomTier) {

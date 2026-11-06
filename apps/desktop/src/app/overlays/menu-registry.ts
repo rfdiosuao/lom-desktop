@@ -1,10 +1,11 @@
+import { pickFolder } from '@/core/platform';
 import { externalPermissionMenu } from '@/features/settings/runtime/agentPermission';
 import { openPersonalPanel } from '@/features/personal/runtime/panel';
 import { ensureCloudConfig, repairBuiltin } from '@/features/account/runtime/cloud';
 import { historyMenu } from '@/features/chat/slash/historyMenu';
 import { slashMenu } from '@/features/chat/slash/slashMenu';
 import { addAgents, pickAgent } from '@/features/settings/actions/agents';
-import { agentRow, externalModel, logoUrl, pinnedAgents, usable } from '@/features/settings/runtime/agents';
+import { agentRow, externalModel, teamSessionMissing, logoUrl, pinnedAgents, usable } from '@/features/settings/runtime/agents';
 import { archiveCmd, pickEffort, sideChatCmd } from '@/features/chat/actions/commands';
 import { sendFiles } from '@/features/phones/actions/phone';
 import { EFFORTS, lomSupportsEffort } from '@/features/chat/runtime/commands';
@@ -16,6 +17,7 @@ import { enableTurtle } from '@/features/chat/actions/turtle';
 import { addAttach, askInspect, attachAll, browseFolder, insertMention, pickFolderPath, pickModel, pickPerm, toggleAttachPhone } from '@/features/chat/actions/composer';
 import { deleteConv, deleteGroup, exportConv, moveConv, newGroup, pinConv, renameConv, renameGroup } from '@/features/chat/actions/conversations';
 import { addMember, deleteTeam, exportTeam, renameTeam } from '@/features/teams/actions/teams';
+import { teamChatAssistantMenu, teamChatMentionMenu } from '@/features/teams/chat/menus';
 import { installSkill } from '@/features/skills/actions/skills';
 import { setTheme, watchPhone } from '../shell/layout';
 import { enterPhone, gotoPhonePage, openSettings, pickPhone } from '../navigation';
@@ -24,13 +26,17 @@ import { applySoulTpl, pair, renamePhone, unpair } from '@/features/phones/actio
 import { deleteSched, dupSched, editSched, schedRuns } from '@/features/schedules/actions/schedule';
 import { feedback, logout, recharge, setPref, shortcuts } from '@/features/settings/actions/settings';
 import { formSet } from '@/features/schedules/actions/schedule';
-import { getEndpoint } from '@/core/client';
 import { signIn } from '@/features/account/runtime/cloud';
+import { phoneFeature, unsupportedText } from '@/features/phones/runtime/phoneCapabilities';
 import type { MenuItem } from '@/shared/ui/Overlay';
-import { agent, attached, conv, convModel, convsOf, currentPcModel, PERMISSIONS, personaOf, phoneModelChoice, phoneStatusText, phoneModels, phones, pcModels, quotaLeft, skill, team } from '@/state/selectors';
+import { agent, attached, conv, convModel, convsOf, currentPcModel, PERMISSIONS, personaOf, phoneAppText, phoneModelChoice, phoneStatusText, phoneModels, phones, pcModels, quotaLeft, skill, team } from '@/state/selectors';
 import { S, update } from '@/state/store';
 import type { MenuCtx } from '@/state/types';
 import { basename, prettyPath } from '@/shared/lib/util';
+import { activeFolder } from '@/features/workspace/runtime/workspace';
+import { copyWorkspacePath, openWorkspaceFolder } from '@/features/workspace/runtime/folderActions';
+import { openFolderLabel } from '@/features/workspace/ui/OpenFolderButton';
+import { INSTALL_POLICY_LABELS } from '@/features/settings/runtime/permissionPlan';
 
 /* ===== 下拉菜单内容：每个菜单是一个函数，返回菜单项（统一由 MenuHost 渲染） ===== */
 
@@ -65,7 +71,7 @@ const account: MenuFn = () => {
 
 const phonePick: MenuFn = () => [
   { header: true, label: '选择手机' },
-  ...phones().map(p => ({ label: p.name, desc: `${personaOf(p)} · ${phoneStatusText(p)}`, avatar: p, onSelect: () => pickPhone(p.id), select: 'single' as const, checked: S.phoneId === p.id })),
+  ...phones().map(p => ({ label: p.name, desc: `${phoneAppText(p)} · ${phoneStatusText(p)}`, avatar: p, onSelect: () => pickPhone(p.id), select: 'single' as const, checked: S.phoneId === p.id })),
   '-',
   { label: '配对新手机…', ic: 'plus', onSelect: pair },
   { label: '管理手机', ic: 'settings', onSelect: () => openSettings('connections') },
@@ -127,7 +133,7 @@ const attachPhones: MenuFn = ctx => {
   return [
     { header: true, label: '选择手机 · 自动调度尚未接入' },
     ...phones().map(p => ({
-      label: p.name + (p.id === locked ? '（当前对话）' : ''), desc: `${personaOf(p)} · ${phoneStatusText(p)} · ${lastTask(p.id)}`,
+      label: p.name + (p.id === locked ? '（当前对话）' : ''), desc: `${phoneAppText(p)} · ${phoneStatusText(p)} · ${lastTask(p.id)}`,
       avatar: p, onSelect: () => toggleAttachPhone(key, p.id), select: 'multi' as const, checked: ids.includes(p.id), keepOpen: true, disabled: p.id === locked,
     })),
     '-',
@@ -159,12 +165,14 @@ const attach: MenuFn = ctx => {
   // 打开的任务显示它自己的工作文件夹；新任务页才是全局默认
   const folderNow = c?.remote ? c.workspace || '' : S.folder;
   const ids = attached(key), names = ids.map(id => agent(id)?.name ?? '');
+  const noAttach = isPhone && !!agent(device)?.real && !phoneFeature(device, 'attachments'); // 这台手机的应用不支持附件：置灰并说明
+  const attachDesc = (desc?: string) => noAttach ? unsupportedText('attachments') : desc;
   const phonesDesc = !ids.length ? '让总指挥能看屏、操作、派活给手机' : ids.length <= 2 ? `已添加：${names.join('、')}` : `已添加 ${names[0]} 等 ${ids.length} 台`;
   return [
     { header: true, label: '添加' },
-    { label: '文件', desc: '添加任务所需的资料', ic: 'paperclip', onSelect: () => void addAttach(key, 'file') },
-    { label: '添加图片', ic: 'image', onSelect: () => void addAttach(key, 'image') },
-    ...(isPhone ? [{ label: '发送文件到手机', desc: agent(device)?.name || '手机', ic: 'upload', onSelect: () => sendFiles(device) }]
+    { label: '文件', desc: attachDesc('添加任务所需的资料'), ic: 'paperclip', disabled: noAttach, onSelect: () => void addAttach(key, 'file') },
+    { label: '添加图片', desc: attachDesc(), ic: 'image', disabled: noAttach, onSelect: () => void addAttach(key, 'image') },
+    ...(isPhone ? [{ label: '发送文件到手机', desc: attachDesc(agent(device)?.name || '手机'), ic: 'upload', disabled: noAttach, onSelect: () => sendFiles(device) }]
       : [{ label: '工作文件夹', desc: folderNow ? prettyPath(folderNow, S.homeDir) : '选择任务的工作目录', ic: 'folder', onSelect: thenOpen('folder', key, { ckey: key, key: `fold${key}` }) }]),
     ...(!ext && !key.startsWith('team:') ? [{ label: isPhone ? '手机' : '添加手机', desc: phonesDesc, ic: 'phone', onSelect: thenOpen('attachPhones', key, { ckey: key, key: `ap${key}` }) }] : []),
     { label: '海龟汤提问卡', desc: 'AI 提问，你回答对、不对或其他', ic: 'message', disabled: isPhone, onSelect: () => enableTurtle(key) },
@@ -270,13 +278,14 @@ const supervise: MenuFn = () => [0, 1, 5, 10, 30, 60, 120].map(n => ({ label: n 
 const teamFolder: MenuFn = () => [
   ...S.recentFolders.map(f => ({ label: basename(f), desc: prettyPath(f, S.homeDir), ic: 'folder', onSelect: () => formSet('folder', f), select: 'single' as const, checked: S.form.folder === f })),
   '-',
-  { label: '新建文件夹…', ic: 'plus', onSelect: () => formSet('folder', `${getEndpoint()?.defaultFolder || '~/Projects'}/新团队`) },
+  { label: '选择其他文件夹…', ic: 'plus', onSelect: () => void pickFolder().then(p => { if (p) formSet('folder', p); }) },
 ];
 
 /* @ 提及与 / 命令（输入框内触发） */
 const mention: MenuFn = ctx => {
   const key = ctx.ckey || 'home';
   if (ctx.kind === 'slash') return slashMenu(key, ctx.query || '');
+  if (key.startsWith('teamchat:')) return teamChatMentionMenu(key);
 
   const files = (S.files?.children || []).filter(f => f.type === 'file').slice(0, 5);
   return [
@@ -309,7 +318,8 @@ const agentModel: MenuFn = ctx => {
   const name = agentRow(m.agentId)?.name || m.conv?.agentName || 'Agent';
   const choices = m.option?.options || [];
   const pick = (value: string) => () => {
-    if (!m.conv) { update(s => { s.agentModelPick[m.agentId] = value; s.menu = null; }); toast(`${name} 新任务将使用 ${choiceName(m.option, value)}`, 'cube'); return; }
+    if (m.sessionMissing) { update(s => { s.menu = null; }); toastError('切换模型失败', teamSessionMissing()); return; }
+    if (!m.conv) { update(s => { s.agentModelPick[m.agentId] = value; s.menu = null; }); toast(`${name} 之后的新任务将默认使用 ${choiceName(m.option, value)}（不会改变已有任务和团队成员）`, 'cube'); return; }
     void setConvOption(m.conv, m.option?.id || 'model', value)
       .then(r => {
         const name = choiceName(m.option, value);
@@ -365,8 +375,17 @@ const effort: MenuFn = ctx => {
     ...EFFORTS.map(([v, label]) => ({ label, desc: v ? ({ none: '关闭额外推理，更快响应；需模型支持', low: '更快响应，适合简单问题', medium: '兼顾速度与思考深度', high: '深入思考，适合复杂任务' }[v] || '增加思考深度') : '由模型自动决定', ic: 'brain', select: 'single' as const, checked: current === v, onSelect: () => void pickEffort(key, v) }))];
 };
 
+/** 顶栏文件夹按钮的下拉：与左侧按钮不重复的另一种方式——复制路径（WS-ENTRY-01） */
+const workspaceFolder: MenuFn = () => {
+  const dir = activeFolder();
+  return [
+    { label: openFolderLabel(), ic: 'folderFilled', disabled: !dir, onSelect: () => void openWorkspaceFolder(dir) },
+    { label: '复制路径', ic: 'copy', disabled: !dir, onSelect: () => void copyWorkspacePath(dir) },
+  ];
+};
+
 export const MENUS: Record<string, MenuFn> = {
-  installPolicy: () => [['ask', '始终询问'], ['allow', '跟随任务权限'], ['deny', '禁止命令和写入']].map(([v, label]) => ({ label, select: 'single', checked: S.prefs.allowInstall === v, onSelect: () => setPref('allowInstall', v) })),
+  installPolicy: () => Object.entries(INSTALL_POLICY_LABELS).map(([v, label]) => ({ label, select: 'single', checked: S.prefs.allowInstall === v, onSelect: () => setPref('allowInstall', v) })),
   historyAgents: historyMenu, account, phonePick, model, attachPhones, permission, attach, folder, quality, conv: convMenu, group, sched, install,
-  team: teamMenu, device, soulTpl, lang, supervise, teamFolder, mention, agentSwitch, agentModel, effort,
+  team: teamMenu, device, soulTpl, lang, supervise, teamFolder, mention, agentSwitch, agentModel, effort, workspaceFolder, teamChatAssistant: teamChatAssistantMenu,
 };

@@ -20,7 +20,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   m.prepare.mockReturnValue(m.dispose);
   localStorage.clear(); Object.assign(S, initialState());
-  S.mode = 'desktop'; S.route = { name: 'home' }; S.activeConv = '';
+  S.mode = 'desktop'; S.route = { name: 'home' }; S.activeConv = ''; S.folder = '/work';
   S.agentCatalog = [codex]; S.agentPick = 'ag_codex';
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<Composer ckey="home" />));

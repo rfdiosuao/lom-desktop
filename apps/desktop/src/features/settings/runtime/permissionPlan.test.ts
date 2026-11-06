@@ -54,7 +54,7 @@ it('REFACTOR-01-M4 AC-3 受影响的电脑任务或不认识的运行记录仍�
 it('REFACTOR-01-M4 AC-4 所选档位与实际生效不一致时显示原因', () => {
   expect(desktopPermissionLabel('auto', 'allow')).toEqual({ name: '全自动' });
   expect(desktopPermissionLabel('auto', 'ask')).toEqual({ name: '全自动', note: '「命令与安装」设为询问，执行命令前仍需确认' });
-  expect(desktopPermissionLabel('edits', 'deny').note).toContain('禁止');
+  expect(desktopPermissionLabel('edits', 'deny').note).toContain('逐项确认');
   expect(desktopPermissionLabel('full', 'deny')).toEqual({ name: '完全访问' }); // 完全访问本身就是 yolo
   expect(desktopPermissionLabel('ask', 'deny')).toEqual({ name: '每次询问' });
 });

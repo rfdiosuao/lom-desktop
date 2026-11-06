@@ -56,6 +56,7 @@ mod tests {
             runtime_env: vec![("AIONUI_USER_ID".into(), "user-1".into())],
             team: None,
             kind: AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+                required_mode_on_resume: None,
                 config: Default::default(),
                 team: None,
                 belongs_to_team: false,

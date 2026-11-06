@@ -184,6 +184,7 @@ async fn collect_idle_ignores_aionrs_agent_type() {
     let make_opts = |agent_type: AgentType, id: &str| {
         let kind = match agent_type {
             AgentType::Acp => AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+                required_mode_on_resume: None,
                 config: Default::default(),
                 team: None,
                 belongs_to_team: false,

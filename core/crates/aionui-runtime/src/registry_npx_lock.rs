@@ -127,6 +127,15 @@ mod tests {
         );
     }
 
+    /// lom-desktop#20: the Grok pin was a release whose `agent stdio` exits
+    /// silently without speaking ACP; the pin must move to the npm `latest`
+    /// release (1.0.70) that was reported working end to end.
+    #[test]
+    fn acp_npx_01_grok_is_pinned_to_the_working_release() {
+        let args = pin_registry_npx_args("grok", &strings(&["-y", "@xai-official/grok", "agent", "stdio"])).unwrap();
+        assert_eq!(args, ["-y", "@xai-official/grok@1.0.70", "agent", "stdio"]);
+    }
+
     #[test]
     fn every_lock_entry_has_an_exact_version() {
         let lock = registry_npx_lock().unwrap();

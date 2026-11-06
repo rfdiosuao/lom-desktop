@@ -1,3 +1,6 @@
+import { stopTeamPhones, teamPhoneConversations } from '../runtime/phoneLifecycle';
+import { invalidateTeamOperations, teamOperationPending } from '../runtime/teamGuard';
+import { createTeamConfiguration } from '../runtime/configuration';
 import { agent, team } from '@/state/selectors';
 import { isAgentMember, leaderMember, memberAgentRow } from '../runtime/team';
 import { focusMemberView } from '../activity/activityFocus';
@@ -64,8 +67,10 @@ export function createTeam() {
   if (!first) { toast('请添加一位电脑 Agent 担任主控，手机作为执行成员', 'info'); return; }
   if (!members.some(m => m.leader)) first.leader = true;
   const real = members.every(m => m.agent === 'pc' || isAgentMember(m.agent) || S.agents[m.agent]?.real);
-  const t = { ownerAccountId: S.account?.id, id: uid('t'), name: f.name, folder: f.folder || S.folder, created: Date.now(), members, panes: {}, real };
-  update(s => { s.teams.unshift(t); s.modals = []; });
+  let t: Team;
+  try { t = createTeamConfiguration({ name: f.name, folder: f.folder, members, real }); }
+  catch (e) { toastError('未创建团队', e); return; }
+  update(s => { s.modals = []; });
   // TEAM-FOCUS-01：看板里没有 Leader 窗格，提示看板上的入口；并排 / 单个视图才有 Leader 窗格
   const start = S.teamView === 'board' ? '点「和 Leader 说目标」开工' : '在 Leader 窗格里说目标即可开工';
   toast(real ? `团队「${t.name}」已创建，${start}` : `团队「${t.name}」含示例手机，只能演示`, real ? 'check' : 'info');
@@ -98,7 +103,8 @@ export const teamBusy = (t: Team) => S.convs.some(c => (c.teamId === t.id || c.i
  *  点下去由停止结果说明「团队现在没有在运行」。 */
 export function stopTeamState(t: Team): { enabled: boolean; hint: string } {
   if (!t.real) return { enabled: false, hint: '示例团队没有真实运行，不能停止' };
-  if (!t.leaderConv && !t.core) return { enabled: false, hint: '团队还没有开工，没有可停止的任务' };
+  if (teamOperationPending(t)) return { enabled: true, hint: '取消正在准备或等待批准的团队派活' };
+  if (!t.leaderConv && !t.core && !teamPhoneConversations(t).length) return { enabled: false, hint: '团队还没有开工，没有可停止的任务' };
   if (teamBusy(t)) return { enabled: true, hint: '停止团队所有成员正在运行的任务' };
   return { enabled: true, hint: '停止团队里可能仍在运行的任务；没有在运行时会告诉你' };
 }
@@ -107,9 +113,13 @@ export function stopTeamState(t: Team): { enabled: boolean; hint: string } {
 export function stopTeam(id: string) {
   const t = team(id);
   if (!t) return;
+  invalidateTeamOperations(t);
   // 本地看不准是否空闲，按钮开工后一直可用；核心那边没有运行（且没有手机被停下）时提示没在运行
-  if (t.core) { void stopCoreTeam(t).then(r => toast(r?.stopped || r?.phones ? '团队已停止' : '团队现在没有在运行', 'stop'), e => toastError('停止团队失败', e)); return; }
-  if (t.leaderConv) void stopTask(t.leaderConv);
+  if (t.core || (!t.leaderConv && teamPhoneConversations(t).length)) { void stopCoreTeam(t).then(r => toast(r?.stopped || r?.phones ? '团队已停止' : '团队现在没有在运行', 'stop'), e => toastError('停止团队失败', e)); return; }
+  if (t.leaderConv) {
+    void Promise.all([stopTask(t.leaderConv), stopTeamPhones(t, () => S.teams.includes(t))])
+      .catch(e => toastError('停止团队手机失败', e));
+  }
 }
 
 export const teamFocus = (mid: string) => update(s => { s.teamFocus = mid; });

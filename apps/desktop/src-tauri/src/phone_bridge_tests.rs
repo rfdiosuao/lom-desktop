@@ -152,6 +152,17 @@ fn pa_vision_02_personal_scopes_get_diagnostics_without_phone_control() {
             "personal_schedule_help",
             "personal_capabilities",
             "personal_targets",
+            "personal_team_create",
+            "personal_team_configure",
+            "personal_team_read",
+            "personal_team_send",
+            "personal_team_stop",
+            "personal_team_member_model",
+            "session_stop",
+            "personal_agent_configure",
+            "personal_ssh",
+            "personal_ssh_manage",
+            "personal_ssh_exec",
             "feishu_search_docs",
             "feishu_read_doc",
             "feishu_list_chats",
@@ -191,10 +202,44 @@ fn pa_catalog_01_discovery_contract_is_personal_scope_only() {
             .iter()
             .any(|t| t["name"] == name));
     }
+    let targets = rows
+        .iter()
+        .find(|t| t["name"] == "personal_targets")
+        .unwrap();
+    assert!(targets["inputSchema"]["required"].is_null());
     assert_eq!(
-        rows.iter()
-            .find(|t| t["name"] == "personal_targets")
-            .unwrap()["inputSchema"]["required"],
-        json!(["kind"])
+        targets["inputSchema"]["properties"]["query"]["maxLength"],
+        100
     );
+}
+
+#[test]
+fn pa_tools_02_management_tools_are_personal_scope_only() {
+    let personal = tools("pa-tools-test");
+    for name in [
+        "personal_team_create",
+        "personal_team_configure",
+        "personal_team_read",
+        "personal_team_send",
+        "personal_team_stop",
+        "personal_team_member_model",
+        "session_stop",
+        "personal_agent_configure",
+        "personal_ssh",
+        "personal_ssh_manage",
+        "personal_ssh_exec",
+    ] {
+        let tool = personal
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == name)
+            .unwrap();
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        assert!(!tools("ordinary-scope")
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["name"] == name));
+    }
 }

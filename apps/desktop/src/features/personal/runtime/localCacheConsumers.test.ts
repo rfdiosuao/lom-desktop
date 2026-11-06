@@ -34,7 +34,7 @@ it('REFACTOR-01-M7 AC-5 写满时助理配置明确报未保存，提示与原�
   vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new DOMException('full', 'QuotaExceededError'); });
   let error: unknown;
   try { storeAssistant({ ...a, name: '改名' }); } catch (e) { error = e; }
-  expect(personalError(error)).toBe('无法保存本机助理配置，请检查应用存储是否已满或被禁用。');
+  expect(personalError(error)).toBe('无法保存本机助理配置：本机存储已满，请清理本机存储空间后重试。（personal.storage_full）');
 });
 
 it('REFACTOR-01-M7 AC-6 手机缓存损坏只提示一次，原文仍保留不覆盖', () => {

@@ -26,3 +26,15 @@ Tracked native build intermediate files from the upstream LAME directory were ex
 - `python3 apps/android/tests/check_public_boundary.py`: 3 tests passed.
 - Commercial account, billing, purchase, WeChat, server, deployment and automatic-update code remain excluded; community guards keep the app usable with a self-configured model provider.
 - Community Mac DMG built locally from the sanitized source with the verified local core binary; version, community identifier, signature, DMG checksum and Finder layout were verified. No Windows artifact or real-device installation is claimed.
+
+
+## 2026-11-06 / 07 community desktop 0.3.8 sync
+
+- Desktop frontend: 322 files / 2,228 behavioral tests passed; TypeScript and the production Vite build passed. Default builds do not configure a cloud or hosted connector service. The unconfigured MCP UI remains usable and does not advertise unavailable hosted connections.
+- Desktop native shell: 111 tests passed; 3 existing manual tests ignored. Community app identity, SSH credential service names and temporary identity files use separate namespaces. Test-only sidecar resources are excluded from source publication.
+- Android pairing JVM module: 21 tests passed with JDK 17. Three mobile source publication-boundary checks passed. No full Android Agent APK or device acceptance test is claimed. The committed Android snapshot is unchanged; unrelated local uncommitted Android changes are not included.
+- Protocol generator completed with no generated binding changes. Local documentation links were checked. Twelve publication/runner behavioral checks passed. Worktree source scanning reports 0 findings; staged blobs are checked again before push.
+- Core workspace Clippy passed against the reviewed, committed upstream lockfile. The publication gate runs the full workspace tests before pushing. On this small Mac build volume the opt-in runner executes every expected library, binary and integration target in selector groups, preserves feature unification, verifies target coverage and reclaims only generated test executables. It fails on missing targets or failing tests. As with the default nextest gate, doctests are outside this gate.
+- The full test run exposed an existing sanitized fixture mismatch: a mixed-case developer path was compared to another username's lowercase path. The paired synthetic paths now name the same user; an added negative case keeps different user folders distinct. No production canonicalization behavior was changed.
+- Migration immutability checks now cover both a standalone core and the exported monorepo layout. Unix behavior tests passed; PowerShell source was adapted but not executed on Windows.
+- Windows distribution is paused. Source/configuration is retained, and no Windows installer or update is published in this sync. Packaged desktop releases, installed GUI validation, real model calls and real external-channel/server operations are separate from the source checks above.

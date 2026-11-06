@@ -5,6 +5,8 @@ import { S, update } from '@/state/store';
 import { addAssistant, loadAssistants } from '../runtime/catalog';
 import { PersonalAvatarModal } from './PersonalAvatarModal';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(async()=>'/assistant')}));
+const COMPACT='data:image/jpeg;base64,BBBB';
+vi.mock('../runtime/avatarImage',async o=>({...await o<object>(),recompressAvatarImage:async()=>COMPACT}));
 let host:HTMLDivElement,root:Root;
 beforeEach(()=>{
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
@@ -44,7 +46,7 @@ it('PA-AVATAR-01 a failed save keeps the draft and lets the user retry',async()=
  });
  try{
   await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='保存头像')!.click());
-  expect(host.querySelector('[role=alert]')?.textContent).toContain('无法保存本机助理配置');
+  expect(host.querySelector('[role=alert]')?.textContent).toContain('更换头像失败：本机存储已满');
   expect(loadAssistants().items[0].avatar).toBe('06');
   expect(S.modals).toHaveLength(1);
   expect(host.querySelector<HTMLInputElement>('input[value="04"]')!.checked).toBe(true);
@@ -60,4 +62,14 @@ it('PA-AVATAR-01 disables saving after the account switches',async()=>{
  expect(save.disabled).toBe(true);
  expect(host.textContent).toContain('账号已切换');
  expect(loadAssistants('a').items[0].avatar).toBe('06');
+});
+it('PA-AVATAR-02 re-saving a legacy oversized custom avatar compresses it instead of failing',async()=>{
+ const a=await addAssistant('小麓','06');
+ const legacy=`data:image/jpeg;base64,${'A'.repeat(250_000)}`;
+ const raw=JSON.parse(localStorage.getItem('lom.personal.v1:a')!);raw.items[0].avatarImage=legacy;
+ localStorage.setItem('lom.personal.v1:a',JSON.stringify(raw));
+ await render(a.id);
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='保存头像')!.click());
+ expect(host.querySelector('[role=alert]')).toBeNull();
+ expect(loadAssistants().items[0].avatarImage).toBe(COMPACT);
 });

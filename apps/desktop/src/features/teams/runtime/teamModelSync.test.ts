@@ -63,3 +63,27 @@ it('REFACTOR-01-M1 AC-2 team send does not start while the leader stop is unconf
     expect(c.messages).toEqual([]);
   } finally { endStop(c.id); }
 });
+
+it('PA-TOOLS-02 F stopped parent during model synchronization cannot dispatch or append stale records', async () => {
+  let live = true, release!: () => void;
+  mocks.sync.mockImplementation(() => new Promise<void>(r => { release = r; }));
+  const work = sendToCoreTeam(t, t.members[0], 'late', [], () => live);
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  live = false; release();
+  expect(await work).toBe(false);
+  expect(mocks.api.mock.calls.some(x => String(x[1]).endsWith('/messages'))).toBe(false);
+  expect(c.messages).toEqual([]);
+});
+it('PA-TOOLS-02 E incomplete core run-state never reports an idle or stopped team', async () => {
+  const { stopCoreTeam } = await import('./coreTeam');
+  mocks.api.mockResolvedValue({});
+  await expect(stopCoreTeam(t)).rejects.toThrow('状态不完整');
+});
+it('PA-TOOLS-02 F stopping between model GET and PATCH prevents a late model write', async () => {
+  const { ensureTaskModel } = await import('@/features/chat/runtime/taskModel');
+  let live = true, resume!: () => void;
+  mocks.api.mockImplementation(() => new Promise(r => { resume = () => r({ model: { provider_id: 'cloud', model: 'old' } }); }));
+  const pending = ensureTaskModel(c, { id: 'cloud::new', providerId: 'cloud', model: 'new', label: 'new' } as any, () => live);
+  live = false; resume(); await expect(pending).rejects.toThrow();
+  expect(mocks.api.mock.calls.some(x => x[0] === 'PATCH')).toBe(false);
+});

@@ -2,7 +2,11 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-cd "$repo_root"
+core_prefix=""
+if [[ -d "$repo_root/core/crates/aionui-db/migrations" ]]; then
+    core_prefix="core/"
+fi
+cd "$repo_root/$core_prefix"
 
 duplicate_versions="$(
     find crates/aionui-db/migrations -maxdepth 1 -type f -name '*.sql' -print \
@@ -64,7 +68,7 @@ fi
 
 base_commit="$(git merge-base HEAD "$base_ref")"
 changed="$(
-    git diff --name-status --diff-filter=DMR "$base_commit" -- 'crates/aionui-db/migrations/*.sql'
+    git -C "$repo_root" diff --name-status --diff-filter=DMR "$base_commit" -- "${core_prefix}crates/aionui-db/migrations/*.sql"
 )"
 
 if [[ -n "$changed" ]]; then

@@ -38,12 +38,12 @@ it('D15 raw and team conversation IDs render the actual Agent avatar/name', () =
 it('D15 file opens in sidebar without navigating away from team', async () => {
   await openMessagePath('a.md', '/work/docs');
   expect(S.route).toEqual({name:'team',id:'t'}); expect(S.layout.rightCollapsed).toBe(false);
-  expect(S.workspaceBrowseRoot).toBe('/work/docs'); expect(S.openFile).toBe('/work/docs/a.md'); expect(S.openFileContent).toBe('file content');
+  expect(S.workspaceBrowseRoot).toBe(''); expect(S.openFile).toBe('/work/docs/a.md'); expect(S.openFileContent).toBe('file content');
 });
 it('D15 folders open a tree; failed reads report errors', async () => {
   mock.api.mockImplementation(async (_m,p) => p.endsWith('/metadata') ? {is_directory:true} : []);
-  await openMessagePath('/work/docs'); expect(S.openFile).toBeNull(); expect(S.files?.path).toBe('/work/docs');
-  mock.api.mockRejectedValue(new Error('not found')); await openMessagePath('/missing'); expect(S.filesError).toContain('not found');
+  await openMessagePath('/work/docs'); expect(S.openFile).toBeNull(); expect(S.files?.path).toBe('/work'); expect(S.treeOpen['/work/docs']).toBe(true);
+  mock.api.mockRejectedValue(new Error('not found')); await openMessagePath('/missing'); expect(S.openFileError).toContain('workspace.open_failed');
 });
 it('D15 older selection and navigation cannot replace the current selection', async () => {
   let done!: (v: object) => void;

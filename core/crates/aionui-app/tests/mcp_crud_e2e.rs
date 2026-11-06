@@ -673,3 +673,84 @@ async fn unauthenticated_access_is_rejected() {
     let json = body_json(resp).await;
     assert_eq!(json["code"], "UNAUTHORIZED");
 }
+
+#[tokio::test]
+async fn mcp_oauth_01_routes_require_login_csrf_and_server_ownership() {
+    let (mut app, services) = build_app().await;
+    let request = axum::http::Request::builder()
+        .uri("/api/mcp/oauth/v2/capabilities")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let (token, csrf) = setup_and_login(&mut app, &services, "oauth-owner", "StrongP@ss1").await;
+    let req = json_with_token(
+        "POST",
+        "/api/mcp/servers",
+        http_server_json("oauth-fixture"),
+        &token,
+        &csrf,
+    );
+    let created = body_json(app.clone().oneshot(req).await.unwrap()).await;
+    let id = created["data"]["id"].as_str().unwrap();
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/mcp/oauth/v2/login")
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"server_id":id,"request_id":"fixture-request-123"}).to_string(),
+        ))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    let req = json_with_token(
+        "POST",
+        "/api/mcp/oauth/v2/status",
+        json!({"server_id":"not-owned"}),
+        &token,
+        &csrf,
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let req = get_with_token("/api/mcp/oauth/v2/capabilities", &token);
+    let response = body_json(app.clone().oneshot(req).await.unwrap()).await;
+    assert_eq!(response["data"]["version"], 1);
+    assert!(!response.to_string().contains("access_token"));
+}
+
+#[test]
+#[cfg(unix)]
+fn mcp_oauth_01_stdio_helper_does_not_source_a_login_shell_or_touch_the_database() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let shell = dir.path().join("probe-shell");
+    let marker = dir.path().join("shell-was-run");
+    std::fs::write(
+        &shell,
+        format!("#!/bin/sh\ntouch '{}'\nprintf %s \"$PATH\"\n", marker.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aioncore"))
+        .args([
+            "mcp-oauth-stdio",
+            "--user-id",
+            "fixture",
+            "--server-url",
+            "https://example.com/mcp",
+        ])
+        .env("SHELL", &shell)
+        .current_dir(dir.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!marker.exists());
+    assert!(!dir.path().join("data").exists());
+}

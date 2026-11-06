@@ -8,12 +8,24 @@ import { conversationSkills } from '@/features/skills/runtime/conversationSkills
 import { commanderExtra, COMMANDER_RULES } from '@/features/phones/runtime/phoneCommander';
 import { EXCLUDED_AUTO_SKILLS, taskRules } from '@/features/settings/runtime/agentRules';
 import type { Conv } from '@/state/types';
+import { workspaceRequired } from '@/features/workspace/runtime/required';
+
+/** 默认标题：lom 为"新任务"，其他 Agent 或手机带上名称；显式给出的 title 必须是 1–160 字符的字符串。 */
+export const DEFAULT_SESSION_TITLE = '新任务';
+export function sessionTitle(raw: unknown, agent: string) {
+  if (raw === undefined) {
+    const name = agent === 'lom' ? '' : (S.agents[agent]?.name || agentRow(agent)?.name || '').trim();
+    return (name ? `${name} ${DEFAULT_SESSION_TITLE}` : DEFAULT_SESSION_TITLE).slice(0, 160);
+  }
+  const title = typeof raw === 'string' ? raw.trim() : '';
+  if (!title || title.length > 160) throw new Error('title 可省略；填写时必须是 1 到 160 字符的字符串');
+  return title;
+}
 
 /** Creates a blank task without sending, navigating, or inheriting full-access permission. */
 export async function createSession(self: Conv, args: Record<string, unknown>, current: () => boolean) {
-  const title = typeof args.title === 'string' ? args.title.trim() : '';
-  if (!title || title.length > 160) throw new Error('title 必须为 1 到 160 字符');
   const agent = args.agent_id === undefined ? 'lom' : String(args.agent_id);
+  const title = sessionTitle(args.title, agent);
   if (!current()) throw new Error('助理已停止或账号已变化');
   if (agent !== 'lom' && agent.startsWith('dev_') && S.agents[agent]?.real) {
     const c: Conv = { id: crypto.randomUUID(), owner: agent, title, updated: Date.now(), messages: [], loaded: true, remote: false } as Conv;
@@ -28,6 +40,7 @@ export async function createSession(self: Conv, args: Record<string, unknown>, c
   const [provider, ...modelParts] = (self.modelId || '').split('::');
   if (!external && (!self.providerId || !modelParts.join('::').trim())) throw new Error('个人助理的模型配置不完整，未创建会话');
   const workspace = self.workspace || self.personal?.directory;
+  if (!workspace) throw workspaceRequired('助理');
   const extra = external ? { ...acpExtra(external), session_mode: 'default', exclude_auto_inject_skills: EXCLUDED_AUTO_SKILLS, ...(workspace ? { workspace } : {}) }
     : await defaultExtra(self, current, workspace);
   if (!current()) throw new Error('助理已停止或账号已变化，未创建新会话');

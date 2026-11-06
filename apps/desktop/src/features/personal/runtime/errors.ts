@@ -1,4 +1,5 @@
 import { CoreError } from '@/core/client';
+import { PersonalStorageError, type PersonalStorageCode } from './storageError';
 
 // UI-AUDIT-03：核心客户端生成的固定错误码，原因已知，不再落到「原因尚未识别」
 const coreErrors: Record<string, string> = {
@@ -15,14 +16,35 @@ const nativeErrors: Record<string, string> = {
   'personal.unsafe_path': '助理目录存在不安全的链接或非目录文件，已停止创建，请检查目录冲突。',
   'personal.invalid_identity': '助理身份参数无效，请重新打开个人助理后重试。',
 };
+const storageText: Record<PersonalStorageCode, string> = {
+  'personal.storage_full': '本机存储已满，请清理本机存储空间后重试。',
+  'personal.storage_unavailable': '本机存储被禁用或不可用，请检查系统是否限制了应用存储。',
+  'personal.avatar_too_large': '头像图片过大，请换一张更简单的图片。',
+};
+/** 保存失败的具体原因：配额写满、存储被禁用、头像本身超限；其他错误返回 undefined */
+export function storageCodeOf(error: unknown): PersonalStorageCode | undefined {
+  if (error instanceof PersonalStorageError) return error.code;
+  if (error instanceof DOMException && error.name === 'QuotaExceededError') return 'personal.storage_full';
+  if (error instanceof DOMException && error.name === 'SecurityError') return 'personal.storage_unavailable';
+  const text = error instanceof Error ? error.message : '';
+  if (/本机存储.*助理配置未保存/.test(text)) return /已满/.test(text) ? 'personal.storage_full' : 'personal.storage_unavailable';
+  return undefined;
+}
+/** 更换头像失败的提示：说明是换头像、原头像保持不变，并带错误码 */
+export function avatarSaveError(error: unknown) {
+  const code = storageCodeOf(error);
+  if (!code) return `更换头像失败：${personalError(error)}`;
+  return `更换头像失败：${storageText[code]}原头像保持不变。（${code}）`;
+}
 export function personalError(error: unknown) {
   // Tauri Result<String, String> rejects with a string, not an Error instance.
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (Object.hasOwn(nativeErrors, text)) return `${nativeErrors[text]}（${text}）`;
   if (error instanceof CoreError && Object.hasOwn(coreErrors, error.code)) return coreErrors[error.code];
   if (text === '助理名称须为1至40个字符' || text === '请选择有效的助理形象') return text;
-  if (error instanceof DOMException && ['QuotaExceededError', 'SecurityError'].includes(error.name)) return '无法保存本机助理配置，请检查应用存储是否已满或被禁用。';
-  if (/本机存储.*助理配置未保存/.test(text)) return '无法保存本机助理配置，请检查应用存储是否已满或被禁用。';
+  const code = storageCodeOf(error);
+  if (code === 'personal.avatar_too_large') return `${storageText[code]}（${code}）`;
+  if (code) return `无法保存本机助理配置：${storageText[code]}（${code}）`;
   if (/配置损坏/.test(text)) return '助理配置损坏，请先恢复备份。';
   if (/已被修改/.test(text)) return '文档已被其他程序修改，请重新读取后再保存。';
   if (/尚未确认|创建结果/.test(text)) return '创建结果尚未确认，为避免重复创建，请先核对任务记录。';

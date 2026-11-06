@@ -5,6 +5,8 @@ const m = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('@/core/client', () => ({ api: m.api, getEndpoint: () => null }));
 import { retryTaskMessage, sendToTask } from './tasks';
 import { handleCoreEvent } from './stream';
+import { legacyTurtleAnswer } from '@/test/fixtures/turtleFeedbackV1';
+import { turtleDisplayText } from './turtlePrompt';
 
 let task: Conv;
 let sequence = 0;
@@ -102,4 +104,15 @@ it('PA-CONTEXT-01 AC-1 REST 413 retains explicit compression recovery without re
   expect(task.messages.at(-1)).toMatchObject({ type: 'system', recovery: 'compact', text: expect.stringContaining('压缩上下文') });
   expect(task.messages.find(x => x.type === 'user')?.status).toBe('error');
   expect(m.api.mock.calls.filter(([, path]) => path.endsWith('/messages'))).toHaveLength(1);
+});
+it('TURTLE-FEEDBACK-02 C 旧总结气泡重试升级需求语义且不重复用户消息', async () => {
+  const original = {id:'legacy-failed',type:'user' as const,at:1,text:legacyTurtleAnswer,status:'error' as const};
+  task.messages.push(original); S.drafts[`conv:${task.id}`] = '新的草稿';
+  m.api.mockResolvedValue({turn_id:'requirements-retry'});
+  expect(await retryTaskMessage(task, original)).toBe(true);
+  const post = m.api.mock.calls.find(([method,path]) => method==='POST' && path.endsWith('/messages'))!;
+  expect(post[2].content).toContain('已确认需求'); expect(post[2].content).not.toContain('当前推测');
+  expect(turtleDisplayText(original.text)).toBe('部分正确\n请保留补充');
+  expect(task.messages.filter(m => m.type==='user')).toEqual([original]);
+  expect(S.drafts[`conv:${task.id}`]).toBe('新的草稿');
 });

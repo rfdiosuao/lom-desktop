@@ -69,3 +69,17 @@ it('PA04 invalidation during memory preparation prevents the final message POST'
   expect(await sendFromChannel(S.convs[0], 'guarded dispatch', 'personal', () => current)).toBeNull();
   expect(vi.mocked(api).mock.calls.some(x => x[0] === 'POST' && x[1].endsWith('/messages'))).toBe(false);
 });
+
+it('PA-TOOL-RECOVERY-01 A real PA send includes tool recovery on every turn while memory delivery is cached', async () => {
+  const c = S.convs[0]; c.workspace = '/work/With Spaces';
+  for (let i = 0; i < 2; i++) {
+    expect(await sendToTask(c, `验证 ${i}`, [])).toBe(true);
+    const calls = vi.mocked(api).mock.calls.filter(x => x[0] === 'POST' && x[1].endsWith('/messages'));
+    const body = calls.at(-1)![2] as { content: string };
+    expect(body.content).toContain('configured_workspace'); expect(body.content).toContain('/work/With Spaces');
+    expect(body.content).toContain('Read'); expect(body.content).toContain('schema');
+    const { stripSettingsContext } = await import('@/features/settings/runtime/preferences');
+    expect(stripSettingsContext(body.content)).toBe(`验证 ${i}`);
+    delete S.running[c.id];
+  }
+});

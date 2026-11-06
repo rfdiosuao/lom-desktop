@@ -22,6 +22,7 @@ import { LOM_CLOUD_URL, cloudConfigured, requireCloudService } from './serviceCo
 export { LOM_CLOUD_URL } from './serviceConfig';
 export { LOM_PROVIDER_NAME } from './builtin';
 import { LOM_PROVIDER_NAME } from './builtin';
+import { tf } from '@/shared/i18n/index';
 
 export class CloudError extends Error {
   constructor(public code: string, message: string, public status?: number) {
@@ -33,7 +34,7 @@ export class CloudError extends Error {
 export interface CloudModels { pro: string; max: string; mini: string; }
 /** extra：订阅里 Lom 三档之外、后台直接勾选的星钥模型（lom-server routes.rs gateway_json） */
 interface Gateway { revision?: number; legacy?: LegacyModels; allowed_tiers?: (keyof CloudModels)[]; base_url: string | null; key: string | null; models: CloudModels; vision?: (keyof CloudModels)[]; extra?: string[] }
-interface SessionData { session?: string; account: { id: string; email: string; name: string; avatar?: string; provider_avatar?: string }; points: { total: number; free: number; paid: number; period: string; daily?: number }; gateway: Gateway; }
+interface SessionData { session?: string; account: { id: string; email: string; name: string; avatar?: string; provider_avatar?: string }; points: { total: number; free: number; paid: number; period: string; daily?: number; monthly_free?: number }; gateway: Gateway; }
 
 let session: string | null = null;
 
@@ -259,15 +260,22 @@ export async function syncCoreAccount() {
   await enqueueProvider(() => disableLomProvider(isCurrent, true));
 }
 
-/** 退出：吊销服务端会话，清除本机令牌并停用内置模型（入口始终保留） */
+/** 退出：吊销服务端会话，清除本机令牌并停用内置模型（入口始终保留）。
+ *  吊销失败时本机照常退出，但如实告知服务端会话可能仍有效，并带错误码（SET-ACCOUNT-01 #427） */
 export async function signOut() {
-  const revocation = session ? cloud('DELETE', '/v1/session').catch(() => {
-    console.warn('auth.revoke_failed: 服务端会话吊销失败，继续清理本机');
-  }) : Promise.resolve();
+  const revocation = session
+    ? cloud('DELETE', '/v1/session').then(() => null, (e: unknown) => sessionGone(e) ? null : e)
+    : Promise.resolve(null);
   const isCurrent = beginAuthChange();
   await clearLocal(isCurrent);
-  await revocation;
-  if (isCurrent()) toast('已退出登录', 'logout');
+  const failure = await revocation;
+  if (!isCurrent()) return;
+  if (!failure) { toast('已退出登录', 'logout'); return; }
+  const cause = failure instanceof CloudError ? failure.code : 'unknown';
+  console.warn('auth.revoke_failed', failure);
+  const text = tf('本机已退出，但服务端会话未能吊销（auth.revoke_failed：{cause}）。如在共用电脑上，请登录后到账号页重试退出，或修改密码。', { cause });
+  update(s => { s.cloudError = text; });
+  toast(text, 'info', 'error');
 }
 
 export async function repairBuiltin() {

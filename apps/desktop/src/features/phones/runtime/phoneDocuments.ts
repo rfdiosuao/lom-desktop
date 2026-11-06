@@ -6,6 +6,9 @@ import { phoneGuard } from './deviceLink';
 
 export interface PhoneDocument { name: string; text: string; revision: string; modified: number; }
 const documents = new Map<string, { doc: PhoneDocument; current: AuthGuard }>();
+export function forgetPhoneDocuments(device: string) {
+  for (const key of [...documents.keys()]) if (key.startsWith(`${device}:`)) documents.delete(key);
+}
 export const phoneDocument = (device: string, name: string) => {
   const entry = documents.get(`${device}:${name}`);
   return entry?.current() ? entry.doc : undefined;

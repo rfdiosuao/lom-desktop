@@ -1,6 +1,6 @@
 import { stripSettingsContext } from '@/features/settings/runtime/preferences';
 import type { Attachment, FileChange, Msg } from '@/state/types';
-import { basename, uid } from '@/shared/lib/util';
+import { basename, relativeInside, uid } from '@/shared/lib/util';
 import { S } from '@/state/store';
 
 /* ===== 工具调用的展示：把 Agent 的工具名和参数翻译成原型里的「事件卡片」 ===== */
@@ -21,8 +21,10 @@ export const normCallId = (id: unknown) => String(id ?? '').replace(/^aionrs-/, 
 
 const str = (v: unknown) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : JSON.stringify(v));
 
-export const relPath = (p: string, workspace?: string) =>
-  workspace && p.startsWith(workspace) ? p.slice(workspace.length).replace(/^[\\/]/, '') || basename(p) : p;
+export const relPath = (p: string, workspace?: string) => {
+  const rel = workspace ? relativeInside(p, workspace) : null;
+  return rel === null ? p : rel || basename(p);
+};
 
 /** 卡片副标题：从参数里挑最能说明这次调用的一项 */
 export function toolDetail(args: Record<string, unknown> = {}, workspace?: string) {

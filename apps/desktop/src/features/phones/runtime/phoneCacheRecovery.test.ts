@@ -34,3 +34,16 @@ it('PHONE-CACHE-01 valid legacy cache can be saved with optional schedules absen
   loadPhoneCache(); await savePhoneCache();
   expect(JSON.parse(localStorage.getItem(key)!).souls.dev_test).toBe('valid');
 });
+
+it('restores the phone history without empty user bubbles and preserves the stored cache on read', () => {
+  const messages = [
+    { id: 'blank', type: 'user', text: ' ' },
+    { id: 'file', type: 'user', text: '', attachments: [{ name: 'photo.png' }] },
+    { id: 'reply', type: 'assistant', text: '收到' },
+  ];
+  const raw = JSON.stringify({ version: 1, convs: [{ id: 'phone-history', owner: 'dev_test', messages }], souls: {}, memories: {} });
+  localStorage.setItem(key, raw);
+  loadPhoneCache();
+  expect(S.convs.find(c => c.id === 'phone-history')?.messages.map(message => message.id)).toEqual(['file', 'reply']);
+  expect(localStorage.getItem(key)).toBe(raw);
+});

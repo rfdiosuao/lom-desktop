@@ -18,6 +18,7 @@ import { memberWait } from '../activity/memberWait';
 import { MemberAvatar } from './MemberAvatar';
 import { TeamEmptyState } from './TeamEmptyState';
 import { TeamActivityView } from '../activity/TeamActivityView';
+import { TeamChatView } from '../chat/TeamChatView';
 import { S, update, useStore } from '@/state/store';
 import type { Team, TeamMember } from '@/state/types';
 import { cx } from '@/shared/lib/util';
@@ -25,7 +26,7 @@ import { useStickBottom } from '@/features/chat/ui/Chat';
 import { Composer } from '@/features/chat/ui/Composer';
 import { MessageList } from '@/features/chat/ui/MessageList';
 
-/* ===== D33 团队页：并排 / 看板 / 单个，原宫格由看板完整替代 ===== */
+/* ===== D33 团队页：并排 / 看板 / 单个 / 群聊（TEAM-CHAT-01），原宫格由看板完整替代 ===== */
 
 function Pane({ t, m, focus }: { t: Team; m: TeamMember; focus: boolean }) {
   const s = useStore();
@@ -88,12 +89,12 @@ export function TeamPage() {
         <Btn label="停止团队" ic="stop" size="sm" disabled={!stop.enabled} title={stop.hint} aria-describedby={stop.enabled ? undefined : stopNote} onClick={() => stopTeam(t.id)} />
         {!stop.enabled && <span id={stopNote} className="team__stop-note">{stop.hint}</span>}
         <Btn label="管理成员" ic="userPlus" variant="ghost" size="sm" onClick={() => addMember(t.id)} />
-        <Seg label="团队视图" size="sm" options={[{ value: 'side', ic: 'columns', label: '并排', title: '并排' }, { value: 'board', ic: 'kanban', label: '看板', title: '看板' }, { value: 'single', ic: 'square', label: '单个', title: '单个' }]} value={s.teamView} onChange={v => update(x => { x.teamView = v; })} />
+        <Seg label="团队视图" size="sm" options={[{ value: 'side', ic: 'columns', label: '并排', title: '并排' }, { value: 'board', ic: 'kanban', label: '看板', title: '看板' }, { value: 'single', ic: 'square', label: '单个', title: '单个' }, { value: 'chat', ic: 'message', label: '群聊', title: '群聊' }]} value={s.teamView} onChange={v => update(x => { x.teamView = v; })} />
         {/* D33-UX-03：成员共用团队文件夹，直接在右侧文件面板里看，不再只弹一行路径 */}
         <IconBtn ic="folder" label={`团队文件：${teamFolder(t)}`} onClick={() => wsTab('files')} />
         <IconBtn ic="more" label="团队选项" onClick={e => openMenu('team', e.currentTarget, { id: t.id, align: 'end' })} />
       </div>
-      {board
+      {s.teamView === 'chat' ? <TeamChatView team={t} /> : board
         ? <TeamActivityView team={t} focusMemberId={focus?.mid} />
         : <div className={`team__panes team__panes--${s.teamView}`}>{shown.map(m => <Pane key={m.mid} t={t} m={m} focus={focus?.mid === m.mid} />)}</div>}
     </div>

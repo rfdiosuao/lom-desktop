@@ -1,5 +1,6 @@
 import type { PermissionTier } from './permissions';
-import { DEFAULT_AVATAR, isAvatar, isAvatarImage, type AvatarId } from './avatars';
+import { AVATAR_SAVE_BUDGET, DEFAULT_AVATAR, isAvatar, isAvatarImage, type AvatarId } from './avatars';
+import { PersonalStorageError } from './storageError';
 import { authAccount } from '@/features/account/runtime/authScope';
 import { invoke } from '@tauri-apps/api/core';
 import { S, update } from '@/state/store';
@@ -23,7 +24,19 @@ export function loadAssistants(account = accountId()): Catalog {
 /** 写满或存储不可用时明确报错，不让调用方以为已保存（REFACTOR-01 模块 7） */
 function saveCatalog(account: string, data: Catalog) {
   const result = writeJson(key(account), data);
-  if (result !== 'ok') throw new Error(`${cacheWriteError(result)}，助理配置未保存`);
+  if (result !== 'ok') throw new PersonalStorageError(result === 'quota' ? 'personal.storage_full' : 'personal.storage_unavailable', `${cacheWriteError(result)}，助理配置未保存`);
+}
+/** 新头像不得超过保存预算；超限在写入前就拒绝，不去撞存储上限 */
+function checkAvatarSize(image?: string) {
+  if (image && image.length > AVATAR_SAVE_BUDGET) throw new PersonalStorageError('personal.avatar_too_large', '头像图片过大，请换一张更简单的图片（personal.avatar_too_large）');
+}
+/** 把已压缩的旧头像写回：只替换仍等于压缩前内容的那一张，其余字段和助理保持读到的最新值（PA-AVATAR-02） */
+export function applyCompactedAvatars(changes: Map<string, { from: string; to: string }>, account = accountId()) {
+  const data = loadAssistants(account);
+  let changed = false;
+  for (const item of data.items) { const c = changes.get(item.id); if (c && item.avatarImage === c.from) { item.avatarImage = c.to; changed = true; } }
+  if (changed) saveCatalog(account, data);
+  return changed;
 }
 export function storeAssistant(a: PersonalAssistant, account = accountId()) {
   const data = loadAssistants(account);
@@ -43,6 +56,7 @@ export async function addAssistant(name: string, avatar: AvatarId = DEFAULT_AVAT
   const account = accountId(), current = authAccount();
   if (!isAvatar(avatar)) throw new Error('请选择有效的助理形象');
   if (avatarImage !== undefined && !isAvatarImage(avatarImage)) throw new Error('请选择有效的头像图片');
+  checkAvatarSize(avatarImage);
   const invalid = assistantNameError(name); if (invalid) throw new Error(invalid);
   const id = `pa_${crypto.randomUUID()}`;
   const directory = await invoke<string>('personal_directory', { account, id, name: name.trim() });
@@ -56,6 +70,7 @@ export function updateAssistantAvatar(id: string, choice: { avatar: AvatarId; av
   if (accountId() !== account) throw new Error('账号已切换，头像未保存');
   if (!isAvatar(choice.avatar)) throw new Error('请选择有效的助理形象');
   if (choice.avatarImage !== undefined && !isAvatarImage(choice.avatarImage)) throw new Error('请选择有效的头像图片');
+  checkAvatarSize(choice.avatarImage);
   const data = loadAssistants(account), item = data.items.find(x => x.id === id);
   if (!item) throw new Error('助理不存在，请重新打开助理');
   item.avatar = choice.avatar;

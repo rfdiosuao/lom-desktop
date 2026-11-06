@@ -1,5 +1,5 @@
 import { sendPhone } from '@/features/phones/runtime/phoneChat';
-import { turtleAnswerPrompt } from '../runtime/turtlePrompt';
+import { turtleAnswerPrompt, turtleAnswerCount } from '../runtime/turtlePrompt';
 import { resendToConversation } from '../runtime/conversationSend';
 import { retryTaskMessage } from '../runtime/tasks';
 import { modelChanges } from '../runtime/taskModel';
@@ -31,7 +31,15 @@ export async function resendEditedMessage(ctxId: string, original: Msg, text: st
   if (!text.trim() || original.type !== 'user') throw new Error('消息不能为空');
   const c = conv(id);
   if (c?.phoneSession) { await sendPhone(c, text); return true; }
-  if (c?.remote) return resendToConversation(c, S.turtles[`conv:${id}`]?.active ? turtleAnswerPrompt(text) : text);
+  if (c?.remote) {
+    const session = S.turtles[`conv:${id}`];
+    if (!session?.active) return resendToConversation(c, text);
+    const request = turtleAnswerPrompt(text, turtleAnswerCount(c.messages) + 1);
+    update(() => { session.request = request; session.error = ''; });
+    const ok = await resendToConversation(c, request);
+    if (!ok) update(() => { session.error = '发送失败，内容已保留，可以重试。'; });
+    return ok;
+  }
   const message: Msg = { id: uid('m'), type: 'user', at: Date.now(), text };
   if (c) {
     update(() => { c.messages.push(message); }); sim.phone(c, text); return true;

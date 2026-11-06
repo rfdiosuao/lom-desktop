@@ -33,9 +33,11 @@
   /* 尺寸 */
   --h-sm:30px; --h-md:36px; --h-lg:44px;
   /* 字号：界面小字 / 正文 / 名称；新写的样式用这些，不写死字号 */
-  --fs-sm:13px; --fs-md:14px; --fs-lg:15px;
+  --fs-sm:13px; --fs-md:14px; --fs-lg:15px; --fs-xl:16px; --fs-2xl:18px; --fs-3xl:20px;
   --header-h:52px;
   --titlebar-btn-w:46px;
+  --titlebar-h:var(--header-h);
+  --sidebar-brand-h:48px;
   --titlebar-close-bg:var(--danger); --titlebar-close-ink:#ffffff;
   --reply-detail-size:13px;
   /* 消息：头像列宽 + 间距 = 正文、思考、工具组与事件卡片共用的缩进；事件卡片的最大宽度 */

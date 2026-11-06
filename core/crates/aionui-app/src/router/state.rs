@@ -686,6 +686,7 @@ pub fn build_mcp_state(services: &AppServices) -> McpRouterState {
         sync_service: McpSyncService::new(repo, adapters),
         connection_test_service: McpConnectionTestService::new(http_client.clone(), services.event_bus.clone()),
         oauth_service: aionui_mcp::McpOAuthService::new(oauth_token_repo, http_client),
+        oauth_flows: Default::default(),
     }
 }
 

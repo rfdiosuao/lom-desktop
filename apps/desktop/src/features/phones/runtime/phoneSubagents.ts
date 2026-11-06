@@ -3,6 +3,7 @@ import type { AuthGuard } from '@/features/account/runtime/authScope';
 import { phoneGuard } from './deviceLink';
 import { S, update } from '@/state/store';
 import { phoneRpc } from './phoneRpc';
+import { unsupportedText } from './phoneCapabilities';
 
 type Group = Pick<PhoneSubAgent, 'id' | 'name'>;
 export interface SubagentSnapshot {
@@ -11,6 +12,7 @@ export interface SubagentSnapshot {
 }
 type Entry = SubagentSnapshot & { current: AuthGuard };
 const entries = new Map<string, Entry>();
+export const forgetPhoneSubagents = (device: string) => { entries.delete(device); };
 const empty: SubagentSnapshot = { items: [], groups: [], delegationEnabled: false, loaded: false, busy: false, error: '' };
 export const phoneSubagents = (device: string): SubagentSnapshot => {
   const entry = entries.get(device);
@@ -29,7 +31,7 @@ const errors: Record<string, string> = {
   'subagent.not_ready': '手机子代理尚未就绪，请打开手机 App 后重试',
   'subagent.persist_failed': '保存结果未确认，请刷新手机状态后重试',
   'sync.conflict': '手机内容已更新，未覆盖。请保留草稿并重新载入手机版本',
-  'remote.method_unknown': '当前手机版本不支持管理子代理，请更新手机 App',
+  'remote.method_unknown': unsupportedText('subagents'),
   'remote.not_ready': '手机尚未就绪，请打开手机 App 后重试',
   'remote.operation_failed': '手机操作结果未确认，请刷新状态后重试',
   'remote.expired': '手机授权已过期，请重新连接并授权',

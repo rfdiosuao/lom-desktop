@@ -16,7 +16,7 @@ const codex = { ...kimi, id: 'ag_codex', name: 'Codex CLI', backend: 'codex' };
 let team: Team;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.clearAllMocks(); m.sendPhone.mockResolvedValue(undefined);
   S.cloud = 'signed-in'; S.account = { id: 'acc', name: 'A', email: '' }; S.convs = []; S.running = {};
   S.agentCatalog = [kimi, codex]; S.agentPins = [];
   S.providers = [{ id: 'own', platform: 'openai', name: 'mock', base_url: 'https://x/v1', models: ['m1'], enabled: true, created_at: 1 }];

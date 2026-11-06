@@ -230,6 +230,7 @@ mod tests {
         );
 
         let acp = AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+            required_mode_on_resume: None,
             config: Default::default(),
             team: None,
             belongs_to_team: false,

@@ -1,0 +1,8 @@
+.ssh-settings-actions {
+  flex-wrap: wrap;
+}
+.ssh-settings-result {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 16px 12px;
+}

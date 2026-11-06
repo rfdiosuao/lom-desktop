@@ -72,6 +72,22 @@ fn tools(scope: &str) -> Value {
         include_str!("phone_tools.json")
     };
     let mut result: Value = serde_json::from_str(list).unwrap_or_else(|_| json!([]));
+    if scope.starts_with("team-member-") {
+        if let Some(rows) = result.as_array_mut() {
+            rows.retain(|tool| {
+                matches!(
+                    tool["name"].as_str(),
+                    Some(
+                        "phone_list"
+                            | "phone_status"
+                            | "phone_task_start"
+                            | "phone_task_read"
+                            | "phone_task_cancel"
+                    )
+                )
+            });
+        }
+    }
     if scope.starts_with("pa-") {
         if let (Some(rows), Ok(Value::Array(extra))) = (
             result.as_array_mut(),

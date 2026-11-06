@@ -147,6 +147,23 @@ impl Mailbox {
         Ok(rows.iter().filter_map(MailboxMessage::from_row).collect())
     }
 
+    /// Reads one addressed message, including acknowledged rows, without mutating it.
+    pub async fn read_content_message(
+        &self,
+        team_id: &str,
+        agent_id: &str,
+        message_id: &str,
+    ) -> Result<Option<MailboxMessage>, TeamError> {
+        if self.repo.get_team(&self.user_id, team_id).await?.is_none() {
+            return Ok(None);
+        }
+        let rows = self.repo.list_messages_by_ids(&[message_id.to_owned()]).await?;
+        Ok(rows
+            .iter()
+            .find(|row| row.team_id == team_id && row.to_agent_id == agent_id && row.from_agent_id != agent_id)
+            .and_then(MailboxMessage::from_row))
+    }
+
     /// Marks the given message IDs as read. Called after successful prompt delivery.
     pub async fn mark_read_batch(&self, team_id: &str, ids: &[String]) -> Result<(), TeamError> {
         self.repo.mark_read_batch(&self.user_id, team_id, ids).await?;
