@@ -165,3 +165,20 @@ fn aionrs_tool_call_failures_are_unknown_upstream_error() {
     assert_eq!(send_error.ownership(), Some(AgentErrorOwnership::UnknownUpstream));
     assert_eq!(send_error.stream_error().retryable, Some(true));
 }
+
+#[test]
+fn aionrs_http_413_requires_context_reduction_without_retry() {
+    let error = AionrsAgentError::Provider(ProviderError::Api {
+        status: 413,
+        message: "Request Entity Too Large".to_owned(),
+    });
+    let error = aionrs_engine_error_to_send_error(&error);
+    assert_eq!(error.code(), Some(AgentErrorCode::UserLlmProviderContextTooLarge));
+    assert_eq!(error.ownership(), Some(AgentErrorOwnership::UserLlmProvider));
+    assert_eq!(error.stream_error().retryable, Some(false));
+    assert_eq!(error.stream_error().feedback_recommended, Some(false));
+    assert_eq!(
+        error.stream_error().resolution.as_ref().map(|r| r.kind),
+        Some(AgentErrorResolutionKind::ReduceContext)
+    );
+}

@@ -636,6 +636,29 @@ async fn exec_read_messages(
 ) -> Result<String, ToolCallError> {
     let input: ReadMessagesInput = serde_json::from_value(args.clone())
         .map_err(|e| ToolCallError::from_message(format!("Invalid params: {e}")))?;
+    if input.message_id.is_some() && input.since_message_id.is_some() {
+        return Err(ToolCallError::from_message(
+            "Invalid params: message_id and since_message_id are mutually exclusive",
+        ));
+    }
+    if input.content_offset.is_some() && input.message_id.is_none() {
+        return Err(ToolCallError::from_message(
+            "Invalid params: content_offset requires message_id",
+        ));
+    }
+    if let Some(message_id) = input.message_id.as_deref() {
+        let service = service
+            .upgrade()
+            .ok_or_else(|| ToolCallError::from_message("Team service not available"))?;
+        let message = service
+            .read_agent_content_message(team_id, caller_slot_id, message_id)
+            .await
+            .map_err(|error| ToolCallError::from_message(error.to_string()))?
+            .ok_or_else(|| {
+                ToolCallError::from_message("Invalid params: message_id is not available in your mailbox")
+            })?;
+        return json_text(&render_content_chunk(&message, input.content_offset.unwrap_or(0))?);
+    }
     let since_message_id = input
         .since_message_id
         .as_deref()
@@ -649,7 +672,19 @@ async fn exec_read_messages(
         .peek_agent_messages(team_id, caller_slot_id)
         .await
         .map_err(|error| ToolCallError::from_message(error.to_string()))?;
-    let page = inbox_page(peek.messages, since_message_id)?;
+    // A successful earlier turn may have acknowledged the cursor. Resolve it
+    // through the same scoped mailbox access, never by guessing or restarting.
+    let historical_cursor = if let Some(cursor) = since_message_id
+        && !peek.messages.iter().any(|message| message.id == cursor)
+    {
+        service
+            .read_agent_content_message(team_id, caller_slot_id, cursor)
+            .await
+            .map_err(|error| ToolCallError::from_message(error.to_string()))?
+    } else {
+        None
+    };
+    let page = inbox_page_with_history(peek.messages, since_message_id, historical_cursor.as_ref())?;
     let rendered = render_inbox_page(page);
 
     // `batch_id` is `None` when no turn owned the slot at peek time (e.g. a CLI
@@ -667,21 +702,35 @@ async fn exec_read_messages(
 
 /// Takes the **oldest** unread rows so processing order matches arrival order.
 /// `since_message_id` advances the window past a row the caller already saw.
+#[cfg(test)]
 fn inbox_page(messages: Vec<MailboxMessage>, since_message_id: Option<&str>) -> Result<InboxPage, ToolCallError> {
+    inbox_page_with_history(messages, since_message_id, None)
+}
+
+fn inbox_page_with_history(
+    messages: Vec<MailboxMessage>,
+    since_message_id: Option<&str>,
+    historical_cursor: Option<&MailboxMessage>,
+) -> Result<InboxPage, ToolCallError> {
     let total_unread_count = messages.len();
     let after_cursor = match since_message_id {
         None => messages,
         Some(cursor) => {
-            let position = messages
-                .iter()
-                .position(|message| message.id == cursor)
-                .ok_or_else(|| {
-                    ToolCallError::from_message(format!(
-                        "Invalid params: since_message_id '{cursor}' is not one of your unread messages. \
-                         Call team_read_messages with no arguments to restart from the oldest unread message."
-                    ))
-                })?;
-            messages.into_iter().skip(position + 1).collect()
+            if let Some(position) = messages.iter().position(|message| message.id == cursor) {
+                messages.into_iter().skip(position + 1).collect()
+            } else if let Some(anchor) = historical_cursor.filter(|message| message.id == cursor) {
+                messages
+                    .into_iter()
+                    .filter(|message| {
+                        (message.created_at, message.id.as_str()) > (anchor.created_at, anchor.id.as_str())
+                    })
+                    .collect()
+            } else {
+                return Err(ToolCallError::from_message(format!(
+                    "Invalid params: since_message_id '{cursor}' is not available in your mailbox. \
+                     Call team_read_messages with no arguments to restart from the oldest unread message."
+                )));
+            }
         }
     };
     let after_cursor_count = after_cursor.len();
@@ -722,6 +771,7 @@ fn render_inbox_page(page: InboxPage) -> RenderedInbox {
             });
             if content_truncated {
                 item["note"] = json!(INBOX_TRUNCATION_NOTE);
+                item["read_content"] = json!({"message_id": item["message_id"], "content_offset": 0});
             }
             item
         })
@@ -738,6 +788,31 @@ fn render_inbox_page(page: InboxPage) -> RenderedInbox {
         }),
         observable_message_ids,
     }
+}
+
+/// Content reads are bounded and read-only; a final chunk does not acknowledge earlier chunks.
+fn render_content_chunk(message: &MailboxMessage, offset: usize) -> Result<Value, ToolCallError> {
+    let total = message.content.chars().count();
+    if offset > total {
+        return Err(ToolCallError::from_message(
+            "Invalid params: content_offset exceeds message length",
+        ));
+    }
+    let content: String = message
+        .content
+        .chars()
+        .skip(offset)
+        .take(MAX_INBOX_CONTENT_CHARS)
+        .collect();
+    let end = offset + content.chars().count();
+    Ok(json!({
+        "message_id": message.id,
+        "content": content,
+        "content_offset": offset,
+        "total_content_chars": total,
+        "has_more": end < total,
+        "next_read_content": if end < total { Some(json!({"message_id": message.id, "content_offset": end})) } else { None },
+    }))
 }
 
 fn truncate_inbox_content(content: &str) -> (String, bool) {
@@ -1738,6 +1813,62 @@ mod tests {
         assert!(
             rendered.value["messages"][0].get("note").is_none(),
             "untruncated rows carry no note"
+        );
+    }
+
+    #[test]
+    fn acknowledged_cursor_resumes_by_timestamp_and_id_without_silent_restart() {
+        let mut cursor = inbox_message(2, "acknowledged");
+        cursor.created_at = 1;
+        let mut later = inbox_message(3, "same timestamp, greater id");
+        later.created_at = 1;
+        let page = inbox_page_with_history(
+            vec![inbox_message(1, "earlier"), later],
+            Some(&cursor.id),
+            Some(&cursor),
+        )
+        .unwrap();
+        assert_eq!(page.messages.len(), 1);
+        assert_eq!(page.messages[0].id, "message-03");
+    }
+
+    #[test]
+    fn content_chunks_reconstruct_unicode_report_and_reject_invalid_offsets() {
+        let original = "界🦀e\n".repeat(3100);
+        let message = inbox_message(1, original.clone());
+        let mut rebuilt = String::new();
+        let mut offset = 0;
+        loop {
+            let chunk = render_content_chunk(&message, offset).unwrap();
+            let text = chunk["content"].as_str().unwrap();
+            assert!(text.chars().count() <= MAX_INBOX_CONTENT_CHARS);
+            assert_eq!(chunk["total_content_chars"], original.chars().count());
+            rebuilt.push_str(text);
+            if chunk["next_read_content"].is_null() {
+                break;
+            }
+            assert_eq!(chunk["next_read_content"]["message_id"], message.id);
+            offset = chunk["next_read_content"]["content_offset"].as_u64().unwrap() as usize;
+        }
+        assert_eq!(rebuilt, original);
+        assert_eq!(
+            render_content_chunk(&message, original.chars().count()).unwrap()["content"],
+            ""
+        );
+        assert_eq!(
+            render_content_chunk(&message, original.chars().count() + 1)
+                .unwrap_err()
+                .message,
+            "Invalid params: content_offset exceeds message length"
+        );
+    }
+
+    #[test]
+    fn truncated_message_exposes_bounded_content_read_arguments() {
+        let rendered = render(vec![inbox_message(1, "界".repeat(9001))], None);
+        assert_eq!(
+            rendered.value["messages"][0]["read_content"],
+            json!({"message_id": "message-01", "content_offset": 0})
         );
     }
 

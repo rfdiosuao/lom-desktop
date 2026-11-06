@@ -34,7 +34,8 @@ Call `team_read_messages` once before you finish your turn, and again before
 assigning work or replying to teammates, so you do not act on stale information.
 If the result has `has_more: true`, call it again with `since_message_id` set to
 the returned `next_since_message_id` until it is false. Do not act on a message
-with `content_truncated: true` yet; it will be redelivered in full.
+with `content_truncated: true` alone; call `team_read_messages` with its
+`read_content` arguments, then follow `next_read_content` until null to obtain all chunks.
 
 ## Workflow
 1. Receive user request
@@ -255,7 +256,8 @@ Call `team_read_messages` once before you finish your turn, and again before
 replying to teammates, so you do not act on stale information. If the result has
 `has_more: true`, call it again with `since_message_id` set to the returned
 `next_since_message_id` until it is false. Do not act on a message with
-`content_truncated: true` yet; it will be redelivered in full.
+`content_truncated: true` alone; call `team_read_messages` with its
+`read_content` arguments, then follow `next_read_content` until null to obtain all chunks.
 
 ## How to Work
 1. Read your unread messages to understand your assignment

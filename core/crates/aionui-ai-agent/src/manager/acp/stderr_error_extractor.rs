@@ -33,7 +33,38 @@ const ERROR_KEYWORDS: &[&str] = &[
     "api key",
     "quota",
     "billing",
+    // Localized "rate limited" wording (TEAM-ORCH-01). The bare HTTP status 429 and
+    // the "usage"/"quota" words are matched by `matches_allowlist` with context,
+    // because as plain substrings they hit ports, timestamps and counters.
+    "频率限制",
 ];
+
+/// Words that, next to "使用量" / "配额", say the limit was hit rather than merely mention it.
+const QUOTA_VERBS: &[&str] = &["超出", "超过", "限制", "重置", "不足", "用尽", "耗尽"];
+
+/// `429` as a standalone number (an HTTP status), not inside a longer number or
+/// identifier (`14290`, `a429b`) and not a decimal fraction (`0.429s`).
+fn has_status_429(line_lower: &str) -> bool {
+    let chars: Vec<char> = line_lower.chars().collect();
+    chars.windows(3).enumerate().any(|(i, w)| {
+        if w != ['4', '2', '9'] {
+            return false;
+        }
+        let before = i.checked_sub(1).map(|b| chars[b]);
+        let after = chars.get(i + 3).copied();
+        let before_ok = before.is_none_or(|c| !(c.is_alphanumeric() || matches!(c, '.' | '-' | '_')));
+        let after_ok = match after {
+            None => true,
+            Some('.') => !chars.get(i + 4).is_some_and(|c| c.is_ascii_digit()),
+            Some(c) => !(c.is_alphanumeric() || c == '_'),
+        };
+        before_ok && after_ok
+    })
+}
+
+fn has_localized_quota_error(line_lower: &str) -> bool {
+    (line_lower.contains("使用量") || line_lower.contains("配额")) && QUOTA_VERBS.iter().any(|v| line_lower.contains(v))
+}
 
 const MAX_MESSAGE_CHARS: usize = 240;
 
@@ -75,6 +106,8 @@ fn message_tail(stripped_line: &str) -> &str {
 
 fn matches_allowlist(line_lower: &str) -> bool {
     ERROR_KEYWORDS.iter().any(|kw| line_lower.contains(kw))
+        || has_status_429(line_lower)
+        || has_localized_quota_error(line_lower)
 }
 
 /// Pick the most informative error line from a chunk of recent stderr.
@@ -216,5 +249,36 @@ mod tests {
         let stderr = "usage limit exceeded no colon here";
         let result = extract_error_message(stderr).expect("should match");
         assert_eq!(result, "usage limit exceeded no colon here");
+    }
+
+    #[test]
+    fn team_orch_01_372_localized_429_quota_line_is_surfaced() {
+        let stderr =
+            "[Error] 429 您的使用量已超出频率限制，将在 2026-11-05 17:01:12 UTC+8 重置，您也可以切换其他模型继续使用。";
+        let msg = extract_error_message(stderr).expect("localized 429 must match");
+        assert!(msg.contains("429"), "got {msg}");
+        assert!(msg.contains("重置"), "reset time must be preserved; got {msg}");
+    }
+
+    #[test]
+    fn team_orch_01_372_status_429_matches_only_as_a_standalone_number() {
+        assert!(extract_error_message("ERROR request failed: HTTP 429: too many").is_some());
+        assert!(extract_error_message("ERROR upstream status=429, retry later").is_some());
+        for noise in [
+            "ERROR listening on port 14290 failed to open",
+            "ERROR elapsed 0.429s before the handler stopped",
+            "ERROR job a429b crashed unexpectedly",
+            "ERROR 127.0.0.1:4290 refused something",
+        ] {
+            assert!(extract_error_message(noise).is_none(), "must not match: {noise}");
+        }
+    }
+
+    #[test]
+    fn team_orch_01_372_usage_and_quota_words_need_a_limit_verb() {
+        assert!(extract_error_message("[Error] 您的使用量已超出限制").is_some());
+        assert!(extract_error_message("[Error] 本月配额不足，将于明日重置").is_some());
+        assert!(extract_error_message("ERROR 使用量统计已更新").is_none());
+        assert!(extract_error_message("ERROR 配额文件已加载").is_none());
     }
 }

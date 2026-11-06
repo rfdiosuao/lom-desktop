@@ -9,6 +9,7 @@ migration_check_test_script := if os_family() == "windows" { "powershell.exe -No
 auto_commit_script := if os_family() == "windows" { "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/just/auto-commit-fixes.ps1" } else { "bash scripts/just/auto-commit-fixes.sh" }
 update_aionrs_script := if os_family() == "windows" { "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/just/update-aionrs.ps1" } else { "bash scripts/just/update-aionrs.sh" }
 cat_config_script := if os_family() == "windows" { "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/just/cat-config.ps1" } else { "bash scripts/just/cat-config.sh" }
+test_command := if env('AIONCORE_LOW_DISK_TESTS', '0') == '1' { 'python3 scripts/just/test-workspace-low-disk.py' } else { 'just _cargo nextest run --workspace' }
 
 default:
     @just --list
@@ -38,7 +39,7 @@ install: build
 
 # Run all tests
 test:
-    @just _cargo nextest run --workspace
+    @{{test_command}}
 
 # Ensure already-shipped database migrations stay immutable
 migration-check:
@@ -77,6 +78,7 @@ run-release *ARGS:
 
 # Pre-push gate: migration check, format, lint, auto-commit fixes, test, then push
 push *ARGS: migration-check lint-fix fmt _auto-commit-fixes test
+    @python3 ../tools/audit-source.py --index
     git push {{ARGS}}
 
 # Auto-commit any formatting/lint fixes if there are changes

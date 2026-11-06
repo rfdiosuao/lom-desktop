@@ -1,4 +1,5 @@
-import { MAX_AVATAR_DATA_URL } from './avatars';
+import { AVATAR_SAVE_BUDGET } from './avatars';
+import { PersonalStorageError } from './storageError';
 
 export const AVATAR_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const AVATAR_ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -44,17 +45,28 @@ export function drawAvatar(ctx: CanvasRenderingContext2D, image: HTMLImageElemen
   ctx.drawImage(image, (size - width) / 2 + c.x * size, (size - height) / 2 + c.y * size, width, height);
 }
 
+/** 逐步降低尺寸和质量，WebP 优先、浏览器不支持时用 JPEG；仍超出预算就如实报错，不存超限的图 */
 export function renderAvatar(image: HTMLImageElement, crop: AvatarCrop): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = AVATAR_SIZE;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('无法处理图片，请换一张重试');
-  drawAvatar(ctx, image, AVATAR_SIZE, crop);
-  for (const quality of [0.86, 0.7, 0.55]) {
-    const data = canvas.toDataURL('image/jpeg', quality);
-    if (data.length <= MAX_AVATAR_DATA_URL) return data;
+  for (const size of [AVATAR_SIZE, 192, 128]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('无法处理图片，请换一张重试');
+    drawAvatar(ctx, image, size, crop);
+    for (const quality of [0.86, 0.7, 0.55, 0.4]) for (const type of ['image/webp', 'image/jpeg']) {
+      const data = canvas.toDataURL(type, quality);
+      if (data.startsWith(`data:${type};`) && data.length <= AVATAR_SAVE_BUDGET) return data;
+    }
   }
-  throw new Error('图片处理后仍然过大，请换一张更简单的图片');
+  throw new PersonalStorageError('personal.avatar_too_large', '图片处理后仍然过大，请换一张更简单的图片（personal.avatar_too_large）');
+}
+
+/** 旧版本留下的偏大头像：重新解码并按当前预算压缩（居中裁方，不改变画面） */
+export async function recompressAvatarImage(dataUrl: string): Promise<string> {
+  const image = new Image();
+  image.src = dataUrl;
+  try { await image.decode(); } catch { throw new Error('无法读取已保存的头像，请重新选择一张图片'); }
+  return renderAvatar(image, DEFAULT_AVATAR_CROP);
 }
 
 export async function loadAvatarFile(file: File): Promise<{ image: HTMLImageElement; url: string }> {

@@ -14,7 +14,7 @@ export function Modal({ title, desc, children, foot, size, className, headExtra 
   title: string | null; desc?: string; children?: ReactNode; foot?: ReactNode; size?: 'sm' | 'lg' | 'xl' | 'full'; className?: string; headExtra?: ReactNode;
 }) {
   return (
-    <section className={cx('modal', size && `modal--${size}`, className)} role="dialog" aria-modal="true" aria-label={title || '对话框'}>
+    <section className={cx('modal', size && `modal--${size}`, className)} role="dialog" aria-modal="true" aria-label={title ? t(title) : t('对话框')}>
       {title !== null && (
         <header className="modal__head">
           <div className="modal__head-text">

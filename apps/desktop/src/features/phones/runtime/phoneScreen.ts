@@ -2,14 +2,15 @@ import { S } from '@/state/store';
 import { invoke } from '@tauri-apps/api/core';
 import { phoneRpc } from './phoneRpc';
 import { linkGuard, STALE_LINK } from './deviceLink';
+import { SCREEN_PERMISSION_TEXT, unsupportedText } from './phoneCapabilities';
 import type { PhoneControl, ScreenFrame, ScreenRequest } from '@/core/remoteWire';
 export const screenError = (e: unknown) => {
   const text = e instanceof Error ? e.message : String(e);
   if (text.includes('remote.repair_required')) return 'remote.repair_required：本机未找到该手机的配对公钥，请重新配对；这不是离线或登录过期的诊断。';
   if (text.includes('remote.trust_store_unavailable')) return 'remote.trust_store_unavailable：系统钥匙串暂时无法访问，请解锁或恢复访问后重试，无需立即重新配对。';
   if (text.includes('remote.trust_store_invalid')) return 'remote.trust_store_invalid：配对公钥记录无效，请重新配对。';
-  if (text.includes('screen.permission_required')) return '请在手机系统设置中开启 Lom 的无障碍服务，再重试。';
-  if (text.includes('remote.method_unknown')) return '手机版本尚未支持画面，请安装新版 APK 后重试。';
+  if (text.includes('screen.permission_required')) return SCREEN_PERMISSION_TEXT;
+  if (text.includes('remote.method_unknown')) return unsupportedText('screen');
   if (text.includes('screen.unsupported')) return '真实画面需要 Android 11 或更新版本。';
   if (text.includes('screen.frame_too_large')) return '画面过大，请改用流畅画质后重试。';
   if (text.includes('screen.capture_failed')) return '当前画面无法获取。请解锁手机；受保护的窗口可能禁止截图。';

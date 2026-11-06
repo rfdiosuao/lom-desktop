@@ -1,0 +1,3 @@
+/* INSTALL-PATH-01: the bundle is Lom.app; Finder, Launchpad and the menu bar still show this name. */
+"CFBundleDisplayName" = "麓鸣 Lom";
+"CFBundleName" = "麓鸣 Lom";

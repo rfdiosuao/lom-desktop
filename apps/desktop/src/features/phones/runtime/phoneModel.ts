@@ -10,6 +10,9 @@ import type { CoreProvider } from '@/core/types';
 /** Device → digest of the model config the phone last confirmed. Memory only; the key itself is never kept. */
 const confirmed = new Map<string, string>();
 
+/** 解除配对 / 换设备：这台手机确认过的模型指纹作废，下次必须重新同步 */
+export const forgetPhoneModel = (device: string) => { confirmed.delete(device); };
+
 async function digest(c: ModelConfig): Promise<string> {
   const text = [c.base_url, c.model, c.platform, c.api_key].join('\n');
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));

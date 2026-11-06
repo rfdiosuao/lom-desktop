@@ -34,6 +34,8 @@ export const team = (id?: string) => S.teams.find(t => t.id === id);
 export const coreTeamOf = (convId?: string) => (convId ? S.teams.find(t => t.core && (t.leaderConv === convId || Object.values(t.memberConvs || {}).includes(convId))) : undefined);
 /** 手机状态说明：示例手机不显示真实在线状态（UI-AUDIT-02 UI-01） */
 export const phoneStatusText = (a: Agent) => (!a.real ? '示例 · 不执行任务' : a.status === 'online' ? '在线' : '离线');
+/** 选手机处显示「这台手机用的应用」：手机没上报就是「未知应用」，不按型号猜；示例手机沿用人格文案 */
+export const phoneAppText = (a: Agent) => (a.kind === 'phone' && a.real ? `${a.appName || '未知应用'}${a.appVersion ? ` v${a.appVersion.replace(/^v/i, '')}` : ''}` : personaOf(a));
 export const personaOf = (a: Agent) => (a.kind === 'phone' ? a.real ? (a.soulConfigured === undefined ? '人格待同步' : a.soulConfigured ? '已配置人格' : '未配置人格') : a.persona || '未配置人格' : a.persona);
 
 const LOM_TIERS = [

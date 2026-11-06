@@ -1,6 +1,7 @@
 //! 麓鸣 Lom 桌面外壳（ADR 0012）：负责窗口与系统对话框，并把 lom-core 作为 sidecar 启动。
 //! 前端通过 `core_endpoint` 拿到核心地址与一次性启动令牌，之后直接用 HTTP / WebSocket 访问核心。
 
+mod app_identity;
 mod feishu;
 mod feishu_approvals;
 mod feishu_gateway;
@@ -24,6 +25,7 @@ mod personal_evolution_security;
 mod personal_learning;
 mod personal_reflection;
 mod phone_bridge;
+mod plugin_host;
 mod preferences;
 mod project_links;
 mod remote_crypto;
@@ -34,6 +36,8 @@ mod skill_packages;
 #[allow(dead_code)]
 mod remote_wire;
 mod sidecar;
+mod ssh_identity;
+mod ssh_servers;
 mod tray;
 mod vision;
 
@@ -152,6 +156,10 @@ pub fn run() {
         .manage(Arc::new(feishu::FeishuState::default()))
         .invoke_handler(tauri::generate_handler![
             core_endpoint,
+            ssh_servers::ssh_server_probe,
+            ssh_servers::ssh_server_exec,
+            ssh_identity::ssh_secret_store,
+            ssh_identity::ssh_identity_remove,
             personal::personal_directory,
             personal_evolution::personal_reflect,
             personal_evolution::personal_apply_learning,
@@ -213,7 +221,9 @@ pub fn run() {
             feishu_notice::feishu_notice_finish,
             feishu_approvals::feishu_approvals_start,
             feishu_approvals::feishu_approvals_stop,
-            feishu_tools::feishu_tool_execute
+            feishu_tools::feishu_tool_execute,
+            plugin_host::plugin_host_discover,
+            plugin_host::plugin_host_request
         ])
         .setup({
             let state = Arc::clone(&state);
@@ -235,6 +245,7 @@ pub fn run() {
                 if let Err(e) = tray::install(app.handle()) {
                     log::error!("tray: failed to create the system tray icon, closing the window will quit: {e}");
                 }
+                ssh_identity::sweep_stale_identities();
                 if let Err(e) = phone_bridge::start(app.handle().clone()) {
                     log::error!("{e}");
                 }
@@ -249,7 +260,7 @@ pub fn run() {
             #[cfg(not(windows))]
             let _ = (window, event);
         })
-        .build(tauri::generate_context!());
+        .build(app_identity::with_display_name(tauri::generate_context!()));
     match app {
         Ok(app) => app.run(move |_, event| {
             if let RunEvent::Exit = event {

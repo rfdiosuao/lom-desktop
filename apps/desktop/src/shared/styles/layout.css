@@ -83,6 +83,10 @@
 .center__title-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .center__actions{display:flex;align-items:center;gap:4px}
 .center__body{scrollbar-gutter:stable;flex:1;min-height:0;overflow:auto;scrollbar-width:thin;display:flex;flex-direction:column}
+.folder-split{display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface)}
+.folder-split .ibtn:first-child{color:var(--warn)}
+.folder-split .ibtn:last-child{width:20px;border-left:1px solid var(--line);border-radius:0 var(--r-sm) var(--r-sm) 0}
+.folder-split .ibtn:last-child .icon{width:12px;height:12px}
 .collapsed-bar{display:flex;align-items:center;gap:4px;padding-right:6px;margin-right:4px;border-right:1px solid var(--line)}
 .collapsed-bar .traffic{margin-right:8px}
 
@@ -106,17 +110,30 @@
 .window-resizers__edge--southwest{left:0;bottom:0;width:10px;height:10px;cursor:nesw-resize}
 
 /* 原生标题栏由外壳隐藏，顶部由应用自己的按钮占位 */
-.window-controls{position:fixed;top:0;right:0;z-index:350;display:flex;height:var(--header-h);user-select:none}
+.window-controls{position:fixed;top:0;right:0;z-index:350;display:flex;height:var(--titlebar-h);user-select:none}
 .window-controls button{width:var(--titlebar-btn-w);height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-2);background:transparent}
 .window-controls button:hover{background:var(--bg-hover);color:var(--text-strong)}
 .window-controls button:focus-visible{outline:2px solid var(--brand-ring);outline-offset:-2px}
 .window-controls .icon{width:15px;height:15px}
 .window-controls button.window-controls__close:hover{background:var(--titlebar-close-bg);color:var(--titlebar-close-ink)}
 
-/* 给右上角的窗口按钮留出点击区域，避免盖住顶栏里的操作 */
+/* WIN-TITLEBAR-02：Windows 没有独立的空白标题栏行。窗口按钮固定在右上角，工作台贴右、顶部留与底部相同的小间距，
+   顶栏与按钮并排；logo 行和各顶栏本身就是拖动区域。其他平台与浏览器模式不变。 */
+/* 窗口比外壳最小宽度窄时裁切而不是出现页面级滚动条；各区域自己的滚动不受影响 */
+html.is-windows,html.is-windows body{overflow:hidden}
+html.is-windows .workspace{container:workspace / inline-size}
+html.is-windows .shell__workbench{margin-right:0;border-top-right-radius:0}
+html.is-windows .resizer--right{left:calc(100% - var(--visible-rw) - 1px)}
+/* 右侧避让：贴着窗口右边的那个顶栏给三个窗口按钮留位置——工作区打开时是工作区顶栏，收起或没有工作区时是中间顶栏 */
 html.is-windows .workspace__head{padding-right:calc(var(--titlebar-btn-w) * 3 + 6px)}
 html.is-windows .shell.is-right-collapsed .center__header,
 html.is-windows .shell.no-right .center__header{padding-right:calc(var(--titlebar-btn-w) * 3 + 6px)}
+/* 侧栏顶部：logo 顶到最上，搜索与收起在同一行靠右，电脑 / 手机紧随其下；红绿灯占位只属于 macOS */
+html.is-windows .traffic{display:none}
+html.is-windows .sidebar{position:relative}
+html.is-windows .sidebar .brand{box-sizing:border-box;height:var(--sidebar-brand-h);padding:0 18px 0 16px}
+html.is-windows .settings-nav .settings-title{padding-top:10px}
+html.is-windows .sidebar__top{position:absolute;top:0;right:0;height:var(--sidebar-brand-h);padding:0 12px 0 0;z-index:1}
 
 /* UI-WORKBENCH-01：侧栏保持低对比，焦点和选中仍可辨认。 */
 .sidebar .nav-item{font-size:var(--fs-md);color:var(--text-2)}
@@ -131,8 +148,24 @@ html.is-windows .shell.no-right .center__header{padding-right:calc(var(--titleba
 .workspace__head>.row{flex:none}
 .workspace__tabs{padding:0;min-width:0;flex:1;overflow:hidden}
 .workspace__tabs .tabs{gap:2px;border:0;overflow-x:auto}
-.workspace__tabs .tabs__tab{padding:5px 8px;border-radius:var(--r-xs);border:0;font-size:var(--fs-sm)}
+.workspace__tabs .tabs__tab{padding:5px 8px;border-radius:var(--r-xs);border:0;font-size:var(--fs-sm);white-space:nowrap;flex-shrink:0}
 .workspace__tabs .tabs__tab.is-active{color:var(--text-strong);background:var(--bg-hover)}
 .workspace__tabs .tabs__tab::after{display:none}
+@container workspace (max-width:520px){
+  html.is-windows .workspace__head{padding-left:8px}
+  .workspace__head>.row>.ibtn{width:26px;height:26px}
+}
 .workspace__body--files{padding:0;overflow:hidden;scrollbar-gutter:auto}
 @media(prefers-reduced-motion:reduce){.shell,.shell__workbench,.resizer,.panel-slot>.sidebar,.panel-slot>.workspace{transition:none}}
+
+/* WIN-TITLEBAR-01：工作区空白入口卡片 */
+.ws-start{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.ws-start__card{display:flex;align-items:center;gap:14px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);text-align:left;transition:background .15s,border-color .15s}
+.ws-start__card:hover{background:var(--bg-hover);border-color:var(--line-strong)}
+.ws-start__card:focus-visible{outline:2px solid var(--brand-ring);outline-offset:2px}
+.ws-start__icon{display:flex;align-items:center;justify-content:center;flex:none;width:44px;height:44px;border-radius:var(--r-md);background:var(--bg-subtle);color:var(--muted)}
+.ws-start__icon .icon{width:20px;height:20px}
+.ws-start__text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ws-start__text b{font-size:var(--fs-md);font-weight:600;color:var(--text-strong)}
+.ws-start__text small{font-size:var(--fs-sm);color:var(--muted)}
+.folder-split__name{max-width:120px;padding:0 6px;color:var(--text-2);font-size:var(--fs-sm)}

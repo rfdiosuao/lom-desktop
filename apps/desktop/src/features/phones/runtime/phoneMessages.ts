@@ -4,12 +4,25 @@ import type { Msg } from '@/state/types';
 export interface PhoneBlock { id: string; kind: string; title: string; text: string; status: string; command?: string; }
 export interface PhoneRow { id: string; role: string; text: string; at: number; blocks?: PhoneBlock[]; attachments?: string[]; }
 
+export function isEmptyPhoneUserMessage(message: Msg): boolean {
+  return message?.type === 'user' && (message.text == null ||
+    (typeof message.text === 'string' && !message.text.trim())) && !message.attachments?.length;
+}
+
 /** The phone's ordered blocks are authoritative; `text` is only their aggregate fallback. */
 export function phoneMessages(row: PhoneRow, owner: string, fallbackTime: number, session?: string): Msg[] {
   if (row.role !== 'user' && row.role !== 'assistant') return [];
   const base = { at: row.at || fallbackTime, agent: row.role === 'assistant' ? owner : undefined };
   const id = `phone:${row.id}`;
-  if (row.role === 'user') return [{ ...base, id, type: 'user', text: stripSettingsContext(row.text), attachments: row.attachments?.map((name, index) => ({ name, ic: 'file', phoneFile: session ? { device: owner, session, message: row.id, index } : undefined })) }];
+  if (row.role === 'user') {
+    const message: Msg = {
+      ...base, id, type: 'user', text: stripSettingsContext(row.text),
+      attachments: row.attachments?.map((name, index) => ({
+        name, ic: 'file', phoneFile: session ? { device: owner, session, message: row.id, index } : undefined,
+      })),
+    };
+    return isEmptyPhoneUserMessage(message) ? [] : [message];
+  }
   const messages: Msg[] = [];
   const hasText = row.blocks?.some(b => b.kind === 'text' && b.text.length > 0);
   for (const block of row.blocks || []) {

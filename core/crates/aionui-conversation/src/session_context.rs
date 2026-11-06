@@ -268,6 +268,7 @@ impl<'a> SessionContextBuilder<'a> {
             .await?;
 
         Ok(AcpSessionBuildContext {
+            required_mode_on_resume: None,
             config,
             team,
             belongs_to_team,

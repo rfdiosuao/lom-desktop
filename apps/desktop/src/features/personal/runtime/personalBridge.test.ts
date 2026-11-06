@@ -48,3 +48,13 @@ it('PA04 with an older core that cannot re-select tools, the assistant keeps wor
   await ensurePersonalBridge(c);
   expect(m.api).not.toHaveBeenCalled();
 });
+
+it('PA-TOOLS-02 F a cancelled team preparation cannot register a late phone bridge', async () => {
+  const { commanderExtra } = await import('@/features/phones/runtime/phoneCommander');
+  let live = true, resume!: () => void;
+  m.invoke.mockImplementation((_cmd, args) => new Promise(r => { resume = () => r({ scope: args.scope, url: 'http://127.0.0.1:1/mcp', token: 'fixture-only' }); }));
+  const pending = commanderExtra(() => live);
+  await vi.waitFor(() => expect(resume).toBeTypeOf('function'));
+  live = false; resume(); await expect(pending).rejects.toThrow('派发已变化');
+  expect(m.api.mock.calls.some(c => c[0] === 'POST' && c[1] === '/api/mcp/servers')).toBe(false);
+});

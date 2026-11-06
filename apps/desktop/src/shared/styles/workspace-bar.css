@@ -1,0 +1,12 @@
+/* ===== WS-REQUIRED-01：输入框上方的工作区条 ===== */
+.ws-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 4px 8px;color:var(--muted);font-size:var(--fs-sm)}
+.ws-bar>.icon{width:16px;height:16px;flex:none}
+.ws-bar__label{font-weight:600;color:var(--text)}
+.ws-bar__hint{min-width:0;color:var(--warn)}
+.ws-bar .ws-chip{max-width:min(100%,520px)}
+.ws-bar .ws-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ws-bar.is-missing{border:1px solid var(--warn);background:var(--warn-soft);border-radius:var(--r-lg);padding:8px 12px;margin-bottom:8px}
+.ws-bar.is-missing>.icon{color:var(--warn)}
+.ws-bar--prominent .ws-bar__label{font-size:var(--fs-md)}
+.composer__send.is-blocked{opacity:.45;cursor:not-allowed}
+.composer__send.is-blocked:hover{background:var(--text-strong);color:var(--bg)}

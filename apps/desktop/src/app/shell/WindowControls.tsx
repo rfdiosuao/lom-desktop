@@ -5,6 +5,7 @@ import { toastError } from '@/shared/overlays/controller';
 import { Icon } from '@/shared/ui/Icon';
 
 /* ===== Windows 自绘窗口按钮：原生标题栏在 shell 启动时隐藏（见 src-tauri/src/lib.rs）=====
+   没有独立的空白标题栏行；窗口按钮固定在右上角，拖动 / 双击最大化由各顶栏和侧栏 logo 行承担（WIN-TITLEBAR-02）。
    关闭走外壳的 `close_main_window` command，渲染进程没有 `core:window:allow-close` 权限。 */
 
 const RESIZE_DIRECTIONS = ['North', 'South', 'East', 'West', 'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest'] as const;

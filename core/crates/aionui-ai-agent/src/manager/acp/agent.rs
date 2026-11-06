@@ -573,6 +573,9 @@ pub struct AcpAgentManager {
     /// models, config, and all runtime data previously split across
     /// `AcpRuntimeSnapshot` and `AcpState`.
     pub(super) session: RwLock<AcpSession>,
+    /// Raw mode evidence from this process's successful session/load response.
+    /// Separate from persisted/preloaded/supplemented catalogs and desired state.
+    pub(super) resume_mode_observation: RwLock<Option<(String, Option<String>)>>,
 
     /// Shared runtime holding status, last_activity, and the event
     /// broadcast channel. `pub(super)` so sibling modules (session_flow,
@@ -693,6 +696,7 @@ impl AcpAgentManager {
         let manager = Self {
             params,
             session: RwLock::new(session),
+            resume_mode_observation: RwLock::new(None),
             runtime,
             process,
             protocol,
@@ -799,6 +803,10 @@ impl AcpAgentManager {
     /// Cached context usage info from the ACP backend.
     pub(crate) async fn usage(&self) -> Option<UsageUpdate> {
         self.session.read().await.context_usage().cloned()
+    }
+
+    pub(crate) async fn resume_mode_observation(&self) -> Option<(String, Option<String>)> {
+        self.resume_mode_observation.read().await.clone()
     }
 
     pub(crate) async fn config_options(&self) -> Result<GetConfigOptionsResponse, AgentError> {
@@ -1512,6 +1520,24 @@ impl crate::agent_task::IAgentTask for AcpAgentManager {
                     "ACP send_message cancelled"
                 );
                 self.runtime.emit_finish(Some(session_id));
+                Ok(())
+            }
+            Ok(PromptOutcome::EmptyTurnFailed { session_id, tips }) => {
+                // An `end_turn` with no output is a failed turn: finishing it
+                // would let callers (team leaders, phone, cron) treat silence
+                // as success. See `empty_turn`.
+                warn!(
+                    agent_type = "acp",
+                    terminal_kind = "error",
+                    source = "empty_response",
+                    session_id = %session_id,
+                    tip_code = tips.code.as_deref().unwrap_or("none"),
+                    "ACP send_message ended without output; reporting a retryable error"
+                );
+                if super::empty_turn::tip_adds_information(&tips) {
+                    self.runtime.emit(AgentStreamEvent::Tips(tips));
+                }
+                self.runtime.emit_error_data(super::empty_turn::empty_turn_failure());
                 Ok(())
             }
             Ok(PromptOutcome::InfoTip { session_id, tips } | PromptOutcome::WarningTip { session_id, tips }) => {

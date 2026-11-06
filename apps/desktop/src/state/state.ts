@@ -9,7 +9,7 @@ import type { Notice } from '@/features/account/runtime/notices';
 import type { FeedbackThread } from '@/features/account/runtime/feedback';
 import type { TurtleSession } from './types';
 import { demoAgents, demoPhoneConvs, demoPhoneData, demoSchedules, demoSkills, demoTeams } from '@/demo/fixtures';
-import type { Agent, ConnState, DraftAttachment, Conv, FileNode, Layout, MenuState, ModalEntry, Mode, Provider, Schedule, Skill, Team } from './types';
+import type { Agent, ConnState, DraftAttachment, Conv, FileNode, Layout, OpenFileInfo, MenuState, ModalEntry, Mode, Provider, Schedule, Skill, Team } from './types';
 
 /* ===== 应用状态：单一状态树，由 store.ts 的 update() 修改 ===== */
 
@@ -32,9 +32,12 @@ export const initialState = (examples = false) => {
     /* 工作区 */
     wsTab: 'preview' as 'preview' | 'files' | 'plan' | 'changes' | 'phone', live: true, quality: '自动', previewDevice: 'desktop' as 'desktop' | 'mobile',
     workspaceBrowseRoot: '' as string,
-    openFile: null as string | null, openFileContent: '' as string, treeOpen: {} as Record<string, boolean>,
+    openFile: null as string | null, openFileContent: '' as string, openFileError: '' as string, openFileInfo: null as OpenFileInfo | null, filesShowAll: false, treeOpen: {} as Record<string, boolean>,
+    snapshot: { workspace: '', status: 'idle', changes: [] } as import('./types').SnapshotView,
+    turnBase: {} as Record<string, import('./types').TurnBase>,
     files: null as FileNode | null, filesLoading: false, filesError: '' as string,
     previewHtml: '' as string, previewAt: 0, previewError: '' as string,
+    previewAssetFailures: [] as { path: string; reason: string }[], previewAssetTotal: 0,
     /* 输入 */
     lit: (examples ? { p1: true, p2: true, p3: false } : {}) as Record<string, boolean>, homeExtra: [] as string[],
     folder: '' as string, recentFolders: [] as string[], homeDir: '' as string,
@@ -46,7 +49,7 @@ export const initialState = (examples = false) => {
     /* Lom 云端：HEANG 账号与积分（S04-01） */
     cloud: 'checking' as 'checking' | 'unavailable' | 'signed-out' | 'signing-in' | 'signed-in', cloudError: '' as string, cloudScheduleError: '' as string,
     account: null as null | { id: string; email: string; name: string; avatar?: string; provider_avatar?: string },
-    points: null as null | { total: number; free: number; paid: number; period: string; daily?: number },
+    points: null as null | { total: number; free: number; paid: number; period: string; daily?: number; monthly_free?: number },
     cloudModels: null as null | { pro: string; max: string; mini: string },
     cloudLegacy: {} as import('@/features/account/runtime/modelBinding').LegacyModels,
     cloudModelRevision: -1,
@@ -84,7 +87,7 @@ export const initialState = (examples = false) => {
     commandSkills: { items: [] as CommandSkill[], loading: false, error: '' },
     installed: phone.installed, mySkills: phone.mySkills,
     subagents: phone.subagents, souls: phone.souls, memories: phone.memories, authorizedPCs: phone.authorizedPCs,
-    teams: (examples ? demoTeams() : []) as Team[], teamView: 'board' as 'board' | 'side' | 'single', teamFocus: examples ? 'm1' : '',
+    teams: (examples ? demoTeams() : []) as Team[], teamView: 'board' as 'board' | 'side' | 'single' | 'chat', /** TEAM-CHAT-01 群聊输入框里选中的接收者（不持久化） */ teamChatTargets: {} as Record<string, string[]>, teamFocus: examples ? 'm1' : '',
     /* 设置 */
     settingsPage: 'connections',
     prefs: { reconnect: true, notify: true, launchAtLogin: false, sound: true, lang: '简体中文', supervise: 30, autoTakeover: false, notifyHelp: true, cellularCap: true, confirmPublish: true, auditLog: true, allowInstall: 'ask' } as Record<string, string | number | boolean>,
@@ -117,7 +120,7 @@ export const loadPersisted = (s: AppState) => {
   }
   if (!saved.prefs?.settingsV2) { s.prefs.autoTakeover = false; s.prefs.settingsV2 = true; }
   // D33：旧宫格与无效偏好迁移到看板；保留用户的并排 / 单个选择。
-  if (!['side', 'board', 'single'].includes(s.teamView)) s.teamView = 'board';
+  if (!['side', 'board', 'single', 'chat'].includes(s.teamView)) s.teamView = 'board';
   // 重新打开 Lom 时没有哪一轮还在替目标干活：进行中的目标先暂停，点「继续」再推进
   const now = Date.now();
   for (const g of Object.values(s.goals)) if (!g.done && !g.paused) { g.paused = true; g.pausedAt = now; g.note = '重新打开了 Lom，目标已暂停'; }

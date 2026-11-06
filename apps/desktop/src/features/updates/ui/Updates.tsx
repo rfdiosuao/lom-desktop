@@ -28,7 +28,7 @@ export function UpdateModal() {
       {['available', 'error'].includes(u.phase) && u.version && <Btn label="下载更新" variant="primary" onClick={() => void desktopUpdater.download()} />}
       {u.phase === 'ready' && <Btn label="安装并重启" variant="primary" disabled={busy} onClick={() => void desktopUpdater.install()} />}
     </>}>
-    <p role="status">开源版已停用自动更新。请从公开仓库获取源码并自行构建。</p>
+    <p role="status">{t('开源版已停用自动更新。请从公开仓库获取源码并自行构建。')}</p>
     {u.phase === 'downloading' && <div><progress aria-label={t('下载进度')} value={percent} max={100} /> <span>{percent === undefined ? `${(u.received / 1048576).toFixed(1)} MB` : `${percent}%`}</span></div>}
     {u.notes && <div className="update-notes">{u.notes}</div>}
     {u.error && <p role="alert" className="update-error">{t(u.error)}</p>}

@@ -113,3 +113,29 @@ it('PA-CAPABILITY-01 personal scoped discovery is available only for its running
   S.running = { [a.conversation]: true }; S.account = { id: 'another-account' } as typeof S.account;
   expect(await call('personal_schedule_help')).toMatchObject({ isError: true });
 });
+
+it('PHONE-TEAM-01 allows a non-leader to dispatch and read team phone work while rejecting unrelated sessions', async () => {
+  const { teamMemberPhoneBridge } = await import('./phoneCommander');
+  scope = `team-member-${crypto.randomUUID()}`;
+  await teamMemberPhoneBridge(scope, () => true);
+  const parent = S.convs[0];
+  Object.assign(parent, { phoneScope: scope, teamId: 'team-phone' });
+  S.agents.dev_a.kind = 'phone';
+  S.convs.push({ id: 'private', owner: 'dev_a', phoneSession: 'private-session' } as Conv);
+  const team = { id: 'team-phone', ownerAccountId: 'account-a', real: true, name: 'Team', folder: '', created: 0, panes: {},
+    members: [{ mid: 'worker', agent: 'ag:worker', role: '执行' }, { mid: 'mobile', agent: 'dev_a', role: '手机' }],
+    memberConvs: { worker: parent.id }, core: { id: 'core', assistant: 'a', slots: { worker: 'slot' } } };
+  S.teams = [team];
+  try {
+    expect(await call('phone_task_read', { device: 'dev_a', session_id: 'private-session' })).toMatchObject({ isError: true });
+    expect(m.rpc).not.toHaveBeenCalled();
+    m.send.mockImplementation(async (c: Conv) => { c.phoneSession = 'team-session'; });
+    expect(await call('phone_task_start', { device: 'dev_a', text: '查看手机界面' })).toMatchObject({ content: [{ text: expect.stringContaining('team-session') }] });
+    expect(team.memberConvs).toHaveProperty('mobile');
+    m.rpc.mockResolvedValue({ status: 'completed', items: [{ text: '已查看' }] });
+    expect(await call('phone_task_read', { device: 'dev_a', session_id: 'team-session' })).toMatchObject({ content: [{ text: expect.stringContaining('已查看') }] });
+    team.members.pop();
+    expect(await call('phone_task_read', { device: 'dev_a', session_id: 'team-session' })).toMatchObject({ isError: true });
+    expect(m.rpc).toHaveBeenCalledTimes(1);
+  } finally { S.teams = []; }
+});

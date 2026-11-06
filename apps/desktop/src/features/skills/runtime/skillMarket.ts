@@ -17,14 +17,15 @@ export interface MineSkill { id:string; name:string; category:string; removed:bo
 export interface InstalledSkill { id:string; name:string; description:string; version?:string; enabled?:boolean; removable:boolean; location?:string; }
 export const listMarket = (q='', category='') => cloud<MarketSkill[]>('GET', `/v1/skills?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
 export const marketDetail = (id:string) => cloud<SkillDetail>('GET', `/v1/skills/${encodeURIComponent(id)}`);
-/** 用积分购买技能（买过的不重复扣）；返回扣了多少点，并更新积分显示 */
-export async function purchaseSkill(id: string) {
+/** 用积分购买技能（买过的不重复扣）；返回扣了多少点，并更新积分显示。
+ * `purchaseId` 是这次购买的幂等键（SKILL-PURCHASE-02）：带同一个键重试时服务端只补完、不重扣，并如实返回当时扣的点数。 */
+export async function purchaseSkill(id: string, purchaseId: string = crypto.randomUUID()) {
   // 请求期间切换账号：这次购买属于旧账号，迟到的响应不能写到新账号的积分显示里，调用方后面的通知和安装也要跟着停下。
   const signedIn = S.cloud === 'signed-in' && !!S.account?.id, isCurrent = authAccount();
   const switched = () => new Error('账号已切换，这次技能购买的结果没有应用到当前账号');
   let r: { owned: boolean; charged: number; points: { total: number; free: number; paid: number; period: string; daily?: number } };
   // 失败也一样：开始时已登录、结束时账号变了，就不把旧账号的错误显示给新账号；本来就没登录时保留真实错误
-  try { r = await cloud<typeof r>('POST', `/v1/skills/${encodeURIComponent(id)}/purchase`, {}); }
+  try { r = await cloud<typeof r>('POST', `/v1/skills/${encodeURIComponent(id)}/purchase`, { purchase_id: purchaseId }); }
   catch (e) { throw signedIn && !isCurrent() ? switched() : e; }
   if (!isCurrent()) throw switched();
   update(s => { s.points = r.points; });
@@ -69,9 +70,9 @@ async function verifyInstalledSkills(names: string[]) {
   const rows = await installedSkills('pc');
   for (const name of names) {
     const row = rows.find(s => s.name === name && s.removable && s.location);
-    if (!row) throw new Error(`skill.install_unconfirmed：本机未确认安装「${name}」，请刷新已安装列表后重试`);
+    if (!row) throw new Error(`本机未确认安装「${name}」，请刷新已安装列表后重试`);
     const info = await api<{name:string}>('POST', '/api/skills/info', {skill_path:row.location});
-    if (info.name !== name) throw new Error(`skill.install_unconfirmed：本机技能「${name}」读取结果不一致`);
+    if (info.name !== name) throw new Error(`本机技能「${name}」读取结果不一致，请刷新已安装列表后重试`);
   }
 }
 export async function installMarketSkill(id:string,device:string,expectedSha?:string):Promise<string> {
@@ -83,7 +84,7 @@ export async function installMarketSkill(id:string,device:string,expectedSha?:st
     const path=await invoke<string>('skill_stage',{request}); let receipt='';
     try {
       const r=await api<{skill_names:string[];failed:{code:string}[]}>('POST','/api/skills/import',{skill_path:path});
-      if(r.failed?.length || !r.skill_names?.length) throw new Error(`导入未全部完成：${r.failed?.map(x=>x.code).join('、') || '核心未返回技能'}`);
+      if(r.failed?.length || !r.skill_names?.length) { console.warn('skill import incomplete', r.failed?.map(x=>x.code) ?? 'no skills returned'); throw new Error('技能包没有全部导入，请重试'); }
       await verifyInstalledSkills(r.skill_names);
       receipt=`已安装到当前电脑：${r.skill_names.join('、')}。请新建聊天后使用，已有聊天的技能列表不会自动更新。其他电脑需要分别安装。`; await loadCommandSkills(); return receipt;
     } finally { const request:SkillStage={path}; await cleanStage(()=>invoke('skill_stage_remove',{request}),receipt); }

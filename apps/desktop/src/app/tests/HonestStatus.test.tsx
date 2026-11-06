@@ -21,7 +21,7 @@ it('D10 设置真实开关与配对授权，不显示演示权限', () => {
   expect(host.textContent).toContain('试听');
   expect(host.textContent).not.toContain('暂未接入');
   act(() => update(s => { s.settingsPage = 'security'; s.prefs.allowInstall = 'deny'; }));
-  expect(host.textContent).toContain('禁止命令和写入');
+  expect(host.textContent).toContain('命令和写入逐项确认');
   expect(host.textContent).not.toContain('此处授权列表为示例');
   expect([...host.querySelectorAll('button')].some(x => x.textContent === '禁止')).toBe(false);
 });

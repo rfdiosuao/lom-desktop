@@ -793,6 +793,7 @@ impl TeamConversationProvisioningPort for FakeConversationPorts {
             runtime_env: Vec::new(),
             team: team.clone(),
             kind: AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+                required_mode_on_resume: None,
                 config,
                 team: team.clone(),
                 belongs_to_team: team.is_some(),
@@ -1617,6 +1618,7 @@ fn test_acp_build_options(conversation_id: String, workspace: String) -> BuildTa
         runtime_env: Vec::new(),
         team: None,
         kind: AgentSessionKind::Acp(Box::new(AcpSessionBuildContext {
+            required_mode_on_resume: None,
             config: AcpBuildExtra::default(),
             team: None,
             belongs_to_team: false,

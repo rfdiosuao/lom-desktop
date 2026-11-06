@@ -1,0 +1,13 @@
+.modal.ssh-machine{width:600px}
+.ssh-machine .tabs{margin-bottom:18px}
+.ssh-machine .field--inline{align-items:flex-start;margin-bottom:16px}
+.ssh-machine .field--inline .field__label{width:96px;line-height:var(--h-md)}
+.ssh-machine .field--inline .grow{min-width:0}
+.ssh-machine__pair{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:12px}
+.ssh-machine__static{margin:0;min-height:var(--h-md);display:flex;align-items:center;line-height:1.5;font-size:var(--fs-md);color:var(--muted)}
+.ssh-machine__ok{color:var(--brand-ink);overflow-wrap:anywhere}
+.ssh-machine .form-error{overflow-wrap:anywhere;white-space:pre-wrap}
+.ssh-machine__test{margin-right:auto}
+.affix__corner{position:absolute;right:8px;bottom:8px;border:1px solid var(--line);background:var(--bg-hover)}
+.ssh-machine__group{display:grid;gap:10px}
+.ssh-machine__problem{margin:0 0 8px;font-size:var(--fs-sm);color:var(--muted);overflow-wrap:anywhere}

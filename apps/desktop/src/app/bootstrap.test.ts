@@ -36,3 +36,14 @@ it('D26 WebSocket 重连刷新列表后恢复会话，正常首连不重复加�
   expect(retryDeferredRecovery).toHaveBeenCalledWith('c1');
   expect(handleCoreEvent.mock.invocationCallOrder[0]).toBeLessThan(retryDeferredRecovery.mock.invocationCallOrder[0]);
 });
+
+it('WS-REQUIRED-01 AC3 the core default folder is only a suggestion: startup never silently sets the workspace', async () => {
+  vi.resetModules(); vi.stubEnv('VITE_LOM_DEFAULT_FOLDER', '/Users/me/Documents');
+  const { S } = await import('@/state/store');
+  S.folder = '';
+  const { startCore } = await import('./bootstrap');
+  await startCore();
+  expect(S.folder).toBe('');
+  expect(S.recentFolders).toContain('/Users/me/Documents');
+  vi.unstubAllEnvs();
+});

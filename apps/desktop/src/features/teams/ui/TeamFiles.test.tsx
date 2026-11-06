@@ -56,7 +56,7 @@ it('D33-UX-03 the three view modes carry visible labels, and the board uses a co
   S.route = { name: 'team', id: S.teams[0].id };
   await act(async () => root.render(<TeamPage />));
   const modes = [...host.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-  expect(modes.map(b => b.textContent)).toEqual(['并排', '看板', '单个']);
+  expect(modes.map(b => b.textContent)).toEqual(['并排', '看板', '单个', '群聊']); // TEAM-CHAT-01 新增群聊视图
   const board = modes[1].querySelector('svg')!.innerHTML;
   expect(board.match(/<rect/g)).toHaveLength(3);
 });
@@ -69,5 +69,5 @@ it('D33-UX-03 a folder that does not exist yet reads as "no files yet", not as a
   expect(S.filesError).not.toContain('os error');
   m.api.mockRejectedValue(new Error('permission denied'));
   await refreshWorkspace();
-  expect(S.filesError).toBe('permission denied');
+  expect(S.filesError).toContain('workspace.list_failed'); expect(S.filesError).not.toContain('permission denied');
 });

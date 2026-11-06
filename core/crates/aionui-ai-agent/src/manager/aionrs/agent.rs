@@ -48,6 +48,10 @@ fn resolve_aionui_config(cli_args: &CliArgs) -> Result<Config, AgentError> {
     // AionUi owns the embedded runtime policy. Standalone aionrs max-token
     // settings must not leak in from global or workspace config files.
     config.max_tokens = None;
+    // LOM owns automatic context recovery while preserving the resolved model window.
+    config.compact.enabled = true;
+    config.compact.autocompact_threshold_pct = Some(75);
+    config.compact.request_byte_budget = 2 * 1024 * 1024;
     // Embedded approvals are owned by the live session manager, not CLI/global config.
     config.tools.auto_approve = false;
     config.tools.allow_list.clear();

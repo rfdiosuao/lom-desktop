@@ -22,8 +22,8 @@ export function InstalledSkills({device: fixed, query = ''}:{device?:string;quer
   return <section className="integration-panel">
     <p className="muted">这里显示所选设备的实际安装。电脑技能安装后请新建聊天使用；已有聊天的技能列表不会自动更新。</p>
     <div className="toolbar">{!fixed && <select className="input" aria-label="技能安装位置" value={device} onChange={e=>setSelected(e.target.value)}><option value="pc">电脑主控</option>{s.phoneOrder.filter(id=>s.agents[id]?.real).map(id=><option key={id} value={id}>{s.agents[id].name}</option>)}</select>}
-      <Btn label="刷新已安装" disabled={busy} onClick={()=>setRevision(n=>n+1)}/></div>
-    {error && <p role="alert">{error}</p>}{busy && <p role="status">正在处理…</p>}
+    </div>
+    {error && <p role="alert">{error}</p>}
     {!busy&&!error&&!rows.length&&<p className="muted">没有可显示的已安装技能。</p>}
     {!busy && !!rows.length && !visible.length && <p className="muted">没有匹配的已安装技能。</p>}
     <div className="list">{visible.map(row=><div className="card" key={row.id}><div className="row"><h3 className="grow">{row.name}</h3><span>{row.version}{row.enabled!==undefined && (row.enabled?' · 已启用':' · 已停用')}</span></div><p>{row.description}</p>

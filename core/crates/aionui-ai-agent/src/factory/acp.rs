@@ -66,11 +66,22 @@ pub(super) async fn build(
     build_context: AcpSessionBuildContext,
     ctx: FactoryContext,
 ) -> Result<AgentInstance, AgentError> {
+    let required_mode = build_context.required_mode_on_resume.clone();
+    let required_session_id = build_context.session_id.clone();
     let mut config = build_context.config;
 
     // Resolve the catalog row — prefer explicit agent_id, fall
     // back to a vendor-label match for legacy payloads.
     let meta = resolve_catalog_metadata(&deps.agent_registry, &config, &ctx.user_id).await?;
+    if required_mode.is_some()
+        && (meta.backend.as_deref() != Some("qoder")
+            || required_mode.as_deref() != Some("yolo")
+            || required_session_id.as_deref().is_none_or(str::is_empty))
+    {
+        return Err(AgentError::bad_request(
+            "Explicit permission resume requires a Qoder yolo request and an existing backend session",
+        ));
+    }
 
     // Trust the catalog row over the client-supplied `backend` when an
     // `agent_id` was provided. The frontend collapses row-scoped rows
@@ -327,18 +338,100 @@ pub(super) async fn build(
     // session/new (or claude-meta-resume / session/load) and the first
     // reconcile pass have completed. Matches aionrs factory behaviour:
     // the caller sees "warmed up" == "ready for PUT /mode | /model".
-    arc.warmup_session().await?;
-
     let instance = AgentInstance::Acp(Arc::clone(&arc));
-
-    // Hand the service the domain event receiver so it can
-    // persist user intent changes without reverse-engineering
-    // them from CLI observations.
-    deps.acp_agent_service
-        .attach(ctx.user_id, ctx.conversation_id, domain_rx)
-        .await;
+    let prepared = arc.warmup_session().await;
+    let actual_session_id = arc.session_id().await;
+    let raw_resume_mode = arc.resume_mode_observation().await;
+    let requirement = required_mode.as_deref().map(|mode| RequiredResumeMode {
+        mode,
+        expected_session_id: required_session_id.as_deref(),
+        actual_session_id: actual_session_id.as_deref(),
+        raw_mode: raw_resume_mode
+            .as_ref()
+            .filter(|(sid, _)| Some(sid.as_str()) == required_session_id.as_deref())
+            .and_then(|(_, mode)| mode.as_deref()),
+    });
+    finish_acp_warmup(
+        &instance,
+        prepared,
+        requirement,
+        &deps.acp_agent_service,
+        ctx.user_id,
+        ctx.conversation_id,
+        domain_rx,
+    )
+    .await?;
 
     Ok(instance)
+}
+
+struct RequiredResumeMode<'a> {
+    mode: &'a str,
+    expected_session_id: Option<&'a str>,
+    actual_session_id: Option<&'a str>,
+    raw_mode: Option<&'a str>,
+}
+
+async fn finish_acp_warmup(
+    instance: &AgentInstance,
+    prepared: Result<(), AgentError>,
+    requirement: Option<RequiredResumeMode<'_>>,
+    persistence: &Arc<crate::AcpSessionSyncService>,
+    user_id: String,
+    conversation_id: String,
+    domain_rx: tokio::sync::mpsc::Receiver<crate::manager::acp::agent_event_tracker::AcpSessionEvent>,
+) -> Result<(), AgentError> {
+    let verified = async {
+        prepared?;
+        if let Some(required) = requirement {
+            let options = instance.get_config_options().await?;
+            if required.raw_mode != Some(required.mode) {
+                return Err(AgentError::bad_request("Permission mode was not explicitly reported by this session/load response; previous persisted mode retained"));
+            }
+
+            verify_required_resume_mode(
+                required.mode,
+                required.expected_session_id,
+                required.actual_session_id,
+                &options,
+            )?;
+        }
+        Ok::<(), AgentError>(())
+    }
+    .await;
+    if let Err(error) = verified {
+        // The consumer is not attached yet. Dropping these observations retains
+        // the previous persisted mode/config and backend anchor on every failure.
+        instance
+            .kill_and_wait(Some(aionui_common::AgentKillReason::AgentErrorRecovery))
+            .await;
+        return Err(error);
+    }
+    persistence.attach(user_id, conversation_id, domain_rx).await;
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "acp_resume_tests.rs"]
+mod resume_tests;
+
+fn verify_required_resume_mode(
+    required_mode: &str,
+    expected_session_id: Option<&str>,
+    actual_session_id: Option<&str>,
+    options: &aionui_api_types::GetConfigOptionsResponse,
+) -> Result<(), AgentError> {
+    let observed = options
+        .config_options
+        .iter()
+        .find(|option| option.id == "mode")
+        .and_then(|option| option.current_value.as_deref());
+    if expected_session_id.is_none() || actual_session_id != expected_session_id || observed != Some(required_mode) {
+        return Err(AgentError::bad_request(
+            "Permission mode was not confirmed on the existing backend session; previous persisted mode retained",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) async fn resolve_catalog_metadata(
@@ -666,6 +759,27 @@ mod tests {
         mem,
         path::{Path, PathBuf},
     };
+
+    #[test]
+    fn explicit_permission_resume_requires_observed_mode_and_original_anchor() {
+        let response = |mode: &str| {
+            serde_json::from_value::<aionui_api_types::GetConfigOptionsResponse>(serde_json::json!({
+                "config_options": [{"id":"mode", "type":"select", "current_value":mode, "options":[]}]
+            }))
+            .unwrap()
+        };
+        assert!(
+            super::verify_required_resume_mode("yolo", Some("original"), Some("original"), &response("yolo")).is_ok()
+        );
+        for (sid, mode) in [
+            (Some("original"), "default"),
+            (Some("replacement"), "yolo"),
+            (None, "yolo"),
+        ] {
+            let error = super::verify_required_resume_mode("yolo", Some("original"), sid, &response(mode)).unwrap_err();
+            assert!(error.to_string().contains("previous persisted mode retained"));
+        }
+    }
 
     const TEST_USER_ID: &str = "user-1";
 

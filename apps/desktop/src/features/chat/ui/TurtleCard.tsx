@@ -1,4 +1,5 @@
 import { finishTurtle, submitTurtle, turtleBusy, turtleQuestion, turtleSending } from '../actions/turtle';
+import { turtleAnswerCount, turtleSummaryRequest } from '../runtime/turtlePrompt';
 import { Btn } from '@/shared/ui/Button';
 import { convOfKey } from '@/features/teams/runtime/team';
 import { update, useStore } from '@/state/store';
@@ -13,15 +14,17 @@ export function TurtleCard({ ckey }: { ckey: string }) {
   const loading = !!c && !c.loaded;
   const { question, failed } = turtleQuestion(ckey);
   const ready = session.started && !!question && !busy && !loading && !session.error;
+  const waiting = turtleSummaryRequest(session.request) ? 'AI 正在梳理你的需求…' : 'AI 正在准备下一问…';
   const editOther = (other: string) => update(() => { session.other = other; });
   return <section className="turtle-card" aria-label="海龟汤提问卡" aria-busy={busy}>
     <header className="turtle-card__header"><strong>海龟汤提问卡</strong><Btn label="结束提问" disabled={turtleSending(ckey)} variant="ghost" size="sm" onClick={() => void finishTurtle(ckey)} /></header>
     {!session.started && !busy ? <>
       <p className="turtle-card__question">让 AI 来问，你只需要回答。</p>
-      <p className="turtle-card__hint">在下方写一个想法或主题，也可以直接开始，让 AI 帮你梳理。</p>
+      <p className="turtle-card__hint">在下方写一个想法或主题，也可以直接开始。每完成 10 次回答，AI 会梳理你的需求，供你确认或纠正。</p>
       <Btn label="开始提问" variant="primary" onClick={() => void submitTurtle(ckey)} disabled={loading} />
     </> : <>
-      <p className="turtle-card__question" aria-live="polite">{loading ? '正在恢复问答记录…' : busy ? 'AI 正在准备下一问…' : question || '这一轮还没有可回答的问题。'}{(loading || busy) && <span className="turtle-card__dots" aria-hidden="true"><i /><i /><i /></span>}</p>
+      {!loading && <p className="turtle-card__hint">已完成 {turtleAnswerCount(c?.messages || [])} 次回答 · 每 10 次梳理需求</p>}
+      <p className="turtle-card__question" aria-live="polite">{loading ? '正在恢复问答记录…' : busy ? waiting : question || '这一轮还没有可回答的问题。'}{(loading || busy) && <span className="turtle-card__dots" aria-hidden="true"><i /><i /><i /></span>}</p>
       {(loading || busy) && <div className="turtle-card__bar" aria-hidden="true" />}
       <div className="turtle-card__answers">
         <Btn label="对" ic="check" variant="ghost" disabled={!ready} onClick={() => void submitTurtle(ckey, '对')} />

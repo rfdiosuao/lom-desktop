@@ -4518,6 +4518,26 @@ impl ConversationService {
         Ok(())
     }
 
+    /// Called only while the Team coordinator owns the target's strict idle
+    /// restart lease. This carries explicit intent solely in build options.
+    pub async fn warmup_with_required_mode(
+        &self,
+        user_id: &str,
+        conversation_id: &str,
+        task_manager: &Arc<dyn IWorkerTaskManager>,
+        mode: &str,
+    ) -> Result<(), ConversationError> {
+        self.ensure_runtime_agent_with_mode(
+            user_id,
+            conversation_id,
+            task_manager,
+            "explicit_permission_rebuild",
+            Some(mode),
+        )
+        .await?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip_all, fields(user_id = %user_id, conversation_id = %conversation_id))]
     pub async fn ensure_runtime(
         &self,
@@ -4658,6 +4678,18 @@ impl ConversationService {
         task_manager: &Arc<dyn IWorkerTaskManager>,
         phase: &'static str,
     ) -> Result<(AgentInstance, bool), ConversationError> {
+        self.ensure_runtime_agent_with_mode(user_id, conversation_id, task_manager, phase, None)
+            .await
+    }
+
+    async fn ensure_runtime_agent_with_mode(
+        &self,
+        user_id: &str,
+        conversation_id: &str,
+        task_manager: &Arc<dyn IWorkerTaskManager>,
+        phase: &'static str,
+        required_mode: Option<&str>,
+    ) -> Result<(AgentInstance, bool), ConversationError> {
         let row = self
             .conversation_repo
             .get(user_id, conversation_id)
@@ -4669,12 +4701,29 @@ impl ConversationService {
         reject_deprecated_runtime_row(&row)?;
 
         if let Some(agent) = task_manager.get_task(conversation_id) {
+            if required_mode.is_some() {
+                return Err(ConversationError::Busy {
+                    reason: "Permission replacement requires the reserved previous runtime to be stopped".into(),
+                });
+            }
             debug!(conversation_id, phase, "Conversation runtime already active");
             self.ensure_background_watcher(user_id, conversation_id, &agent);
             return Ok((agent, false));
         }
 
         let mut build_opts = self.build_task_options(&row).await?;
+        if let Some(mode) = required_mode {
+            match &mut build_opts.context.kind {
+                aionui_ai_agent::session_context::AgentSessionKind::Acp(context) => {
+                    context.require_mode_on_resume(mode)?;
+                }
+                _ => {
+                    return Err(ConversationError::BadRequest {
+                        reason: "Permission rebuild requires an ACP session".into(),
+                    });
+                }
+            }
+        }
         self.apply_conversation_runtime_context(&mut build_opts, user_id, conversation_id);
         self.ensure_session_skill_view(&build_opts.context).await;
         let stored_workspace = build_opts.context.workspace.stored_path.clone();

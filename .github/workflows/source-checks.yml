@@ -12,6 +12,8 @@ jobs:
           python-version: '3.12'
       - run: python3 -m unittest discover -s tools -p 'test_*.py'
       - run: python3 tools/audit-source.py
+      - run: bash core/scripts/migration/check-immutability.test.sh
+      - run: bash core/scripts/migration/check-immutability.sh
       - run: python3 apps/android/tests/check_public_boundary.py -v
       - run: python3 protocol/tools/generate-remote.py && git diff --exit-code -- protocol/generated
   desktop:

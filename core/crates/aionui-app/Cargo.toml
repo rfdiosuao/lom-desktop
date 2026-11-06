@@ -18,6 +18,7 @@ slack = ["aionui-channel/slack"]
 discord = ["aionui-channel/discord"]
 
 [dependencies]
+lom-mcp-oauth.workspace = true
 aionui-common.workspace = true
 aionui-assets.workspace = true
 aionui-db.workspace = true

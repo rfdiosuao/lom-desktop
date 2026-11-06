@@ -10,7 +10,7 @@ const entry = { id: 'a'.repeat(64), source: 'codex' as const, title: '原始项�
 beforeEach(() => {
   vi.clearAllMocks();
   S.cloud = 'signed-in'; S.account = { id: 'owner' } as any;
-  S.mode = 'desktop'; S.route = { name: 'home' }; S.activeConv = null; S.modals = [];
+  S.mode = 'desktop'; S.folder = '/work'; S.route = { name: 'home' }; S.activeConv = null; S.modals = [];
   S.convs = []; S.historyImports = [entry]; S.agentPins = []; S.attachments = {}; S.drafts = { home: '不要覆盖' }; S.running = {};
   S.agentCatalog = [{ id: 'actual-codex', backend: 'codex', name: 'Codex CLI', enabled: true, installed: true, status: 'online', agent_type: 'acp', agent_source: 'builtin' }];
   m.api.mockImplementation(async (_method: string, path: string, body?: any) => path.endsWith('/bundle') ? { entry, transcript_path: '/archive/context.md', raw_path: '/archive/raw.jsonl' } : { id: 'continued', type: 'acp', name: body.name, extra: body.extra });

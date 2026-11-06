@@ -1,10 +1,11 @@
 import { agentRow } from '@/state/agentCatalog';
 export { agentRow, logoUrl } from '@/state/agentCatalog';
-import { api } from '@/core/client';
+import { api, CoreError } from '@/core/client';
+import { conversationOf, paneOf } from '@/features/teams/runtime/team';
 import { S, update } from '@/state/store';
 import { cachedOptions, choiceName, effortOption, modelOption } from './agentOptions';
 import { canPin } from './agentState';
-import type { Conv } from '@/state/types';
+import type { Conv, Team } from '@/state/types';
 
 /* ===== 其他 Agent（Codex CLI、Claude Code、Pi……）：由核心检测本机已安装的 CLI =====
  * 「Lom」是内置的总指挥，始终在切换器第一位；用户在「设置 → Agents」里把其他 Agent 加到切换器。
@@ -61,17 +62,19 @@ export function acpExtra(a: AgentRow) {
   return { backend: a.backend, agent_id: a.id, agent_name: a.name };
 }
 
-/** 输入框对应的外部 Agent 和它的会话：新任务页、外部 Agent 任务、OPC 团队里的本机 Agent 成员 */
-function externalTarget(ckey: string): { agentId?: string; conv?: Conv } {
+/** 输入框对应的外部 Agent 和它的会话：新任务页、外部 Agent 任务、OPC 团队里的本机 Agent 成员（队长的会话记在 leaderConv，由 conversationOf 统一查） */
+function externalTarget(ckey: string): { agentId?: string; conv?: Conv; team?: Team } {
   if (ckey === 'home') return { agentId: S.agentPick || undefined };
   if (ckey.startsWith('conv:')) { const conv = S.convs.find(x => x.id === ckey.slice(5)); return { agentId: conv?.agentId, conv }; }
-  if (!ckey.startsWith('team:')) return {};
-  const [, tid, mid] = ckey.split(':');
-  const t = S.teams.find(x => x.id === tid), m = t?.members.find(x => x.mid === mid);
-  if (!m?.agent.startsWith('ag:')) return {};
-  const convId = t?.memberConvs?.[mid];
-  return { agentId: m.agent.slice(3), conv: convId ? S.convs.find(x => x.id === convId) : undefined };
+  const pane = paneOf(ckey);
+  if (!pane?.m.agent.startsWith('ag:')) return {};
+  return { agentId: pane.m.agent.slice(3), conv: conversationOf(pane.t, pane.m), team: pane.t };
 }
+
+/** 团队已经开工（在核心里有对应团队或队长会话）。此后窗格找不到会话不是「还没开始」，而是出了问题 */
+const teamStarted = (t: Team) => !!(t.real && (t.core || t.leaderConv));
+export const TEAM_SESSION_MISSING = 'team.session_missing';
+export const teamSessionMissing = () => new CoreError(TEAM_SESSION_MISSING, '团队已开工，但没有找到这个成员正在运行的会话，模型没有改动。请稍后重试，或重新打开这个团队');
 
 /** 输入框所属任务用的外部 Agent 名称；Lom 自己的任务返回空字符串 */
 export function externalAgentName(ckey: string): string {
@@ -81,12 +84,14 @@ export function externalAgentName(ckey: string): string {
 
 /** 输入框所属外部 Agent 的模型：标签、选项、当前值（还没有会话时用本机记住的列表和预选） */
 export function externalModel(ckey: string) {
-  const { agentId, conv } = externalTarget(ckey);
+  const { agentId, conv, team } = externalTarget(ckey);
   if (!agentId) return null;
   const opts = (conv && S.agentOptions[conv.id]) || cachedOptions(agentId);
   const option = modelOption(opts);
-  const current = conv ? option?.current_value : S.agentModelPick[agentId] || option?.current_value;
-  return { agentId, conv, option, current, label: choiceName(option, current) };
+  // 已开工的团队找不到会话：不展示「新任务预选」，那不是这个成员正在用的模型
+  const sessionMissing = !conv && !!team && teamStarted(team);
+  const current = conv || sessionMissing ? option?.current_value : S.agentModelPick[agentId] || option?.current_value;
+  return { agentId, conv, option, current, sessionMissing, label: choiceName(option, current) };
 }
 
 /**

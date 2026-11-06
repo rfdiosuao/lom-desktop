@@ -1,6 +1,6 @@
-# OSS-01 source publication boundary
+# Community source publication boundary
 
-This source-only migration imports tracked snapshots, not private Git history, local settings, build caches, user documents, credential stores or installed binaries. Commercial server code (`crates/lom-server`), `deploy`, the account/admin website and payment/model gateway infrastructure are excluded. The HTTP service inside `core` is the local desktop execution API and must remain.
+This repository imports reviewed source snapshots, not private Git history, local settings, build caches, user documents, credential stores or installed binaries. Commercial server code (`crates/lom-server`), `deploy`, the account/admin website and payment/model gateway infrastructure are excluded. The HTTP service inside `core` is the local desktop execution API and must remain.
 
 Official cloud login, update delivery and cloud phone pairing/reconnection are disabled or unconfigured. The community desktop hosts a local QR pairing session and uses the existing signed envelope protocol over a private LAN; it never contacts a Lom relay. The LAN transport is cleartext HTTP on private addresses with encrypted payloads, not a public server. Client adapters and protocol definitions remain as reference source; their presence does not provide the missing backend. Personal Agent account/model restrictions are documented rather than silently bypassed. USB transport, VPN and self-hosted relay servers remain unimplemented.
 
@@ -8,4 +8,4 @@ Community desktop builds use a distinct application identifier and credential na
 
 Licensing remains per component. Sharing a repository does not link the GPL mobile program into the desktop core. Local fixture redaction preserves event structure, not the original private transcript content. Detailed upstream attribution and notices remain with each component.
 
-Publication is by reviewable pull request. Do not merge, publish signed binaries or change commercial deployments as a consequence of this migration. Remaining integration and build limits are listed in the PR and verification record.
+Source updates are reviewed through pull requests and component checks before publication. A source synchronization does not itself produce a tested installer or deploy commercial services. Packaged artifacts have separate build and verification records. Remaining integration and build limits are listed in the PR and verification record.

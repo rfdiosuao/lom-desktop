@@ -19,6 +19,22 @@ pub(super) fn apply_acp_launch_policy(command_spec: &mut CommandSpec, input: Acp
         input.metadata,
         initial_mode_from_build_context(input.metadata, input.config, input.session_snapshot).as_deref(),
     );
+    // Verified: protocols/samples/qoder-cli/1.1.78/{mode-probe,startup-mode-probe}.jsonl.
+    // This CLI advertises ACP `yolo` but cannot enter it from its default state
+    // through set_mode/set_config_option. Its process-local startup enum differs.
+    if input.metadata.backend.as_deref() == Some("qoder")
+        && initial_mode_from_build_context(input.metadata, input.config, input.session_snapshot).as_deref()
+            == Some("yolo")
+    {
+        command_spec
+            .args
+            .extend(["--permission-mode".into(), "bypass_permissions".into()]);
+        tracing::info!(
+            agent_backend = "qoder",
+            mode_id = "yolo",
+            "ACP startup permission mode requested through process arguments"
+        );
+    }
     append_runtime_env(command_spec, input.runtime_env);
     append_claude_provider_env(command_spec, input.metadata);
 }
@@ -142,6 +158,92 @@ mod tests {
             handshake: aionui_api_types::AgentHandshake::default(),
             has_command_override: false,
             env_override_key_count: 0,
+        }
+    }
+
+    #[test]
+    fn qoder_yolo_requires_process_local_permission_mode() {
+        let mut metadata = agent_metadata_with_backend(Some("qoder"));
+        metadata.yolo_id = Some("yolo".into());
+        let config = AcpBuildExtra {
+            session_mode: Some("yolo".into()),
+            ..Default::default()
+        };
+        let mut spec = CommandSpec {
+            command: "qodercli".into(),
+            args: vec!["--acp".into()],
+            env: vec![],
+            cwd: None,
+        };
+        apply_acp_launch_policy(
+            &mut spec,
+            AcpLaunchPolicyInput {
+                metadata: &metadata,
+                config: &config,
+                session_snapshot: None,
+                runtime_env: &[],
+            },
+        );
+        assert_eq!(spec.args, ["--acp", "--permission-mode", "bypass_permissions"]);
+    }
+
+    #[test]
+    fn qoder_permission_initialization_preserves_other_modes_and_backends() {
+        for (backend, mode) in [("qoder", "default"), ("qoder", "acceptEdits"), ("gemini", "yolo")] {
+            let mut metadata = agent_metadata_with_backend(Some(backend));
+            metadata.yolo_id = Some("yolo".into());
+            let config = AcpBuildExtra {
+                session_mode: Some(mode.into()),
+                ..Default::default()
+            };
+            let mut spec = CommandSpec {
+                command: "agent".into(),
+                args: vec!["--acp".into()],
+                env: vec![],
+                cwd: None,
+            };
+            apply_acp_launch_policy(
+                &mut spec,
+                AcpLaunchPolicyInput {
+                    metadata: &metadata,
+                    config: &config,
+                    session_snapshot: None,
+                    runtime_env: &[],
+                },
+            );
+            assert_eq!(spec.args, ["--acp"]);
+        }
+    }
+
+    #[test]
+    fn qoder_snapshot_mode_keeps_existing_precedence() {
+        let mut metadata = agent_metadata_with_backend(Some("qoder"));
+        metadata.yolo_id = Some("yolo".into());
+        for (persisted, configured, expected) in [("default", "yolo", false), ("yolo", "default", true)] {
+            let snapshot = PersistedSessionState {
+                current_mode_id: Some(crate::shared_kernel::ModeId::new(persisted)),
+                ..Default::default()
+            };
+            let config = AcpBuildExtra {
+                session_mode: Some(configured.into()),
+                ..Default::default()
+            };
+            let mut spec = CommandSpec {
+                command: "qodercli".into(),
+                args: vec!["--acp".into()],
+                env: vec![],
+                cwd: None,
+            };
+            apply_acp_launch_policy(
+                &mut spec,
+                AcpLaunchPolicyInput {
+                    metadata: &metadata,
+                    config: &config,
+                    session_snapshot: Some(&snapshot),
+                    runtime_env: &[],
+                },
+            );
+            assert_eq!(spec.args.iter().any(|arg| arg == "bypass_permissions"), expected);
         }
     }
 

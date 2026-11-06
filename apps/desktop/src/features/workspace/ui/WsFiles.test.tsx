@@ -42,6 +42,13 @@ it('UI-WORKBENCH-01 filtering reveals matching descendants and clearing preserve
 it('UI-WORKBENCH-01 real read failure stays visible with directory available',async()=>{
   mock.read.mockRejectedValue(new Error('文件不存在'));
   await act(async()=>button('guide.md').click());
-  expect(host.querySelector('[aria-label="文件内容"]')?.textContent).toContain('文件不存在');
+  expect(host.textContent).toContain('还不存在');expect(host.textContent).not.toContain('Error');
   expect(button('README.md')).toBeDefined();
+});
+
+it('WS-ENTRY-01 #406 the files toolbar opens the folder itself, same as the top bar',async()=>{
+  await act(async()=>button('打开工作区文件夹').click());
+  expect(mock.read).toHaveBeenCalledWith('POST','/api/shell/open-folder-with',{folder_path:'/test',tool:'explorer'});
+  expect(mock.read).not.toHaveBeenCalledWith('POST','/api/shell/open-file',expect.anything());
+  expect(mock.read).not.toHaveBeenCalledWith('POST','/api/shell/show-item-in-folder',expect.anything());
 });

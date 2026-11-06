@@ -3,6 +3,7 @@ import { normalizeConvId } from '@/state/selectors';
 import { downloadChatAttachment } from '@/features/phones/runtime/phoneFiles';
 import { turtleDisplayText } from '../runtime/turtlePrompt';
 import { channelName } from '../runtime/channelSource';
+import { TeamChatSource } from '@/features/teams/chat/TeamChatSource';
 import { useState } from 'react';
 import { Btn, IconBtn } from '@/shared/ui/Button';
 import { Icon } from '@/shared/ui/Icon';
@@ -46,7 +47,8 @@ export function UserMessage({ m, ctxId }: { m: Msg; ctxId: string }) {
     </div> : <>
       <div className="msg__bubble">{m.source === 'schedule' && <div className="msg__schedule-source"><Icon name="clock" />由定时任务发送</div>}
         {(m.source === 'feishu' || m.source === 'wechat') && <div className="msg__schedule-source"><span className={`msg__channel-icon msg__channel-icon--${m.source}`} aria-hidden="true" />来自{channelName(m.source)}</div>}
-        {m.source === 'personal' && <div className="msg__schedule-source"><Icon name="sparkles" />由个人助理派发</div>}{displayText}
+        {m.source === 'personal' && <div className="msg__schedule-source"><Icon name="sparkles" />由个人助理派发</div>}
+        {m.source === 'phone_receipt' && <div className="msg__schedule-source"><Icon name="phone" />手机任务回执</div>}{m.source === 'dispatch_done' && <div className="msg__schedule-source"><Icon name="check" />派发完成提醒</div>}{m.teamChat && <TeamChatSource meta={m.teamChat} />}{displayText}
         {!!m.attachments?.length && <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>{m.attachments.map((a, i) => <span key={i} className="attach"><AttachmentThumbnail attachment={a} />{a.name}{a.phoneFile && <Btn label={downloading ? '下载中…' : '下载'} size="sm" disabled={downloading} onClick={async () => {
           setDownloading(true); try { if (await downloadChatAttachment(a.phoneFile!)) toast('附件已保存到电脑'); }
           catch (e) { toastError('下载附件失败', e); } finally { setDownloading(false); }

@@ -130,6 +130,12 @@ struct ReadMessagesParams {
     /// Resume after this message_id; use the next_since_message_id from the previous page.
     #[serde(default)]
     since_message_id: Option<String>,
+    /// Read one of your addressed messages in bounded chunks, including after acknowledgement.
+    #[serde(default)]
+    message_id: Option<String>,
+    /// Unicode scalar offset for message_id; defaults to zero.
+    #[serde(default)]
+    content_offset: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -287,12 +293,18 @@ struct DescribeAssistantParams {
 impl TeamStdioServer {
     #[tool(
         name = "team_read_messages",
-        description = "Peek at your own unread team mailbox messages. Returns at most the oldest 50 unread messages in FIFO order, each with a message_id. When has_more is true, call again with since_message_id set to the returned next_since_message_id to read the following page. Messages returned in full are marked read only if the current turn completes successfully; failed or cancelled turns preserve them for retry. A message with content_truncated=true is a preview only: it stays unread and is redelivered in full on a later turn, so do not act on it yet."
+        description = "Peek at your own unread team mailbox messages. Returns at most the oldest 50 unread messages in FIFO order, each with a message_id. When has_more is true, call again with since_message_id set to the returned next_since_message_id to read the following page. Messages returned in full are marked read only if the current turn completes successfully; failed or cancelled turns preserve them for retry. A message with content_truncated=true is a preview only: it stays unread and is redelivered in full on a later turn, so do not act on the preview alone. To read full content now, pass its read_content arguments (message_id and content_offset) to this tool, then follow next_read_content until null. Each chunk is at most 4000 Unicode scalars; chunk reads remain available after acknowledgement and never mark messages read. Do not combine message_id with since_message_id. An unavailable since_message_id returns an explicit error; acknowledged cursors remain valid while retained in your mailbox."
     )]
     async fn read_messages(&self, Parameters(params): Parameters<ReadMessagesParams>) -> CallToolResult {
         let mut arguments = serde_json::Map::new();
         if let Some(since_message_id) = params.since_message_id {
             arguments.insert("since_message_id".into(), serde_json::Value::String(since_message_id));
+        }
+        if let Some(message_id) = params.message_id {
+            arguments.insert("message_id".into(), serde_json::json!(message_id));
+        }
+        if let Some(offset) = params.content_offset {
+            arguments.insert("content_offset".into(), serde_json::json!(offset));
         }
         self.forward_to_tcp("team_read_messages", &serde_json::Value::Object(arguments))
             .await
@@ -1122,6 +1134,48 @@ mod tests {
         accept_task.await.unwrap();
         assert_eq!(result.is_error, Some(false));
         assert_eq!(first_text(&result), "ok");
+    }
+
+    #[tokio::test]
+    async fn read_messages_forwards_content_arguments_without_a_list_cursor() {
+        let listener = TcpListener::bind((CONNECT_HOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accept_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let _init = read_frame(&mut socket).await.unwrap();
+            write_frame(
+                &mut socket,
+                &serde_json::to_vec(&json!({"jsonrpc":"2.0", "id":1,"result":{}})).unwrap(),
+            )
+            .await
+            .unwrap();
+            let call: serde_json::Value = serde_json::from_slice(&read_frame(&mut socket).await.unwrap()).unwrap();
+            assert_eq!(call["params"]["name"], "team_read_messages");
+            assert_eq!(
+                call["params"]["arguments"],
+                json!({"message_id":"m1", "content_offset":4000})
+            );
+            write_frame(
+                &mut socket,
+                &serde_json::to_vec(
+                    &json!({"jsonrpc":"2.0", "id":2,"result":{"content":[{"type":"text","text":"chunk"}]}}),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        });
+        let server = TeamStdioServer {
+            port,
+            token: "dummy-token".into(),
+            slot_id: "dummy-slot".into(),
+        };
+        let params: ReadMessagesParams =
+            serde_json::from_value(json!({"message_id":"m1", "content_offset":4000})).unwrap();
+        let result = server.read_messages(Parameters(params)).await;
+        accept_task.await.unwrap();
+        assert_ne!(result.is_error, Some(true));
+        assert_eq!(first_text(&result), "chunk");
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ const codex = { id: 'ag_codex', name: 'Codex CLI', backend: 'codex', agent_type:
 
 beforeEach(() => {
   vi.clearAllMocks();
-  S.cloud = 'signed-in'; S.account = { id: 'acc', name: 'A', email: '' };
+  S.cloud = 'signed-in'; S.folder = '/work'; S.account = { id: 'acc', name: 'A', email: '' };
   S.agentCatalog = [codex]; S.agentPins = ['ag_codex']; S.agentPick = ''; S.convs = [];
   S.cloudModels = { pro: 'vision-pro', max: 'vision-max', mini: 'text-mini' }; S.cloudVision = ['pro', 'max'];
 });

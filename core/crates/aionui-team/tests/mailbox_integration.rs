@@ -245,3 +245,44 @@ async fn read_unread_scoped_to_target_agent() {
     assert_eq!(a2_msgs.len(), 1);
     assert_eq!(a2_msgs[0].content, "for-a2");
 }
+
+#[tokio::test]
+async fn content_reads_survive_acknowledgement_and_enforce_owner_team_and_recipient() {
+    let (mailbox, db) = setup().await;
+    let message = mailbox
+        .write("t1", "a1", "a2", MailboxMessageType::Message, "公开测试界🦀", None)
+        .await
+        .unwrap();
+    mailbox
+        .mark_read_batch("t1", std::slice::from_ref(&message.id))
+        .await
+        .unwrap();
+    let restored = mailbox
+        .read_content_message("t1", "a1", &message.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.content, message.content);
+    assert!(mailbox.peek_unread("t1", "a1").await.unwrap().is_empty());
+    for (team, recipient, id) in [
+        ("t2", "a1", message.id.as_str()),
+        ("t1", "a2", message.id.as_str()),
+        ("t1", "a1", "missing"),
+    ] {
+        assert!(
+            mailbox
+                .read_content_message(team, recipient, id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    let foreign = Mailbox::new_for_user(Arc::new(SqliteTeamRepository::new(db.pool().clone())), "different-user");
+    assert!(
+        foreign
+            .read_content_message("t1", "a1", &message.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

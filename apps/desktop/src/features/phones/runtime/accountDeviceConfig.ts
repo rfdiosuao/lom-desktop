@@ -32,7 +32,7 @@ export function saveDeviceAccount(s: AppState = S) {
 function writeConfig(accountId: string, s: AppState) {
   const ids = s.phoneOrder.filter(id => s.agents[id]?.real), owned = new Set(ids);
   const config: Config = { version: 1,
-    agents: ids.map(id => ({ ...s.agents[id], status: 'offline', battery: undefined, network: undefined })),
+    agents: ids.map(id => ({ ...s.agents[id], status: 'offline', battery: undefined, network: undefined, logo: undefined })),
     lit: Object.fromEntries(ids.filter(id => s.lit[id] !== undefined).map(id => [id, s.lit[id]])),
     groups: Object.fromEntries(ids.map(id => [id, s.customGroups[id] || []])),
     installed: Object.fromEntries(ids.map(id => [id, s.installed[id] || []])),

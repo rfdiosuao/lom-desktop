@@ -25,11 +25,29 @@ use tracing::warn;
 
 #[derive(Debug)]
 pub(super) enum PromptOutcome {
-    Completed { session_id: String },
-    Cancelled { session_id: String },
-    TerminalError { session_id: String, error: ErrorEventData },
-    InfoTip { session_id: String, tips: TipsEventData },
-    WarningTip { session_id: String, tips: TipsEventData },
+    Completed {
+        session_id: String,
+    },
+    Cancelled {
+        session_id: String,
+    },
+    TerminalError {
+        session_id: String,
+        error: ErrorEventData,
+    },
+    InfoTip {
+        session_id: String,
+        tips: TipsEventData,
+    },
+    /// An end-of-turn with no output that was not a slash command: a failed turn (see `empty_turn`).
+    EmptyTurnFailed {
+        session_id: String,
+        tips: TipsEventData,
+    },
+    WarningTip {
+        session_id: String,
+        tips: TipsEventData,
+    },
 }
 
 impl AcpAgentManager {
@@ -193,6 +211,12 @@ impl AcpAgentManager {
                 }
                 Err(e) => return Err(e.into()),
             };
+
+            // Capture before the compatibility layer rewrites currentModeId
+            // using the preloaded catalog. Missing or contradictory raw mode
+            // fields cannot confirm an explicit permission resume.
+            let raw_mode = raw_loaded_mode(load_response.modes.as_ref(), load_response.config_options.as_deref());
+            *self.resume_mode_observation.write().await = Some((session_id.to_owned(), raw_mode));
 
             {
                 let mut session = self.session.write().await;
@@ -404,13 +428,16 @@ impl AcpAgentManager {
             None
         };
 
-        Ok(prompt_outcome_from_stop_reason(
-            sid,
-            prompt_response.stop_reason,
-            empty_turn,
+        Ok(super::empty_turn::fail_unexplained_empty_turn(
+            prompt_outcome_from_stop_reason(
+                sid,
+                prompt_response.stop_reason,
+                empty_turn,
+                matched_command,
+                auth_hint,
+                observations.dialect_signal,
+            ),
             matched_command,
-            auth_hint,
-            observations.dialect_signal,
         ))
     }
 
@@ -1435,6 +1462,18 @@ mod tests {
         assert!(!obs.dialect_signal);
     }
 
+    /// TEAM-ORCH-01 (#372): a turn that only called tools produced work; it is not empty.
+    #[tokio::test]
+    async fn team_orch_01_372_tool_only_turn_is_not_empty() {
+        let (tx, _) = broadcast::channel::<AgentStreamEvent>(8);
+        let mut rx = tx.subscribe();
+        tx.send(AgentStreamEvent::Start(StartEventData::default())).unwrap();
+        tx.send(AgentStreamEvent::ToolGroup(vec![])).unwrap();
+        tx.send(AgentStreamEvent::Finish(FinishEventData::default())).unwrap();
+
+        assert!(!super::drain_turn_observations(&mut rx).empty);
+    }
+
     #[tokio::test]
     async fn drain_turn_observations_text_makes_turn_non_empty() {
         let (tx, _) = broadcast::channel::<AgentStreamEvent>(8);
@@ -1688,5 +1727,59 @@ mod tests {
             ContentBlock::Text(text) => assert_eq!(text.text, content),
             other => panic!("expected text block, got {other:?}"),
         }
+    }
+}
+
+fn raw_loaded_mode(
+    modes: Option<&agent_client_protocol::schema::v1::SessionModeState>,
+    options: Option<&[agent_client_protocol::schema::v1::SessionConfigOption]>,
+) -> Option<String> {
+    use agent_client_protocol::schema::v1::SessionConfigKind;
+    let legacy = modes
+        .map(|state| state.current_mode_id.to_string())
+        .filter(|mode| !mode.trim().is_empty());
+    let config = options
+        .and_then(|options| options.iter().find(|option| option.id.0.as_ref() == "mode"))
+        .and_then(|option| match &option.kind {
+            SessionConfigKind::Select(select) => Some(select.current_value.to_string()),
+            _ => None,
+        })
+        .filter(|mode| !mode.trim().is_empty());
+    match (legacy, config) {
+        (Some(legacy), Some(config)) if legacy == config => Some(legacy),
+        (Some(_), Some(_)) => None,
+        (legacy, config) => legacy.or(config),
+    }
+}
+
+#[cfg(test)]
+mod resume_mode_evidence_tests {
+    use super::raw_loaded_mode;
+    use agent_client_protocol::schema::v1::{SessionConfigOption, SessionModeState};
+    #[test]
+    fn raw_resume_mode_requires_live_fields_not_a_desired_seed() {
+        let modes = SessionModeState::new("yolo", vec![]);
+        let config = |mode: &str| {
+            serde_json::from_value::<Vec<SessionConfigOption>>(
+                serde_json::json!([{"id":"mode","name":"Mode","type":"select","currentValue":mode,"options":[]}]),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            raw_loaded_mode(Some(&modes), Some(&config("yolo"))),
+            Some("yolo".into())
+        );
+        assert_eq!(raw_loaded_mode(None, Some(&config("yolo"))), Some("yolo".into()));
+        assert_eq!(raw_loaded_mode(Some(&modes), None), Some("yolo".into()));
+        assert_eq!(raw_loaded_mode(None, None), None);
+        let mut unrelated = config("yolo");
+        unrelated[0].id = "unrelated_mode_axis".into();
+        unrelated[0].category = Some(agent_client_protocol::schema::v1::SessionConfigOptionCategory::Mode);
+        assert_eq!(
+            raw_loaded_mode(None, Some(&unrelated)),
+            None,
+            "UX category cannot confirm Qoder's native permission mode"
+        );
+        assert_eq!(raw_loaded_mode(Some(&modes), Some(&config("default"))), None);
     }
 }

@@ -84,12 +84,13 @@ pub async fn try_connect_custom_agent_with_catalog(
     debug!(program = %resolved.program.display(), "probe step 1 ok");
 
     // ── Step 2 — spawn + ACP initialize ─────────────────────────────
+    let launch = describe_launch(&resolved.program, &resolved.args_prefix, args);
     let proc = match spawn_probe_process(resolved, args, env).await {
         Ok(proc) => proc,
         Err(msg) => return (TryConnectCustomAgentResponse::FailAcp { error: msg }, None),
     };
 
-    let outcome = match tokio::time::timeout(STEP2_TIMEOUT, run_handshake(&proc)).await {
+    let outcome = match tokio::time::timeout(STEP2_TIMEOUT, run_handshake(&proc, &launch)).await {
         Ok(outcome) => {
             let catalog = match &outcome {
                 ProbeOutcome::Ok(catalog) => catalog.clone(),
@@ -156,6 +157,87 @@ async fn spawn_probe_process(
         .map_err(|e| format!("spawn failed: {e}"))
 }
 
+/// How long to wait for a process whose pipe just closed to report its exit.
+const EXIT_REPORT_WAIT: Duration = Duration::from_millis(500);
+const MAX_STDERR_CHARS: usize = 600;
+const MAX_LAUNCH_ARGS: usize = 12;
+const MAX_LAUNCH_CHARS: usize = 300;
+
+/// `program arg ...` as it was started, for error messages. Values that look
+/// like credentials (`--token x`, `key=x`) are masked and the text is bounded.
+fn describe_launch(program: &std::path::Path, prefix: &[std::ffi::OsString], args: &[String]) -> String {
+    let name = program
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| program.display().to_string());
+    let all = prefix
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .chain(args.iter().cloned());
+    let mut parts = vec![name];
+    let mut mask_next = false;
+    for arg in all.take(MAX_LAUNCH_ARGS) {
+        let lower = arg.to_ascii_lowercase();
+        let sensitive = ["token", "key", "secret", "password", "passwd"]
+            .iter()
+            .any(|w| lower.contains(w));
+        if mask_next {
+            parts.push("***".to_owned());
+            mask_next = false;
+        } else if sensitive && let Some((name, _)) = arg.split_once('=') {
+            parts.push(format!("{name}=***"));
+        } else {
+            mask_next = sensitive && arg.starts_with('-');
+            parts.push(arg);
+        }
+    }
+    let mut text = parts.join(" ");
+    if text.chars().count() > MAX_LAUNCH_CHARS {
+        text = text.chars().take(MAX_LAUNCH_CHARS).collect::<String>() + "...";
+    }
+    text
+}
+
+/// Compose the probe failure text from what the process reported.
+/// `status` is `None` while the process is still running or unreported.
+fn failure_text(reason: &str, launch: &str, status: Option<&str>, exited_ok: bool, stderr: &str) -> String {
+    let mut text = format!("{reason} (launched: {launch}");
+    if let Some(status) = status {
+        text.push_str(&format!("; status={status}"));
+    }
+    text.push(')');
+    let stderr = stderr.trim();
+    if !stderr.is_empty() {
+        let chars: Vec<char> = stderr.chars().collect();
+        let tail: String = chars[chars.len().saturating_sub(MAX_STDERR_CHARS)..].iter().collect();
+        text.push_str(&format!(": {tail}"));
+    } else if exited_ok {
+        // Exit 0 with nothing on stdout or stderr: the program did not run as an
+        // ACP agent at all (typically its launch arguments were not recognised
+        // and it printed help or did nothing), not a handshake that went wrong.
+        text.push_str(
+            "; the CLI exited immediately with status 0 and no output, so it did not start in ACP mode - check the command and its arguments",
+        );
+    }
+    text
+}
+
+async fn init_failure_message(proc: &CliAgentProcess, launch: &str, reason: &str) -> String {
+    let exit = tokio::time::timeout(EXIT_REPORT_WAIT, proc.wait_for_exit())
+        .await
+        .ok()
+        .flatten();
+    let stderr = proc.take_stderr().await;
+    let status = exit.map(|s| s.to_string());
+    failure_text(
+        reason,
+        launch,
+        status.as_deref(),
+        exit.is_some_and(|s| s.success()),
+        &stderr,
+    )
+}
+
 /// Result of the Step 2 probe (`initialize` + `session/new`).
 ///
 /// The probe reaches `session/new` so it can tell "reachable but not
@@ -182,7 +264,7 @@ impl ProbeOutcome {
     }
 }
 
-async fn run_handshake(proc: &CliAgentProcess) -> ProbeOutcome {
+async fn run_handshake(proc: &CliAgentProcess, launch: &str) -> ProbeOutcome {
     let Some((stdin, stdout)) = proc.take_stdio().await else {
         return ProbeOutcome::Fail("stdio not available after spawn_for_sdk".to_string());
     };
@@ -221,20 +303,13 @@ async fn run_handshake(proc: &CliAgentProcess) -> ProbeOutcome {
         biased;
         res = connect => match res {
             Ok(protocol) => protocol,
-            Err(e) => return ProbeOutcome::Fail(format!("ACP initialize failed: {e}")),
+            // A CLI that never spoke ACP closes the pipe, and that is all the
+            // transport can say ("Incoming transport closed"). Attach what the
+            // process itself reports so the failure can be diagnosed.
+            Err(e) => return ProbeOutcome::Fail(init_failure_message(proc, launch, &e.to_string()).await),
         },
-        exit = proc.wait_for_exit() => {
-            let stderr = proc.take_stderr().await;
-            let stderr = stderr.trim();
-            let status = match exit {
-                Some(s) => format!("{s}"),
-                None => "unknown".to_string(),
-            };
-            return if stderr.is_empty() {
-                ProbeOutcome::Fail(format!("CLI exited before ACP initialize completed (status={status})"))
-            } else {
-                ProbeOutcome::Fail(format!("CLI exited before ACP initialize completed (status={status}): {stderr}"))
-            };
+        _ = proc.wait_for_exit() => {
+            return ProbeOutcome::Fail(init_failure_message(proc, launch, "CLI exited before ACP initialize completed").await);
         }
     };
 
@@ -376,5 +451,79 @@ mod tests {
             libc::kill(grandchild_pid, libc::SIGKILL);
         }
         panic!("grandchild pid={grandchild_pid} survived the probe — process group cleanup is broken");
+    }
+
+    #[test]
+    fn acp_npx_01_launch_description_masks_credentials_and_is_bounded() {
+        use std::ffi::OsString;
+        let launch = describe_launch(
+            std::path::Path::new("/rt/bin/npx"),
+            &[OsString::from("-y")],
+            &[
+                "--package".into(),
+                "pkg@1.2.3".into(),
+                "agent".into(),
+                "--api-key".into(),
+                "sk-secret".into(),
+                "token=abc".into(),
+            ],
+        );
+        assert_eq!(launch, "npx -y --package pkg@1.2.3 agent --api-key *** token=***");
+        let long = describe_launch(std::path::Path::new("x"), &[], &["a".repeat(500)]);
+        assert!(long.chars().count() <= MAX_LAUNCH_CHARS + 3);
+    }
+
+    #[test]
+    fn acp_npx_01_exit_zero_without_output_is_called_out_as_not_in_acp_mode() {
+        let text = failure_text(
+            "ACP initialize failed: Incoming transport closed",
+            "npx -y pkg",
+            Some("exit status: 0"),
+            true,
+            "",
+        );
+        assert!(text.contains("Incoming transport closed"));
+        assert!(text.contains("launched: npx -y pkg"));
+        assert!(text.contains("status=exit status: 0"));
+        assert!(text.contains("did not start in ACP mode"));
+    }
+
+    #[test]
+    fn acp_npx_01_stderr_tail_is_kept_and_replaces_the_generic_hint() {
+        let noisy = format!("{}\nreal error", "x".repeat(2000));
+        let text = failure_text("closed", "cli", Some("exit status: 1"), false, &noisy);
+        assert!(text.ends_with("real error"));
+        assert!(text.len() < 1000);
+        assert!(!text.contains("did not start in ACP mode"));
+        // exit 0 *with* stderr is not the silent-exit case
+        assert!(!failure_text("closed", "cli", Some("exit status: 0"), true, "warn: x").contains("did not start"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn acp_npx_01_probe_of_a_silent_exit_zero_cli_reports_launch_and_status() {
+        let resp = try_connect_custom_agent("true", &["--acp".to_string()], &HashMap::new(), None).await;
+        match resp {
+            TryConnectCustomAgentResponse::FailAcp { error } => {
+                assert!(error.contains("launched: true --acp"), "got: {error}");
+                assert!(error.contains("status="), "got: {error}");
+                assert!(error.contains("did not start in ACP mode"), "got: {error}");
+            }
+            other => panic!("expected FailAcp, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn acp_npx_01_probe_surfaces_stderr_of_a_crashing_cli() {
+        let script = "echo boom-from-cli >&2; exit 3".to_string();
+        let resp = try_connect_custom_agent("sh", &["-c".to_string(), script], &HashMap::new(), None).await;
+        match resp {
+            TryConnectCustomAgentResponse::FailAcp { error } => {
+                assert!(error.contains("boom-from-cli"), "got: {error}");
+                assert!(error.contains("status=exit status: 3"), "got: {error}");
+            }
+            other => panic!("expected FailAcp, got {other:?}"),
+        }
     }
 }

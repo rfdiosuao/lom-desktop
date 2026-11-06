@@ -99,7 +99,7 @@ pub async fn row_to_session_mcp_server(row: &McpServerRow) -> Result<SessionMcpS
     let value: serde_json::Value =
         serde_json::from_str(&row.transport_config).map_err(|e| format!("invalid transport_config JSON: {e}"))?;
 
-    let transport = match row.transport_type.as_str() {
+    let mut transport = match row.transport_type.as_str() {
         "stdio" => {
             let command = value
                 .get("command")
@@ -163,6 +163,16 @@ pub async fn row_to_session_mcp_server(row: &McpServerRow) -> Result<SessionMcpS
         }
         other => return Err(format!("unknown transport type: {other}")),
     };
+
+    if let SessionMcpTransport::StreamableHttp { url, headers } = &transport
+        && let Some(helper) = lom_mcp_oauth::helper(&row.user_id, url, headers).map_err(|e| e.0.to_owned())?
+    {
+        transport = SessionMcpTransport::Stdio {
+            command: helper.command.to_string_lossy().into_owned(),
+            args: helper.args,
+            env: helper.env,
+        };
+    }
 
     Ok(SessionMcpServer {
         id: row.id.clone(),

@@ -1,3 +1,4 @@
+import { observePersonalPhoneReceipt, supersedePersonalPhoneReceipt } from '@/features/personal/runtime/phoneReceipt';
 import { expandContextFiles } from '@/shared/lib/contextFiles';
 import { publicationPolicy } from '@/features/settings/runtime/preferences';
 import { audit } from '@/features/settings/runtime/audit';
@@ -7,6 +8,7 @@ import { phoneMessages, type PhoneRow } from './phoneMessages';
 import { savePhoneCache } from './phoneCache';
 import { taskFinished } from '@/app/sound';
 import { phoneRpc } from './phoneRpc';
+import { phoneSendBlock } from './phoneCapabilities';
 import { lanMode, linkGuard, phoneGuard, STALE_LINK } from './deviceLink';
 import { ensurePhoneModel, syncPhoneModel } from './phoneModel';
 import { phoneOnScreen, pollPause } from './phonePace';
@@ -28,6 +30,12 @@ const TAIL = 2;
 const FAST = 500, SLOW = 1500, AWAY = 8000;
 /** Signature of each phone's first session-list page; an unchanged first page means nothing to re-sync. */
 const listSig = new Map<string, string>();
+
+/** 解除配对 / 换设备：该手机的会话缓存行、会话列表签名和发送中标记一并清掉（会话运行态由调用方清） */
+export function forgetPhoneChat(device: string, convIds: string[]) {
+  listSig.delete(device);
+  for (const id of convIds) { rows.delete(id); watching.delete(id); sending.delete(id); }
+}
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -62,12 +70,17 @@ export async function sendPhone(c: Conv, text: string, attachments: DraftAttachm
     if (S.running[c.id]) throw new Error('手机正在回复，请等待或停止当前任务');
     const previous = c.phonePending;
     if (previous && previous.text !== text) throw new Error('上一条消息结果尚未确认，请先重试原消息，避免重复执行');
+    if (!previous) { // 手机声明的字数上限、是否支持附件：本地先拦住，不等手机拒绝（PHONE-CAPS-01）
+      const policy = publicationPolicy(), block = phoneSendBlock(c.owner, text, attachments, policy ? policy.length + 2 : 0);
+      if (block) throw new Error(block);
+    }
     const ids: string[] = [];
     if (!previous) for (const a of expandContextFiles(attachments)) { check(); ids.push(await uploadPhoneFile(c.owner, a, check)); check(); }
     const request = previous || { client_id: crypto.randomUUID(), session_id: c.phoneSession || '', text, policy: publicationPolicy(), files: JSON.stringify(ids) };
     check();
     await ensurePhoneModel(c.owner);
     check();
+    if (!previous) supersedePersonalPhoneReceipt(c);
     c.phonePending = request;
     await savePhoneCache();
     if (!valid()) {
@@ -120,6 +133,7 @@ export async function refreshPhoneChat(c: Conv, full = false): Promise<boolean> 
     const messages: Msg[] = (rows.get(c.id) ?? []).flatMap(m => phoneMessages(m, c.owner, c.updated, c.phoneSession));
     update(s => { c.messages = messages; c.loaded = true; c.phoneRunStatus = runStatus; c.phoneSyncedAt = Date.now(); s.running[c.id] = snapshot.running; });
   }
+  observePersonalPhoneReceipt(c, { running: snapshot.running });
   if (finished && !snapshot.error && ['completed', 'idle'].includes(snapshot.status)) taskFinished(c.id);
   if (finished && S.prefs.notifyHelp && (snapshot.error || ['failed', 'timeout', 'interrupted'].includes(snapshot.status))) toast(`${S.agents[c.owner]?.name || '手机'}的任务需要帮助，请检查会话。`, 'info');
   if (changed) for (const row of fetched) for (const block of row.blocks || []) if (block.kind === 'tool_use') audit(c.id, block.id, 'phone_tool', block.status);

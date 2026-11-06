@@ -346,3 +346,16 @@ a{color:var(--brand)}
 .menu--add .menu__item-desc,.menu--commands .menu__item-desc{font-size:inherit;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--placeholder)}
 .menu--add .menu__item-hint,.menu--commands .menu__item-hint{flex-shrink:0}
 .menu--add .menu__item:disabled,.menu--commands .menu__item:disabled{opacity:.45;cursor:not-allowed}
+
+/* ===== 单选组与带后缀的输入框（Fields.tsx） ===== */
+.radios{display:flex;align-items:center;gap:24px;min-height:var(--h-md)}
+.radios__opt{display:inline-flex;align-items:center;gap:8px;font-size:var(--fs-lg);color:var(--text);cursor:pointer}
+.radios__opt input{width:16px;height:16px;margin:0;accent-color:var(--brand);cursor:pointer}
+.affix{position:relative;width:100%}
+.affix .input{padding-right:64px}
+.affix .input[type=password]{padding-right:44px}
+.affix__end{position:absolute;right:6px;top:5px}
+.affix__count{position:absolute;right:12px;top:0;line-height:var(--h-md);font-size:var(--fs-md);color:var(--placeholder);pointer-events:none}
+.affix--area .textarea{padding-right:12px;padding-bottom:28px}
+.affix--area .affix__count{top:auto;bottom:6px;line-height:1.4}
+select.input{appearance:auto;cursor:pointer}

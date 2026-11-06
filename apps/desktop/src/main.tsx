@@ -10,10 +10,12 @@ import '@/shared/styles/views.css';
 import '@/shared/styles/activity.css';
 import '@/shared/styles/search.css';
 import '@/shared/styles/composer.css';
+import '@/shared/styles/workspace-bar.css';
 import '@/shared/styles/float.css';
 import '@/shared/styles/personal.css';
 import '@/features/teams/activity/teamActivity.css';
 import '@/features/teams/ui/teams.css';
+import '@/features/teams/chat/teamChat.css';
 import '@/shared/styles/app.css';
 import { S } from '@/state/store';
 

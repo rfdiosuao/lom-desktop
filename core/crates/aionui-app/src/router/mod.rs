@@ -15,6 +15,7 @@ mod state;
 mod system_file_opener;
 mod team_capability_resolver;
 mod team_conversation_adapters;
+mod team_offline_options;
 mod trace;
 
 pub use routes::{

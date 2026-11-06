@@ -13,7 +13,7 @@ import { shortcuts } from '@/features/settings/actions/settings';
 import { Btn } from '@/shared/ui/Button';
 import { Icon } from '@/shared/ui/Icon';
 import { startCore } from './bootstrap';
-import { inShell, isWindowsShell } from '@/core/platform';
+import { applyShellClasses, isWindowsShell } from '@/core/platform';
 import { WindowControls } from './shell/WindowControls';
 import { MenuHost } from './overlays/MenuHost';
 import { ModalHost } from './overlays/ModalHost';
@@ -23,6 +23,7 @@ import { Toast } from '@/shared/ui/Toast';
 import { S, update, useStore } from '@/state/store';
 import { restoreSession } from '@/features/account/runtime/cloud';
 import { Login } from '@/features/account/ui/Login';
+import { refreshSkillCatalog } from '@/features/skills/runtime/skillCatalog';
 import { Shell } from './shell/Shell';
 import { useCloudInbox } from '@/features/account/ui/Notices';
 
@@ -42,13 +43,6 @@ function onKeyDown(e: KeyboardEvent) {
     if (S.modals.length) { closeModal(); return; }
     const key = S.route.name === 'chat' ? S.activeConv : null;
     if (key && S.running[runKeyOf(key)]) { stopRun(key); return; }
-  }
-  /* 弹窗里的输入框回车：执行主按钮 */
-  const t = e.target as HTMLElement | null;
-  if (e.key === 'Enter' && S.modals.length && t?.matches?.('input') && !e.isComposing) {
-    const primary = [...document.querySelectorAll('.modal')].pop()?.querySelector<HTMLButtonElement>('.modal__foot .btn--primary:not(:disabled)');
-    if (primary) { e.preventDefault(); primary.click(); }
-    return;
   }
   if (!mod) return;
   const k = e.key.toLowerCase();
@@ -76,14 +70,17 @@ export function App() {
   useTeamWaitReminder();
   const s = useStore();
   useCloudInbox();
+  const skillAccount = s.cloud === 'signed-in' ? s.account?.id : undefined;
+  useEffect(() => {
+    if (skillAccount) void refreshSkillCatalog(skillAccount).catch(() => {});
+  }, [skillAccount]);
   useEffect(() => {
     if (s.personalPanel && (s.cloud !== 'signed-in' || s.personalPanel.account !== s.account?.id)) update(st => { st.personalPanel = null; });
   }, [s.cloud, s.account?.id]);
   useEffect(startUpdateChecks, []);
   useEffect(() => { document.documentElement.lang = s.prefs.lang === 'English' ? 'en' : 'zh-Hans'; }, [s.prefs.lang]);
   useEffect(() => {
-    if (inShell()) document.documentElement.classList.add('in-shell');
-    if (isWindowsShell()) document.documentElement.classList.add('is-windows');
+    applyShellClasses();
     applyTheme();
     const mq = matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener('change', applyTheme);

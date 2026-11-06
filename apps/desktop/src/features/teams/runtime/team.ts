@@ -1,10 +1,12 @@
+import { trackTeamPhoneSend } from './phoneLifecycle';
+import { teamEpoch } from './teamGuard';
 import { personalConversation } from '@/features/personal/runtime/catalog';
 import { agentRow, type AgentRow } from '@/features/settings/runtime/agents';
 import { sendPhone } from '@/features/phones/runtime/phoneChat';
 import { getEndpoint } from '@/core/client';
 import { sendToCoreTeam } from './coreTeam';
 import { S, update } from '@/state/store';
-import type { Conv, DraftAttachment, Team, TeamMember } from '@/state/types';
+import type { Conv, DraftAttachment, Team, TeamChatMeta, TeamMember } from '@/state/types';
 
 /* ===== OPC 团队（真实执行）=====
  * 跑在内核自带的团队模式上（见 core/coreTeam.ts）：Leader 由首个加入的电脑 Agent 担任，带团队与手机工具；
@@ -55,6 +57,7 @@ export function teamRules(t: Team) {
     '',
     '成员协作：',
     '- 电脑上的 Agent 都是团队成员：用 team_members 查看它们的 slot_id；用 team_task_create（owner 填 slot_id）分派任务，会自动通知并唤醒对方；需要补充说明或转交内容时用 team_send_message。不要用 agent_task_* 给团队成员派活。',
+    '- 已接入手机工具的电脑成员可以用 phone_list 查团队手机，用 phone_task_start 派活，再用 phone_task_read 读取真实结果。手机接受任务后仍需等待完成。',
     '- 成员之间可以直接用 team_send_message 互相发消息；收到消息按需处理，不必每条都回复。用户让某个成员把内容（例如写好的提示词）发给另一个成员时，让那个成员自己直接发。',
     '',
     '事实与时效任务（交叉验证）：',
@@ -86,25 +89,28 @@ export const rosterDelivered = (t: Team, block: string) => { if (block) update((
 export function teamFolder(t: Team) {
   const home = S.homeDir || getEndpoint()?.homeDir || '';
   const f = t.folder?.startsWith('~/') && home ? `${home}${t.folder.slice(1)}` : t.folder;
-  return f && f.startsWith('/') ? f : S.folder || getEndpoint()?.defaultFolder || '';
+  return f && f.startsWith('/') ? f : S.folder;
 }
 
 export const phonesOf = (t: Team) => t.members.map(m => m.agent).filter(id => S.agents[id]?.real);
 
 /** 在某个成员的窗格里发送：Leader 和本机 Agent → 内核团队（见 coreTeam.ts）；手机 → 这台手机的团队会话 */
-export async function sendToTeam(t: Team, m: TeamMember, text: string, atts: DraftAttachment[]): Promise<boolean> {
-  if (isLegacyLeaderAlias(t, m)) return sendToCoreTeam(t, leaderOf(t), text, atts);
-  if (m.leader || m.agent === 'pc') return sendToCoreTeam(t, m, text, atts);
+export async function sendToTeam(t: Team, m: TeamMember, text: string, atts: DraftAttachment[], current?: () => boolean, teamChat?: TeamChatMeta): Promise<boolean> {
+  if (isLegacyLeaderAlias(t, m)) return sendToCoreTeam(t, leaderOf(t), text, atts, current, teamChat);
+  if (m.leader || m.agent === 'pc') return sendToCoreTeam(t, m, text, atts, current, teamChat);
   if (isAgentMember(m.agent)) {
     if (!memberAgentRow(m.agent)) throw new Error('这个 Agent 在本机已找不到，请到「设置 → Agents」检查');
-    return sendToCoreTeam(t, m, text, atts);
+    return sendToCoreTeam(t, m, text, atts, current, teamChat);
   }
+  if (teamChat) throw new Error('手机成员暂不支持群聊投递，请在并排视图里直接发给它');
+  const epoch = teamEpoch(t), live = () => teamEpoch(t) === epoch && (!current || current());
+  if (!live()) throw new Error('团队或权限已变化');
   const existing = conversationOf(t, m);
-  if (existing) { await sendPhone(existing, text, atts); return true; }
+  if (existing) { await trackTeamPhoneSend(t, sendPhone(existing, text, atts, live)); return true; }
   if (!S.agents[m.agent]?.real) throw new Error('示例手机不能执行真实任务');
   const c: Conv = { id: crypto.randomUUID(), owner: m.agent, title: `${t.name} · ${m.role}`, updated: Date.now(), messages: [], teamId: t.id };
   update(s => { s.convs.unshift(c); (t.memberConvs ||= {})[m.mid] = c.id; });
-  await sendPhone(c, text, atts);
+  await trackTeamPhoneSend(t, sendPhone(c, text, atts, live));
   return true;
 }
 
@@ -135,7 +141,7 @@ export function conversationOf(t: Team, m: TeamMember): Conv | undefined {
 
 /** Leader 派活时，把派出的会话记到对应成员的窗格上 */
 export function recordDelegation(leaderConvId: string, member: string, convId: string) {
-  const t = S.teams.find(x => x.leaderConv === leaderConvId);
+  const t = S.teams.find(x => x.leaderConv === leaderConvId || Object.values(x.memberConvs || {}).includes(leaderConvId));
   const m = t?.members.find(x => x.agent === member && !x.leader);
   if (t && m) update(() => { (t.memberConvs ||= {})[m.mid] = convId; });
 }

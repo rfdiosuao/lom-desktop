@@ -258,6 +258,19 @@ impl TeamConversationAdapters {
         None
     }
 
+    /// Model-only options for a conversation with no running agent, from the
+    /// agent's stored catalog and the model the conversation will start with.
+    async fn offline_model_options(&self, conversation_id: &str) -> Option<GetConfigOptionsResponse> {
+        let metadata = self.resolve_agent_metadata(conversation_id).await?;
+        let facts = self.conversation_model_facts(conversation_id).await.ok()?;
+        let current = facts.confirmed_model_id.or(facts.runtime_seed_model_id);
+        super::team_offline_options::offline_model_options(
+            metadata.config_options.as_deref(),
+            metadata.available_models.as_deref(),
+            current.as_deref(),
+        )
+    }
+
     /// Best-effort resolution of a conversation's `agent_metadata` row, reusing
     /// the same identity sources the conversation layer uses: the persisted
     /// assistant snapshot's `agent_id`, then `extra.agent_id`, then the builtin
@@ -633,10 +646,24 @@ impl TeamConversationProvisioningPort for TeamConversationAdapters {
 
     async fn get_config_options(&self, conversation_id: &str) -> Result<GetConfigOptionsResponse, TeamError> {
         let user_id = self.require_owner_user_id(conversation_id).await?;
-        self.conversation_service
+        // TEAM-ORCH-02 (#371): a member that was never dispatched work has no
+        // running agent; serve its stored model catalog so the model can still be
+        // listed and switched (see `live_or_offline_options`).
+        let live = self
+            .conversation_service
             .get_config_options(&user_id, conversation_id)
-            .await
-            .map_err(map_conversation_update_error)
+            .await;
+        super::team_offline_options::live_or_offline_options(live, self.offline_model_options(conversation_id)).await
+    }
+
+    async fn offline_model_catalog(&self, conversation_id: &str) -> Result<Option<Vec<String>>, TeamError> {
+        let Some(metadata) = self.resolve_agent_metadata(conversation_id).await else {
+            return Ok(None);
+        };
+        Ok(super::team_offline_options::offline_model_ids(
+            metadata.config_options.as_deref(),
+            metadata.available_models.as_deref(),
+        ))
     }
 
     async fn set_config_option(
@@ -674,6 +701,19 @@ impl TeamConversationProvisioningPort for TeamConversationAdapters {
     ) -> Result<(), TeamError> {
         self.conversation_service
             .warmup(user_id, conversation_id, task_manager)
+            .await
+            .map_err(map_conversation_update_error)
+    }
+
+    async fn warmup_agent_process_with_mode(
+        &self,
+        user_id: &str,
+        conversation_id: &str,
+        task_manager: &Arc<dyn IWorkerTaskManager>,
+        mode: &str,
+    ) -> Result<(), TeamError> {
+        self.conversation_service
+            .warmup_with_required_mode(user_id, conversation_id, task_manager, mode)
             .await
             .map_err(map_conversation_update_error)
     }
@@ -740,7 +780,7 @@ fn map_conversation_create_error(error: ConversationError) -> TeamError {
     }
 }
 
-fn map_conversation_update_error(error: ConversationError) -> TeamError {
+pub(super) fn map_conversation_update_error(error: ConversationError) -> TeamError {
     match error {
         ConversationError::WorkspacePathUnavailable { path } => TeamError::WorkspacePathUnavailable(path),
         ConversationError::WorkspacePathRuntimeUnavailable { path } => TeamError::WorkspacePathRuntimeUnavailable(path),

@@ -21,14 +21,14 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); lo
 const choose = async (title: string) => {
   await act(async () => host.querySelector<HTMLButtonElement>(`[role="radio"][title="${title}"]`)!.click());
 };
-it('D33 AC-11 middle mode replaces all panes with the board and keeps exactly three mode buttons', async () => {
+it('D33 AC-11 middle mode replaces all panes with the board and keeps the board, panes and group chat mode buttons', async () => {
   await act(async () => root.render(<TeamPage />));
   expect(host.querySelectorAll('.pane').length).toBe(S.teams[0].members.length);
   await choose('看板');
   expect(host.querySelector('[data-testid="board"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="composer"]')).toBeNull();
   expect(host.querySelector('.team__panes')).toBeNull();
-  expect(host.querySelectorAll('[role="radio"]')).toHaveLength(3);
+  expect(host.querySelectorAll('[role="radio"]')).toHaveLength(4); // TEAM-CHAT-01 新增群聊视图
   expect(host.querySelector('[title="看板"]')?.getAttribute('aria-checked')).toBe('true');
   expect(host.textContent).not.toMatch(/回到看板|会话窗格/);
   await choose('单个');

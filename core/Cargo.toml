@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/lom-mcp-oauth",
     "crates/aionui-personal-evolution",
     "crates/aionui-assets",
     "crates/aionui-common",
@@ -39,6 +40,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+lom-mcp-oauth = { path = "crates/lom-mcp-oauth" }
 # Internal crates
 aionui-common = { path = "crates/aionui-common" }
 lom-launch-guard = { path = "crates/lom-launch-guard" }
@@ -70,13 +72,13 @@ aionui-cron = { path = "crates/aionui-cron" }
 aionui-assistant = { path = "crates/aionui-assistant" }
 aionui-app = { path = "crates/aionui-app" }
 
-aion-agent = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-providers = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-tools = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-types = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-protocol = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-config = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
-aion-mcp = { git = "https://github.com/iOfficeAI/aionrs.git", tag = "v0.2.11" }
+aion-agent = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-providers = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-tools = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-types = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-protocol = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-config = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
+aion-mcp = { git = "https://github.com/rfdiosuao/aionrs.git", rev = "1301afaae0055a2b70f7276974a98541a0e1c7e5" }
 
 # Core framework
 tokio = { version = "1", features = ["full"] }
@@ -231,5 +233,5 @@ split-debuginfo = "unpacked"
 incremental = false
 
 
-[patch."https://github.com/iOfficeAI/aionrs.git"]
+[patch."https://github.com/rfdiosuao/aionrs.git"]
 aion-process = { path = "vendor/aion-process" }

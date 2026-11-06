@@ -182,6 +182,14 @@ fn aionrs_provider_status_to_send_error(status: u16, detail: String) -> AgentSen
             AgentErrorResolutionKind::Retry,
             None,
         ),
+        413 => provider_send_error(
+            "The request is too large for the model provider",
+            AgentErrorCode::UserLlmProviderContextTooLarge,
+            detail,
+            false,
+            AgentErrorResolutionKind::ReduceContext,
+            None,
+        ),
         429 => provider_send_error(
             "The model provider rate limited the request",
             AgentErrorCode::UserLlmProviderRateLimited,

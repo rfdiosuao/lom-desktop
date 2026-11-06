@@ -7,7 +7,7 @@ import { Btn, Dropdown, IconBtn } from '@/shared/ui/Button';
 import { Icon } from '@/shared/ui/Icon';
 import { Empty, Field, Input, Search } from '@/shared/ui/Layout';
 import { Modal } from '@/shared/ui/Overlay';
-import { agent, personaOf, phones } from '@/state/selectors';
+import { agent, phoneAppText, phones } from '@/state/selectors';
 import { usable } from '@/features/settings/runtime/agents';
 import { AGENT_PREFIX, isAgentMember, memberInfo, specialty } from '../runtime/team';
 import { MemberAvatar } from './MemberAvatar';
@@ -21,7 +21,7 @@ export function TeamModal({ p }: { p: P }) {
   const f = S.form, add = p.mode === 'add', q = S.q.assist;
   // 可加入的成员：Lom、手机、本机检测到且可用的 Agent（Codex CLI、Kimi……）
   const pool = [
-    ...[agent('pc')!, ...phones()].map(a => ({ id: a.id, name: a.id === 'pc' ? 'Lom' : a.name, sub: `${a.id === 'pc' ? '内置电脑助手' : personaOf(a)}${a.kind === 'phone' && a.status === 'offline' ? ' · 离线' : ''}` })),
+    ...[agent('pc')!, ...phones()].map(a => ({ id: a.id, name: a.id === 'pc' ? 'Lom' : a.name, sub: `${a.id === 'pc' ? '内置电脑助手' : phoneAppText(a)}${a.kind === 'phone' && a.status === 'offline' ? ' · 离线' : ''}` })),
     ...(S.agentCatalog || []).filter(usable).map(a => ({ id: `${AGENT_PREFIX}${a.id}`, name: a.name, sub: `电脑上的 Agent · ${specialty(a)}` })),
   ].filter(a => !q || a.name.includes(q) || a.sub.includes(q));
   const members: TeamMember[] = f.members || [];
@@ -76,7 +76,7 @@ export function TeamModal({ p }: { p: P }) {
           {!add && (
             <div style={{ marginTop: 16 }}>
               <Field label="团队名" req inline><Input bind="form.name" placeholder="团队名称，例如：小红书内容工厂" /></Field>
-              <Field label="工作空间" inline><Dropdown label={f.folder ? prettyPath(f.folder, S.homeDir) : '选择文件夹'} ic="folder" menu="teamFolder" variant="secondary" ctx={{ key: 'tf' }} /></Field>
+              <Field label="工作空间" inline><Dropdown label={f.folder ? prettyPath(f.folder, S.homeDir) : '选择工作区（必选）'} ic="folder" menu="teamFolder" variant="secondary" ctx={{ key: 'tf' }} /></Field>
             </div>
           )}
         </div>

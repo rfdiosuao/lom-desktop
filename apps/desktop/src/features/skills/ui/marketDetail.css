@@ -1,0 +1,11 @@
+.modal.skill-market-detail{width:600px}
+.skill-market-detail .modal__head{display:grid;grid-template-columns:1fr auto;gap:12px}
+.skill-market-detail .modal__head-text{grid-column:1/-1;grid-row:2;overflow-wrap:anywhere}
+.skill-market-detail .modal__x{grid-column:2;grid-row:1}
+.skill-detail-mark{grid-column:1;grid-row:1;width:44px;height:44px;display:grid;place-items:center;border-radius:var(--r-pill);background:var(--brand-soft);color:var(--brand)}
+.skill-detail-mark .icon{width:22px;height:22px}
+.skill-detail-meta{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;color:var(--muted);font-size:var(--fs-sm);margin:4px 0 14px}
+.skill-detail-readme{padding:16px 18px;margin-bottom:12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-subtle)}
+.skill-market-detail .modal__foot{flex-wrap:wrap}
+.skill-market-detail .modal__foot .input{width:auto;min-width:0;max-width:100%;flex:0 1 11rem}
+.skill-market-detail .modal__foot>.btn:first-child{margin-inline-end:auto}

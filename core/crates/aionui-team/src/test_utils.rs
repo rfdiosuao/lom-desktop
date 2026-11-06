@@ -450,6 +450,18 @@ pub(crate) mod workspace_harness {
             self.set_extra_flag(id, "runtime_attach_failed");
         }
 
+        pub(crate) fn set_extra_value(&self, id: &str, key: &str, value: serde_json::Value) {
+            let mut conversations = self.conversations.lock().unwrap();
+            let conversation = conversations
+                .iter_mut()
+                .find(|c| c.id == id)
+                .expect("conversation exists");
+            let mut extra: serde_json::Value =
+                serde_json::from_str(&conversation.extra).unwrap_or_else(|_| serde_json::json!({}));
+            extra[key] = value;
+            conversation.extra = serde_json::to_string(&extra).unwrap();
+        }
+
         fn set_extra_flag(&self, id: &str, key: &str) {
             let mut conversations = self.conversations.lock().unwrap();
             let conversation = conversations
@@ -1123,6 +1135,22 @@ pub(crate) mod workspace_harness {
                 .await
         }
 
+        async fn offline_model_catalog(&self, conversation_id: &str) -> Result<Option<Vec<String>>, TeamError> {
+            let extra = self
+                .repo
+                .get_extra(conversation_id)
+                .ok_or_else(|| TeamError::AgentNotFound(conversation_id.to_owned()))?;
+            Ok(extra
+                .get("model_catalog")
+                .and_then(serde_json::Value::as_array)
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }))
+        }
+
         async fn get_config_options(&self, conversation_id: &str) -> Result<GetConfigOptionsResponse, TeamError> {
             let extra = self
                 .repo
@@ -1166,7 +1194,13 @@ pub(crate) mod workspace_harness {
                         description: None,
                         category: Some("mode".to_owned()),
                         option_type: "select".to_owned(),
-                        current_value: Some("default".to_owned()),
+                        current_value: Some(
+                            extra
+                                .get("observed_mode")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("default")
+                                .to_owned(),
+                        ),
                         options: vec![AcpConfigSelectOptionDto {
                             value: "default".to_owned(),
                             name: None,
@@ -1231,6 +1265,27 @@ pub(crate) mod workspace_harness {
                 .unwrap_or(false)
             {
                 return Err(TeamError::InvalidRequest("forced runtime attach failure".to_owned()));
+            }
+            Ok(())
+        }
+
+        async fn warmup_agent_process_with_mode(
+            &self,
+            user_id: &str,
+            conversation_id: &str,
+            task_manager: &Arc<dyn IWorkerTaskManager>,
+            mode: &str,
+        ) -> Result<(), TeamError> {
+            self.warmup_agent_process(user_id, conversation_id, task_manager)
+                .await?;
+            let extra = self.repo.get_extra(conversation_id).unwrap();
+            if !extra
+                .get("required_mode_mismatch")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                self.patch_runtime_config(conversation_id, serde_json::json!({ "observed_mode": mode }))
+                    .await?;
             }
             Ok(())
         }
@@ -1367,7 +1422,13 @@ pub(crate) mod workspace_harness {
     #[async_trait]
     impl IAgentMetadataRepository for EmptyAgentMetadataRepo {
         async fn list_all(&self) -> Result<Vec<AgentMetadataRow>, DbError> {
-            Ok(vec![])
+            Ok(vec![
+                serde_json::from_value(serde_json::json!({
+                    "id":"mock-qoder", "name":"Qoder", "backend":"qoder", "agent_type":"acp", "agent_source":"builtin",
+                    "enabled":true, "sort_order":0, "created_at":0, "updated_at":0, "yolo_id":"yolo"
+                }))
+                .unwrap(),
+            ])
         }
 
         async fn list_all_for_user(&self, _user_id: &str) -> Result<Vec<AgentMetadataRow>, DbError> {

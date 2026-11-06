@@ -13,9 +13,11 @@ RUNTIME = {'.db', '.sqlite', '.sqlite3', '.jks', '.keystore', '.p12', '.pfx', '.
 RULES = {
     'private-key': re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]{100,}'),
     'github-token': re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{60,}\b'),
-    'api-secret': re.compile(rb'\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b'),
+    'api-secret': re.compile(rb'\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b|\bcfast_[A-Za-z0-9]{20,}\b'),
     'aws-key': re.compile(rb'\bAKIA[A-Z0-9]{16}\b'),
-    'official-endpoint': re.compile(rb'(?i)https?://(?:[^/\s"\']*\.)?(?:heang[.]top|entermo[.]com)(?:[/:\s"\']|$)'),
+    'official-endpoint': re.compile(rb'(?i)https?://(?:[^/\s"\']*\.)?(?:heang[.]top|entermo[.]com|entermodetwo[.]com)(?:[/:\s"\']|$)'),
+    'production-host': re.compile(rb'\b(?:103[.]185[.]249[.]189|118[.]145[.]98[.]220)\b'),
+    'official-ssh-credential-service': re.compile(rb'["\']top[.]heang[.]lom[.]ssh(?:[.a-z]*)["\']'),
     'personal-home': re.compile(rb'/Users/(?:heang|yuhang)(?:/|\\)|/home/(?:heang|yuhang)(?:/|\\)'),
     'credential-url': re.compile(rb'https?://[^/\s:@]+:[^/\s@]+@'),
 }

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+lom-mcp-oauth.workspace = true
 async-trait.workspace = true
 aionui-auth.workspace = true
 aionui-common.workspace = true

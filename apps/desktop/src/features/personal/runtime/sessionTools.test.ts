@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { S } from '@/state/store';
 import type { Conv, Msg } from '@/state/types';
-const m = vi.hoisted(() => ({ api: vi.fn(), send: vi.fn(), phone: vi.fn(), refresh: vi.fn(), history: vi.fn(), owned: vi.fn(() => true) }));
+const m = vi.hoisted(() => ({ api: vi.fn(), send: vi.fn(), phone: vi.fn(), refresh: vi.fn(), history: vi.fn(), owned: vi.fn(() => true), teamSend: vi.fn() }));
 vi.mock('@/core/client', async load => ({ ...await load<typeof import('@/core/client')>(), api: m.api }));
 vi.mock('@/features/chat/runtime/tasks', () => ({ sendFromChannel: m.send }));
 vi.mock('@/features/phones/runtime/phoneChat', () => ({ sendPhone: m.phone, refreshPhoneChat: m.refresh }));
@@ -9,7 +9,10 @@ vi.mock('@/features/chat/runtime/history', () => ({ loadHistory: m.history, conv
 vi.mock('@/features/phones/runtime/phoneCommander', () => ({ scopeOwnedByAccount: m.owned, commanderExtra: vi.fn(async () => ({ lom_phone_scope: 'new-scope', selected_mcp_server_ids: ['bridge'] })), COMMANDER_RULES: 'commander rules' }));
 vi.mock('@/features/settings/runtime/audit', () => ({ audit: vi.fn() }));
 vi.mock('@/features/skills/runtime/conversationSkills', () => ({ conversationSkills: vi.fn(async () => ({ enabled_skills: [] })) }));
+vi.mock('@/features/teams/runtime/coreTeam', async load => ({ ...await load<typeof import('@/features/teams/runtime/coreTeam')>(), sendToCoreTeam: m.teamSend }));
 import { executeSessionTool } from './sessionTools';
+import { tickDispatchHooks } from './dispatchHook';
+import sessions from '../../../../src-tauri/src/session_tools.json';
 
 const conv = (id: string, extra: Partial<Conv> = {}): Conv => ({ id, owner: 'pc', title: id, updated: 1, messages: [], remote: true, loaded: true, ...extra } as Conv);
 let pa: Conv, codex: Conv, phone: Conv;
@@ -76,6 +79,18 @@ it('PA04 session_send hands work to an idle session, labelled as sent by the ass
   expect(m.phone).toHaveBeenCalledWith(phone, '发一条朋友圈草稿', [], expect.any(Function));
 });
 
+it('TEAM-ORCH-05 session_send arms the completion hook; the commander is woken once when the platform ends the turn', async () => {
+  S.conn = 'ready';
+  m.send.mockImplementationOnce(async (c: Conv) => { const u = { id: 'sent', type: 'user', at: Date.now(), text: 'x' } as Msg; c.messages.push(u); return u; });
+  await call('session_send', { session_id: 'codex', text: '把那 2 个测试修好' });
+  delete S.running.pa; m.send.mockClear();
+  await tickDispatchHooks(new Date(2026, 10, 5, 12));
+  expect(m.send).not.toHaveBeenCalled();
+  codex.messages.find(x => x.id === 'sent')!.turnOutcome = 'completed';
+  await tickDispatchHooks(new Date(2026, 10, 5, 12)); await tickDispatchHooks(new Date(2026, 10, 5, 12));
+  expect(m.send).toHaveBeenCalledTimes(1);
+  expect(m.send.mock.calls[0].slice(0, 3)).toEqual([pa, '来自「修复登录页」的任务已完成', 'dispatch_done']);
+});
 it('PA04 session_send refuses busy sessions, other assistants, offline phones and unknown ids', async () => {
   m.api.mockResolvedValueOnce({ runtime: { is_processing: true } });
   expect((await call('session_send', { session_id: 'codex', text: 'x' })).content[0].text).toContain('正在执行');
@@ -165,6 +180,34 @@ it('PA-SESSION-02 creates a blank task with parent model and default permission'
  expect(m.api).toHaveBeenCalledWith('POST','/api/conversations',expect.objectContaining({model:{provider_id:'provider',model:'model'},extra:expect.objectContaining({workspace:'/project',session_mode:'default'})}));
  expect(m.send).not.toHaveBeenCalled();
 });
+it('PA-SESSION-CREATE-01 title is optional: omitted uses a clear default, given is kept', async () => {
+ pa.providerId='provider'; pa.modelId='provider::model';
+ m.api.mockImplementation((_m:string,_p:string,body:{name:string})=>Promise.resolve({id:'c-'+body.name,name:body.name}));
+ expect(json(await call('session_create'))).toMatchObject({status:'created',title:'新任务'});
+ expect(json(await call('session_create',{title:'  写周报  '}))).toMatchObject({status:'created',title:'写周报'});
+ expect(m.api).toHaveBeenNthCalledWith(1,'POST','/api/conversations',expect.objectContaining({name:'新任务'}));
+ expect(m.api).toHaveBeenNthCalledWith(2,'POST','/api/conversations',expect.objectContaining({name:'写周报'}));
+});
+it('PA-SESSION-CREATE-01 phone draft without title is named after the phone and saved', async () => {
+ S.agents.dev_1={...S.agents.dev_1,real:true} as never;
+ const r=json(await call('session_create',{agent_id:'dev_1'}));
+ expect(r).toMatchObject({status:'prepared',title:'小米手机 新任务',remote_created:false});
+ expect(S.convs.find(c=>c.id===r.session_id)?.title).toBe('小米手机 新任务');
+});
+it('PA-SESSION-CREATE-01 wrong or oversized title is rejected and nothing is created', async () => {
+ pa.providerId='provider'; pa.modelId='provider::model';
+ for (const title of ['x'.repeat(161),'',' ',7,null,{}]) {
+  const r=await call('session_create',{title}); expect(r.isError).toBe(true); expect(r.content[0].text).toContain('title');
+ }
+ expect(m.api).not.toHaveBeenCalled();
+});
+it('PA-SESSION-CREATE-01 schema and implementation agree: title optional, 1-160, both fields described', () => {
+ const t=(sessions as unknown as {name:string;inputSchema:{properties:Record<string,{minLength?:number;maxLength?:number;description?:string}>;required:string[]}}[]).find(x=>x.name==='session_create')!;
+ expect(Object.keys(t.inputSchema.properties).sort()).toEqual(['agent_id','title']);
+ expect(t.inputSchema.required).toEqual([]);
+ expect(t.inputSchema.properties.title).toMatchObject({minLength:1,maxLength:160});
+ expect(t.inputSchema.properties.title.description).toBeTruthy();
+});
 it('PA-SESSION-02 unknown creation outcome never retries the write', async () => {
  pa.providerId='provider'; pa.modelId='provider::model'; m.api.mockRejectedValue(new Error('network'));
  const c={id:'unknown-create',scope:'pa-1',name:'session_create',arguments:JSON.stringify({title:'blank'})};
@@ -180,4 +223,39 @@ it('PA-CATALOG-01 AC6 discovery uses the running PA scope and does not send or i
   expect((await call('personal_targets', { kind: 'teams' })).isError).toBe(true);
   m.owned.mockReturnValue(true); S.running.pa = false;
   expect((await call('personal_capabilities')).isError).toBe(true);
+});
+
+it('PA-TOOLS-02 A routes registered management calls through the live personal scope and deduplicates creation', async () => {
+  localStorage.setItem('lom.personal.v1:owner', JSON.stringify({ items: [{ id: 'pa_a', name: 'PA', directory: '/a', workspace: '/a', conversation: pa.id, permission: 'full' }] }));
+  const request = { id: 'pa-tools-create-registered', scope: pa.personalScope!, name: 'personal_team_create', arguments: JSON.stringify({ name: 'PA管理团队', members: [{ agent_id: 'lom', role: '主控', leader: true }] }) };
+  expect(json(await executeSessionTool(request))).toMatchObject({ status: 'configured_in_memory', name: 'PA管理团队' });
+  await executeSessionTool(request); expect(S.teams.filter(t => t.name === 'PA管理团队')).toHaveLength(1);
+  delete S.running[pa.id]; expect((await executeSessionTool({ ...request, id: 'stopped-pa' })).isError).toBe(true);
+});
+
+
+it('PA-TEAM-01 routes to the leader by default and only the named member when requested', async () => {
+  localStorage.setItem('lom.personal.v1:owner', JSON.stringify({ items: [{ id: 'pa_a', name: 'PA', directory: '/a', workspace: '/a', conversation: pa.id, permission: 'full' }] }));
+  S.agentCatalog = [{ id: 'coding', name: '开发助手', backend: 'codex', enabled: true, installed: true, status: 'online', agent_type: 'acp', agent_source: 'external' }];
+  const team = { id: 'team', ownerAccountId: 'owner', real: true, name: '工程', folder: '/a', created: 1, panes: {}, leaderConv: 'lead-chat', memberConvs: { worker: 'worker-chat' },
+    members: [{ mid: 'lead', agent: 'pc', leader: true, role: '统筹' }, { mid: 'worker', agent: 'ag:coding', role: '开发' }] };
+  S.teams = [team]; m.teamSend.mockResolvedValue(true);
+  expect(json(await call('personal_team_read', { team_id: team.id })).members[1]).toMatchObject({ name: '开发助手', role: '开发', specialty: expect.any(String) });
+  expect(json(await call('personal_team_send', { team_id: team.id, text: '组织调研' }))).toMatchObject({ session_id: 'lead-chat', member_id: 'lead' });
+  expect(json(await call('personal_team_send', { team_id: team.id, member_id: 'worker', text: '修复构建' }))).toMatchObject({ session_id: 'worker-chat', member_id: 'worker' });
+  expect(m.teamSend.mock.calls.map(([, member]) => member.mid)).toEqual(['lead', 'worker']);
+  expect((await call('personal_team_send', { team_id: team.id, member_id: 'foreign', text: '测试' })).isError).toBe(true);
+  expect(m.teamSend).toHaveBeenCalledTimes(2);
+});
+
+it('SSH-03 AC11 personal_ssh_exec is dispatched once per call id and audited without logging the command', async () => {
+  const { saveSshServers } = await import('@/features/settings/runtime/sshServers');
+  const { audit } = await import('@/features/settings/runtime/audit');
+  localStorage.clear();
+  saveSshServers('owner', [{ id: 'a1', name: '生产', destination: 'root@prod.test', port: 22 }]);
+  const first = await call('personal_ssh_exec', { server: '生产', command: 'echo secret-in-command' });
+  expect(first.isError).toBe(true);
+  expect(first.content[0].text).toContain('请在 Lom 桌面应用中使用 SSH');
+  expect(JSON.stringify((audit as unknown as { mock: { calls: unknown[] } }).mock.calls)).not.toContain('secret-in-command');
+  expect((await call('personal_ssh_manage', { action: 'wipe' })).isError).toBe(true);
 });

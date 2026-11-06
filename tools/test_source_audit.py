@@ -24,6 +24,24 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(['official-endpoint'], audit.issues('apps/desktop/config.ts', text))
         self.assertNotIn(text.decode(), repr(audit.issues('sample', text)))
 
+    def test_detects_current_official_origin_and_tts_tokens(self):
+        url = ('https://lom.' + 'entermodetwo' + '.com/api').encode()
+        self.assertIn('official-endpoint', audit.issues('client.ts', url))
+        secret = ('cfast_' + 'x' * 48).encode()
+        self.assertIn('api-secret', audit.issues('client.ts', secret))
+        self.assertNotIn(secret.decode(), repr(audit.issues('client.ts', secret)))
+
+    def test_detects_production_hosts_without_blocking_local_pairing(self):
+        host = bytes([103, 185, 249, 189])
+        address = '.'.join(str(x) for x in host).encode()
+        self.assertIn('production-host', audit.issues('config.rs', address))
+        self.assertEqual([], audit.issues('lan.ts', b'http://192.168.1.20:1421'))
+
+    def test_rejects_shared_commercial_ssh_credentials(self):
+        service = ('"top.' + 'heang.lom.ssh.password"').encode()
+        self.assertIn('official-ssh-credential-service', audit.issues('identity.rs', service))
+        self.assertEqual([], audit.issues('identity.rs', b'"org.lom.community.desktop.ssh.password"'))
+
     def test_checks_compressed_document_contents_and_blocks_object_files(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, 'w') as archive:

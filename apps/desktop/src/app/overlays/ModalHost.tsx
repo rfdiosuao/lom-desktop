@@ -1,13 +1,16 @@
 import { HistoryImportModal } from '@/features/history/ui/HistoryImportModal';
 import { UpdateModal } from '@/features/updates/ui/Updates';
 import { McpModal } from '@/features/settings/ui/McpModal';
+import { McpConnectorModal } from '@/features/settings/ui/McpConnectorModal';
+import { SshMachineModal } from '@/features/settings/ui/SshMachineModal';
 import { ArchivedModal, LomMemoryModal } from '@/features/chat/ui/CommandModals';
 import { MarketDetailModal, MarketUploadModal } from '@/features/skills/ui/MarketModal';
 import type { ComponentType } from 'react';
 import { closeModal } from '@/shared/overlays/controller';
 import { Modal } from '@/shared/ui/Overlay';
 import { useStore } from '@/state/store';
-import { AuditModal, ConfirmModal, ProfileModal, PromptModal, ShortcutsModal } from './BasicModals';
+import { AuditModal } from '@/features/settings/ui/AuditModal';
+import { ConfirmModal, ProfileModal, PromptModal, ShortcutsModal } from './BasicModals';
 import { FeedbackModal } from '@/features/account/ui/FeedbackModal';
 import { NoticeModal } from '@/features/account/ui/Notices';
 import { AddKeyModal, RechargeModal } from '@/features/account/ui/BillingModals';
@@ -24,7 +27,7 @@ import { PersonalAvatarModal } from '@/features/personal/ui/PersonalAvatarModal'
 
 type P = { p: Record<string, unknown> };
 const MODALS: Record<string, ComponentType<P>> = {
-  historyImport: HistoryImportModal, update: UpdateModal, mcp: McpModal, marketDetail: MarketDetailModal, marketUpload: MarketUploadModal,
+  historyImport: HistoryImportModal, update: UpdateModal, mcp: McpModal, mcpConnector: McpConnectorModal, sshMachine: SshMachineModal, marketDetail: MarketDetailModal, marketUpload: MarketUploadModal,
   confirm: ConfirmModal, prompt: PromptModal, shortcuts: ShortcutsModal, audit: AuditModal, feedback: FeedbackModal, profile: ProfileModal,
   palette: PaletteModal, sched: SchedModal, schedRuns: SchedRunsModal, skill: SkillModal, upload: UploadModal, team: TeamModal,
   sub: SubModal, memory: MemoryModal, sendFiles: SendFilesModal, device: DeviceModal, pair: PairModal,
@@ -36,8 +39,15 @@ export function ModalHost() {
   return <>
     {s.modals.map((m, i) => {
       const C = MODALS[m.id];
+      const isTop = i === s.modals.length - 1;
       return (
-        <div key={`${m.id}-${i}`} className="modal-layer" style={{ zIndex: 200 + i }}
+        <div key={`${m.id}-${i}`} className="modal-layer" style={{ zIndex: 200 + i }} inert={!isTop}
+          onKeyDown={e => {
+            if (!isTop || s.cloud !== 'signed-in' || e.key !== 'Enter' || e.nativeEvent.isComposing ||
+                !(e.target instanceof HTMLInputElement)) return;
+            const primary = e.currentTarget.querySelector<HTMLButtonElement>('.modal__foot .btn--primary:not(:disabled)');
+            if (primary) { e.preventDefault(); primary.click(); }
+          }}
           onMouseDown={e => { if (e.target === e.currentTarget && m.props.dismissible !== false) closeModal(); }}>
           {C ? <C p={m.props} /> : <Modal title="未定义">{m.id}</Modal>}
         </div>

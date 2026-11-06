@@ -104,6 +104,6 @@ it('PHONE-01 preserves unknown persistence outcome and never retries a write aut
   expect(phoneSubagents(device).error).toContain('刷新手机状态');
 });
 it('PHONE-01 explains old phone versions and revoked authorization in Chinese', async () => {
-  m.rpc.mockRejectedValueOnce(new Error('remote.method_unknown')); await expect(loadPhoneSubagents(device)).rejects.toThrow('更新手机 App');
+  m.rpc.mockRejectedValueOnce(new Error('remote.method_unknown')); await expect(loadPhoneSubagents(device)).rejects.toThrow('这台手机的应用暂不支持子代理');
   m.rpc.mockRejectedValueOnce(new Error('remote.revoked')); await expect(loadPhoneSubagents(device)).rejects.toThrow('重新授权');
 });

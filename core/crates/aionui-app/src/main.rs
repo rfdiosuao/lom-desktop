@@ -47,7 +47,13 @@ fn run_main() -> Result<ExitCode, MainError> {
     // SAFETY: called before any worker thread exists (including the tokio
     // runtime constructed below). Rust 2024 requires `unsafe` for
     // `std::env::set_var` invoked inside `enhance_process_path`.
-    let merged_path = unsafe { aionui_runtime::enhance_process_path() };
+    let merged_path = if matches!(&cli.command, Some(Command::McpOauthStdio { .. })) {
+        // The OAuth helper only forwards HTTP. Do not source user shell startup
+        // files or run CLI discovery before this credential-bearing transport.
+        std::env::var("PATH").unwrap_or_default()
+    } else {
+        unsafe { aionui_runtime::enhance_process_path() }
+    };
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -87,6 +93,15 @@ async fn async_main(merged_path: String, cli: Cli) -> Result<ExitCode, MainError
         Some(Command::Skills(args)) => Ok(commands::run_skills(args).await),
         Some(Command::AntigravityHook) => Ok(commands::run_antigravity_hook().await),
         Some(Command::McpTeamStdio) => Ok(commands::run_team_stdio().await),
+        Some(Command::McpOauthStdio { user_id, server_url }) => {
+            match lom_mcp_oauth::run_stdio(&user_id, &server_url).await {
+                Ok(()) => Ok(ExitCode::SUCCESS),
+                Err(e) => {
+                    eprintln!("{}", e.0);
+                    Ok(ExitCode::FAILURE)
+                }
+            }
+        }
         Some(Command::McpLomSearchStdio) => Ok(commands::run_lom_search_stdio().await),
         Some(Command::Doctor) => Ok(commands::run_doctor(&cli, &merged_path).await?),
         Some(Command::User(ref args)) => Ok(commands::run_user(&cli, args).await?),

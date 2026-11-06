@@ -7,7 +7,7 @@ vi.mock('@/core/platform', () => ({ inShell: () => true }));
 vi.mock('@/features/phones/runtime/phoneCache', () => ({ loadPhoneCache: vi.fn() }));
 vi.mock('@/features/settings/runtime/providerSync', () => ({ refreshProviders: vi.fn() }));
 vi.mock('@/core/client', () => ({ api: vi.fn() }));
-const { restoreSession, signIn, signOut } = await import('./cloud');
+const { restoreSession, signIn, signOut, cloud } = await import('./cloud');
 const data = { session: 'test-session', account: { id: 'a', name: 'Test', email: 'test@example.test' }, points: { total: 300 }, gateway: { base_url: null, key: null, models: {} } };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify({ success: status === 200, ...(status === 200 ? { data } : data as object) }), { status });
 beforeEach(() => {
@@ -73,4 +73,11 @@ it('S04-01 AC-7 无会话的登录响应不放行', async () => {
   await signIn();
   expect(S.cloud).toBe('signed-out');
   expect(invoke).toHaveBeenCalledWith('login_complete', { success: false });
+});
+
+it('configured cloud service does not replay a payment write after a network failure', async () => {
+  vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
+  await expect(cloud('POST', '/v1/pay/aichashou/claim', {})).rejects.toThrow('无法连接麓鸣服务');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledWith('https://service.example.invalid/v1/pay/aichashou/claim', expect.objectContaining({method:'POST', body:'{}'}));
 });

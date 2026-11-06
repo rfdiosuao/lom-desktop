@@ -40,26 +40,37 @@ export function startCommander() {
   return listening;
 }
 /** Disabled globally; loaded only by the conversation's selected MCP-id snapshot. */
-async function register(scope: string): Promise<string> {
-  await startCommander();
-  const account = ownerKey(), authenticated = phoneGuard();
+async function register(scope: string, stillCurrent: () => boolean = () => true): Promise<string> {
+  const authenticated = phoneGuard();
+  const current = () => { if (!authenticated() || !stillCurrent()) throw new Error('账号或派发已变化，未继续连接手机工具'); };
+  current(); await startCommander(); current();
+  const account = ownerKey();
   if (!account || (!lanMode() && S.cloud !== 'signed-in')) throw new Error('请先登录后连接手机');
   const existing = ready.get(scope); if (existing && accounts.get(scope) === account) return existing;
   const bridge = await invoke<CommanderConfig>('phone_bridge_config', { scope });
+  current();
   const row = await api<{ id: string; enabled: boolean }>('POST', '/api/mcp/servers', {
     name: `lom-phone-${scope}`, description: '当前会话授权的手机工具',
     transport: { type: 'http', url: bridge.url, headers: { Authorization: `Bearer ${bridge.token}` } },
   });
+  current();
   if (row.enabled) await api('POST', `/api/mcp/servers/${row.id}/toggle`, {});
-  if (!authenticated() || ownerKey() !== account) throw new Error('账号已切换，已停止连接');
+  current();
+  if (ownerKey() !== account) throw new Error('账号已切换，已停止连接');
   ready.set(scope, row.id); accounts.set(scope, account); return row.id;
 }
-export async function commanderExtra() {
+export async function commanderExtra(current: () => boolean = () => true) {
+  const authenticated = phoneGuard();
   const scope = crypto.randomUUID();
-  const id = await register(scope);
+  const id = await register(scope, current);
+  if (!authenticated() || !current()) throw new Error('账号或派发已变化，未读取连接');
   const enabled = await api<{ id: string; enabled: boolean; name: string }[]>('GET', '/api/mcp/servers');
   return { lom_phone_scope: scope, selected_mcp_server_ids: [...enabled.filter(x => x.enabled && !x.name.startsWith('lom-phone-')).map(x => x.id), id] };
 }
+export function teamMemberPhoneBridge(scope: string, current: () => boolean) {
+  return register(scope, current);
+}
+
 /** PA04：新建个人助理会话时带上调度会话的工具（scope 以 pa- 开头，Rust 侧只给这类 scope 会话工具） */
 export async function personalExtra() {
   const scope = `pa-${crypto.randomUUID()}`;
@@ -90,9 +101,9 @@ export async function ensurePersonalBridge(c: Conv): Promise<boolean> {
 /** 这个 scope 是在当前账号下登记的 */
 export const scopeOwnedByAccount = (scope: string) => { const owner = ownerKey(); return !!owner && accounts.get(scope) === owner; };
 /** OPC 团队 Leader 用：确认这个 scope 的手机工具在本次运行里已登记。返回 true = 刚重新登记，Leader 的运行时要重启才连得上 */
-export async function ensurePhoneBridge(scope: string): Promise<boolean> {
+export async function ensurePhoneBridge(scope: string, current: () => boolean = () => true): Promise<boolean> {
   if (ready.has(scope) && accounts.get(scope) === ownerKey()) { await startCommander(); return false; }
-  await register(scope);
+  await register(scope, current);
   return true;
 }
 /** 指挥手机的规则，和身份、看图规则一起写进任务（见 agentRules.ts） */
@@ -109,12 +120,25 @@ export async function ensureCommander(c: Conv) {
     if (state.runtime?.has_task) await api('POST', `/api/conversations/${c.id}/runtime/restart`, {});
   } catch (e) { ready.delete(c.phoneScope); throw e; }
 }
-function authorized(c: Conv) { return (S.convPhones[c.id] || []).filter(id => S.agents[id]?.real); }
+function memberTeam(c: Conv) {
+  return S.teams.find(t => t.id === c.teamId && t.real && t.ownerAccountId === S.account?.id
+    && t.members.some(m => !m.leader && !!t.core?.slots[m.mid] && t.memberConvs?.[m.mid] === c.id));
+}
+
+function authorized(c: Conv) {
+  const ids = c.phoneScope?.startsWith('team-member-')
+    ? memberTeam(c)?.members.map(m => m.agent) || []
+    : S.convPhones[c.id] || [];
+  return [...new Set(ids.filter(id => S.agents[id]?.real && (!c.phoneScope?.startsWith('team-member-') || S.agents[id].kind === 'phone')))];
+}
 async function performPhoneTool(call: CommanderCall) {
   try {
     const c = S.convs.find(x => x.remote && x.phoneScope === call.scope);
     if ((!lanMode() && S.cloud !== 'signed-in') || accounts.get(call.scope) !== ownerKey() || !c || !S.running[c.id]) throw new Error('指挥会话未运行或已停止');
     const args = JSON.parse(call.arguments) as Record<string, unknown>;
+    const memberScope = call.scope.startsWith('team-member-');
+    if (memberScope && (!memberTeam(c) || !['phone_list', 'phone_status', 'phone_task_start', 'phone_task_read', 'phone_task_cancel'].includes(call.name)))
+      throw new Error('团队成员未授权使用该工具');
     if (call.name === 'lom_view_image') return await viewImageTool(args);
     const agentResult = await executeAgentTool(c, call.name, args);
     if (agentResult) return agentResult;
@@ -145,7 +169,15 @@ async function performPhoneTool(call: CommanderCall) {
     if (call.name === 'phone_task_start') return textResult(await delegate(c.id, device, args));
     const session = String(args.session_id || '');
     if (!session) throw new Error('缺少手机会话编号');
-    if (call.name === 'phone_task_read') return textResult(await phoneRpc(device, 'chat.read', { session_id: session, offset: Number(args.offset) || 0 }));
+    if (memberScope && !S.convs.some(x => x.owner === device && x.phoneSession === session && x.teamId === c.teamId
+      && (call.name === 'phone_task_read' || x.parentTask === c.id)))
+      throw new Error('手机会话不在当前团队或不属于当前成员');
+    if (call.name === 'phone_task_read') {
+      const current = phoneGuard();
+      const result = await phoneRpc(device, 'chat.read', { session_id: session, offset: Number(args.offset) || 0 });
+      if (memberScope && (!current() || !S.convs.includes(c) || !authorized(c).includes(device))) throw new Error('团队或手机授权已变化');
+      return textResult(result);
+    }
     if (call.name === 'phone_task_cancel') return textResult(await phoneRpc(device, 'chat.cancel', { session_id: session }));
     throw new Error('未知手机工具');
   } catch (e) { return { isError: true, content: [{ type: 'text', text: screenError(e) }] }; }
@@ -160,7 +192,7 @@ export async function stopDelegated(commanderId: string) {
   return { stopped: results.filter(r => r.status === 'fulfilled' && r.value).length, failed };
 }
 
-async function stopPhoneChild(c: Conv) {
+export async function stopPhoneChild(c: Conv) {
   if (c.phonePending) throw new Error('手机发送结果尚未确认，无法确认任务已停止，请检查原会话');
   // 离线、且这边也没记着在跑的手机成员：没有可停的任务，不算失败
   if (!S.running[c.id] && S.agents[c.owner]?.status === 'offline') return false;
@@ -188,18 +220,21 @@ async function admitPhone(parent: Conv, device: string, args: Record<string, unk
   const text = String(args.text || '').trim(); if (!text) throw new Error('任务内容不能为空');
   const session = String(args.session_id || '');
   let c = session ? S.convs.find(x => x.owner === device && x.phoneSession === session) : undefined;
+  const memberScope = parent.phoneScope?.startsWith('team-member-');
+  if (memberScope && c && (c.teamId !== parent.teamId || c.parentTask !== parent.id)) throw new Error('不能追加到其他成员或团队的手机任务');
+  const allowed = () => current() && (!memberScope || authorized(parent).includes(device));
   if (session && !c) throw new Error('手机会话尚未同步，请先打开手机会话');
   if (!c) { c = { id: crypto.randomUUID(), owner: device, title: text.slice(0, 30), updated: Date.now(), messages: [] }; update(s => { s.convs.unshift(c!); }); }
   if (c.phoneSession) {
     await refreshPhoneChat(c);
     if (S.running[c.id]) throw new Error('手机会话仍在执行，未改派');
   }
-  if (!current()) throw new Error('总指挥已停止，未向手机追加任务');
+  if (!allowed()) throw new Error('总指挥已停止，未向手机追加任务');
   c.parentTask = commanderId;
   c.teamId = S.convs.find(x => x.id === commanderId)?.teamId;
   await savePhoneCache();
-  await sendPhone(c, text, [], current);
-  if (!current()) {
+  await sendPhone(c, text, [], allowed);
+  if (!allowed()) {
     const stopped = await stopPhoneChild(c);
     throw new Error(stopped ? '总指挥已停止，迟到的手机任务已确认停止' : '总指挥已停止，手机已返回空闲状态，未继续派发');
   }

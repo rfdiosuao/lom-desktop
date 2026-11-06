@@ -1,35 +1,44 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { S } from '@/state/store';
 import { Skillhub } from './Skillhub';
-import { listMarket, mineSkills } from '../runtime/skillMarket';
+import { listMarket } from '../runtime/skillMarket';
 vi.mock('../runtime/skillMarket', () => ({ listMarket: vi.fn(), mineSkills: vi.fn(), CATEGORIES: [], priceLabel: () => '免费' }));
 vi.mock('./UploadMenu', () => ({ UploadMenu: () => null }));
 vi.mock('./InstalledSkills', () => ({ InstalledSkills: () => null }));
 vi.mock('./ReviewDraft', () => ({ ReviewDraft: () => null }));
 let root: Root, host: HTMLDivElement;
+const previous = { cloud: S.cloud, account: S.account };
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
-  vi.useFakeTimers(); vi.resetAllMocks();
+  vi.resetAllMocks();
+  S.cloud = 'signed-in';
+  S.account = { id: 'skill-catalog-test', email: 'test@example.com', name: '测试' };
+  localStorage.removeItem('lom.skill-catalog.v1.skill-catalog-test');
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
-it('D09 shows an accessible animation immediately, before the debounced first request, then real empty state', async () => {
-  vi.mocked(listMarket).mockResolvedValue([]);
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  Object.assign(S, previous);
+});
+it('shows bundled skills immediately and replaces the catalog when the server returns', async () => {
+  let complete!: (rows: []) => void;
+  vi.mocked(listMarket).mockReturnValue(new Promise(resolve => { complete = resolve; }));
   act(() => root.render(<Skillhub />));
-  expect(host.querySelector('[role="status"] .spinner')).not.toBeNull();
-  expect(host.textContent).not.toContain('暂无已上架技能');
-  await act(async () => vi.advanceTimersByTimeAsync(250));
-  expect(host.querySelector('[role="status"]')).toBeNull();
+  expect(host.textContent).toContain('爆款标题生成');
+  expect(host.querySelector('.spinner')).toBeNull();
+  expect(host.textContent).not.toContain('刷新');
+  await act(async () => complete([]));
   expect(host.textContent).toContain('暂无已上架技能');
 });
-it('D09 replaces animation with request errors and animates the uploads tab while pending', async () => {
+it('keeps the account catalog visible if background refresh fails', async () => {
+  localStorage.setItem('lom.skill-catalog.v1.skill-catalog-test', JSON.stringify([{
+    id: 'cached', name: '缓存技能', summary: '立即查看', category: '写作', version: 1, downloads: 0,
+  }]));
   vi.mocked(listMarket).mockRejectedValue(new Error('market unavailable'));
-  vi.mocked(mineSkills).mockReturnValue(new Promise(() => {}));
-  act(() => root.render(<Skillhub />));
-  await act(async () => vi.advanceTimersByTimeAsync(250));
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe('market unavailable');
-  act(() => [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(b => b.textContent === '我的上传')!.click());
-  expect(host.querySelector('[role="status"] .spinner')).not.toBeNull();
-  expect(host.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => root.render(<Skillhub />));
+  expect(host.textContent).toContain('缓存技能');
+  expect(host.querySelector('.spinner')).toBeNull();
 });

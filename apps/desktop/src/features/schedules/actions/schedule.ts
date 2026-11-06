@@ -1,3 +1,4 @@
+import { phoneFeature, unsupportedText } from '@/features/phones/runtime/phoneCapabilities';
 import { savePhoneSchedule, changePhoneSchedule, phoneScheduleResult } from '@/features/phones/runtime/phoneSchedules';
 import { DEFAULT_RUN_MODE, deleteCoreSchedule, runCoreSchedule, scheduleResult, saveCoreSchedule, syncSchedules, toggleCoreSchedule } from '../runtime/schedules';
 import { navigate } from '@/app/navigation';
@@ -38,6 +39,8 @@ export async function runSched(id: string) {
 
 export function editSched(d: { id?: string; exec?: string; prompt?: string }) {
   const x = d.id ? find(d.id) : undefined;
+  const target = x?.exec ?? d.exec;
+  if (target && target !== 'pc' && S.agents[target]?.real && !phoneFeature(target, 'scheduleEdit')) { toast(unsupportedText('scheduleEdit'), 'info'); return; } // PHONE-CAPS-01
   S.form = x
     ? { ...JSON.parse(JSON.stringify(x)), every: String(x.every) }
     : { name: '', exec: d.exec || 'pc', prompt: d.prompt || '', freq: 'daily', time: '09:00', days: [1], every: '60', runIn: 'new', enabled: true, runMode: DEFAULT_RUN_MODE };

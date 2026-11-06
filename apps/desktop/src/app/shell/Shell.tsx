@@ -1,4 +1,5 @@
-import { activeFolder, openInSystem } from '@/features/workspace/runtime/workspace';
+import { activeFolder } from '@/features/workspace/runtime/workspace';
+import { OpenFolderButton } from '@/features/workspace/ui/OpenFolderButton';
 import { NoPhone } from '@/features/phones/ui/NoPhone';
 import { dragWindow } from '@/core/platform';
 import { useEffect, useRef, type CSSProperties, type PointerEvent as RPointerEvent, type KeyboardEvent as RKeyboardEvent } from 'react';
@@ -6,14 +7,14 @@ import { renameConv } from '@/features/chat/actions/conversations';
 import { toggleLeft, toggleRight } from './layout';
 import { newTask } from '../navigation';
 import { AgentSwitch } from '@/features/settings/ui/AgentSwitch';
-import { openMenu, openPalette, toast, toastError } from '@/shared/overlays/controller';
+import { openMenu, openPalette, toast } from '@/shared/overlays/controller';
 import { Avatar } from '@/shared/ui/Agent';
 import { IconBtn } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { agent, conv, rightHidden, team, workspaceOptional, phone } from '@/state/selectors';
 import { update, useStore } from '@/state/store';
-import { clamp, cx } from '@/shared/lib/util';
+import { basename, clamp, cx } from '@/shared/lib/util';
 import { Chat, Home } from '@/features/chat/ui/Chat';
 import { PhoneMemory, PhoneSkills, PhoneSoul, PhoneSubagents } from '@/features/phones/ui/PhonePages';
 import { SchedulePage } from '@/features/schedules/ui/Schedule';
@@ -59,7 +60,13 @@ function CenterHeader() {
       <div className="center__title">{title}</div>
       <div className="center__actions">
         {actions}
-        {s.mode === 'desktop' && r.name !== 'settings' && <IconBtn ic="folder" label="打开工作区文件夹" size="sm" disabled={!activeFolder()} onClick={() => { void openInSystem(activeFolder()).catch(e => toastError('打开工作区失败', e)); }} />}
+        {s.mode === 'desktop' && r.name !== 'settings' && (
+          <div className="folder-split">
+            <OpenFolderButton dir={activeFolder()} />
+            {activeFolder() && <span className="folder-split__name ellipsis" title={activeFolder()}>{basename(activeFolder())}</span>}
+            <IconBtn ic="chevron" label="更多打开方式" size="sm" disabled={!activeFolder()} onClick={e => openMenu('workspaceFolder', e.currentTarget, { key: 'wsfolder', align: 'end' })} />
+          </div>
+        )}
         {r.name !== 'settings' && <IconBtn ic="panelRight" label={rightHidden(s) ? '展开工作区（⌘⌥B）' : '收起工作区（⌘⌥B）'} onClick={toggleRight} size="sm" active={!rightHidden(s)} />}
       </div>
     </header>

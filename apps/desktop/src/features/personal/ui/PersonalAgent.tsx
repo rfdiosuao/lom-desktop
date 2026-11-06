@@ -1,5 +1,6 @@
 import { PersonalMcp } from './PersonalMcp';
 import { PersonalPermissions } from './PersonalPermissions';
+import { compactStoredAvatars } from '../runtime/avatarStore';
 import { AvatarPicker } from './AvatarPicker';
 import { AssistantAvatar } from './AssistantAvatar';
 import { DEFAULT_AVATAR, type AvatarId } from '../runtime/avatars';
@@ -64,7 +65,9 @@ export function PersonalAgent({ onClose, onMinimize }: { onClose: () => void; on
     prompt({ extra: <AvatarPicker onChange={(id, image) => { avatar = id; avatarImage = image; }} />, title: '新建个人助理', label: '助理名称', placeholder: '例如：小麓、工作助理', okText: '创建助理', validate: assistantNameError, onOk: name => {
     if (!current()) { toastError('创建助理失败', new Error('账号已切换，请重新打开助理')); return; }
     const owner = account; setBusy(true);
-    const request = avatarImage ? addAssistant(name, avatar, avatarImage) : addAssistant(name, avatar);
+    // 先压缩旧版本留下的偏大头像腾出空间；压缩失败只记日志，不拦住创建
+    const request = compactStoredAvatars(owner).catch(e => console.warn('personal.avatar_compact_failed', e instanceof Error ? e.message : e))
+      .then(() => (avatarImage ? addAssistant(name, avatar, avatarImage) : addAssistant(name, avatar)));
     void request.then(created => { if (owner === s.account?.id) { setItems(loadAssistants().items); setSelected(created.id); } }, e => toastError('创建助理失败', new Error(personalError(e)))).finally(() => setBusy(false));
   } }); };
   const changeAvatar = (item: PersonalAssistant) => {

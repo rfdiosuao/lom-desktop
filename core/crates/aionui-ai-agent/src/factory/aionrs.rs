@@ -45,12 +45,12 @@ fn merge_skill_index_into_system_prompt(system_prompt: Option<String>, index: &s
     }
 }
 
-/// Lom: only the effort levels aionrs projects for OpenAI-compatible providers are accepted;
-/// anything else is dropped (provider default) rather than sent to the model.
+/// Lom: preserve explicit no-reasoning separately from an absent provider-default override.
+/// The pinned provider projectors forward these strings; individual models may reject a level.
 fn valid_reasoning_effort(effort: Option<String>) -> Option<String> {
     let effort = effort?.trim().to_ascii_lowercase();
     match effort.as_str() {
-        "low" | "medium" | "high" => Some(effort),
+        "none" | "low" | "medium" | "high" => Some(effort),
         "" => None,
         other => {
             tracing::warn!(reasoning_effort = other, "Ignoring unsupported reasoning effort");
@@ -2442,6 +2442,10 @@ mod tests {
         assert_eq!(overrides.system_prompt.as_deref(), Some("Be concise."));
     }
 }
+
+#[cfg(test)]
+#[path = "aionrs_effort_test.rs"]
+mod no_thinking_tests;
 
 #[cfg(test)]
 mod lom_reasoning_effort_tests {

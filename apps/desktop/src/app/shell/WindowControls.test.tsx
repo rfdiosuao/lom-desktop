@@ -9,13 +9,14 @@ const h = vi.hoisted(() => ({
     onResized: vi.fn(async () => () => {}),
     minimize: vi.fn(async () => {}),
     toggleMaximize: vi.fn(async () => {}),
+    startDragging: vi.fn(async () => {}),
     startResizeDragging: vi.fn(async () => {}),
   },
   invoke: vi.fn(async () => {}),
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => h.win }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: h.invoke }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: h.invoke, isTauri: () => true }));
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
@@ -56,4 +57,20 @@ it('window edges start a native resize drag for their direction', async () => {
   const edge = host.querySelector('.window-resizers__edge--east');
   await act(async () => edge?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
   expect(h.win.startResizeDragging).toHaveBeenCalledWith('East');
+});
+
+const press = async (el: Element | null, detail = 1) => {
+  await act(async () => el?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail })));
+};
+
+it('WIN-TITLEBAR-02 the window buttons come without a full-width blank title row', async () => {
+  await act(async () => root.render(<WindowControls />));
+  expect(host.querySelector('.window-titlebar')).toBeNull();
+  expect(host.querySelector('.window-controls')).not.toBeNull();
+});
+
+it('WIN-TITLEBAR-02 pressing a window button never starts a window drag', async () => {
+  await act(async () => root.render(<WindowControls />));
+  await press(button('最小化'));
+  expect(h.win.startDragging).not.toHaveBeenCalled();
 });

@@ -8,6 +8,7 @@ import { Empty } from '@/shared/ui/Layout';
 import { useStore, update } from '@/state/store';
 import { rightHidden } from '@/state/selectors';
 import { toast, toastError } from '@/shared/overlays/controller';
+import { phoneFeature, unsupportedText } from '../runtime/phoneCapabilities';
 import { superviseNow } from '@/features/chat/actions/composer';
 
 /** One request at a time; late replies cannot leak a previous device's screen. */
@@ -20,10 +21,12 @@ export function PhoneScreen({ device, full = false }: { device: string; full?: b
   const account = s.account?.id;
   const covered = !full && (rightHidden(s) || s.modals.some(m => m.id === 'full'));
   const signedIn = s.cloud === 'signed-in';
+  const supported = phoneFeature(device, 'screen');
   useEffect(() => {
     let failures = 0;
     let active = true, timer: ReturnType<typeof setTimeout>;
     setFrame(undefined); setError('');
+    if (!supported) { setError(unsupportedText('screen')); return; } // 已知不支持就不再发请求
     if (!s.live || !online || !signedIn || covered) return;
     async function refresh() {
       if (!active) return;
@@ -42,7 +45,7 @@ export function PhoneScreen({ device, full = false }: { device: string; full?: b
     }
     void refresh();
     return () => { active = false; clearTimeout(timer); };
-  }, [device, account, signedIn, online, s.live, s.quality, retry, covered, s.prefs.reconnect, s.prefs.cellularCap]);
+  }, [device, account, signedIn, online, supported, s.live, s.quality, retry, covered, s.prefs.reconnect, s.prefs.cellularCap]);
   return <div className={`phone-screen ${full ? 'phone-screen--full' : ''}`}>
     <div className="screen-bar"><span className="screen-bar__title">{t('手机实时画面')}</span>
       <Dropdown label={`画质 · ${s.quality}`} menu="quality" size="sm" variant="secondary" />

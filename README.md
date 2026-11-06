@@ -1,26 +1,67 @@
-# Lom community source
+<p align="center"><img src="apps/desktop/public/logo.png" width="88" alt="Lom"></p>
 
-This repository contains the desktop client, local execution core, Android client, and device protocol source in one place. It is a source distribution for community development, without the commercial account, billing, model gateway, cloud pairing relay, operations console, or deployment services. The community desktop and Android client can pair over a local network by QR; LAN messages use signed encrypted envelopes.
+<h1 align="center">Lom · 麓鸣</h1>
+<p align="center">A desktop workspace for your AI agents, tools, and connected phones.</p>
+<p align="center"><a href="README.zh-CN.md">简体中文</a> · <a href="https://github.com/rfdiosuao/lom-desktop/releases">Downloads</a> · <a href="BUILDING.md">Build from source</a> · <a href="https://github.com/rfdiosuao/lom-desktop/issues">Issues</a></p>
 
-**It does not connect to an official Lom cloud by default.** Configure your own model provider for ordinary desktop tasks. Account-dependent Personal Agent features still require a compatible service, but desktop-to-phone LAN pairing is implemented locally: the desktop hosts a one-time QR session and the phone connects directly on the same private network. The Android app also retains its local features and protocol source. Its upstream developer debug server is not a replacement for Lom LAN pairing.
+Choose a working folder, connect your own model provider or installed agent CLI, and follow the work in one interface. Lom brings conversations, MCP tools, skills, file changes, and agent teams together.
 
-LAN pairing is intended for a trusted private network. Pairing and control HTTP traffic is cleartext and uses a one-time QR secret plus a bearer device token; remote RPC payloads are signed encrypted envelopes. Do not expose the LAN port to the internet or an untrusted network.
+This is the **community edition**: desktop client, local Rust execution core, Android source, and device protocol. It does not connect to an official Lom cloud by default. Commercial account, billing, model gateway, hosted phone relay, and operations services are separate.
 
-## Source layout
+## What is included
 
-| Directory | Contents | License |
+- **Your models and agents.** Configure provider keys or connect supported local agent CLIs. External CLIs need their own installation and authentication; availability is detected on your machine.
+- **A working desktop.** Conversations, workspaces, file changes, tool activity, history, and permissions stay together. Tools report their real state and results.
+- **Tools and reusable roles.** Manage MCP services, local skills, and agent profiles. Optionally configure your self-hosted Activepieces service; no hosted connector endpoint is bundled.
+- **Agent teams.** The first computer member becomes leader. Follow collaboration in parallel, board, single, or group-chat views.
+- **Local phone pairing.** Pair a community Android pairing client by QR on the same private network. RPC payloads use signed, encrypted envelopes. The standalone pairing APK is a transport validation app, **not the full Android Agent**.
+
+Account-dependent Personal Agent features require a compatible service. Included client adapters do not supply that backend. Phone capabilities depend on the connected client; a frontend build or a pairing handshake does not verify full phone automation.
+
+## Downloads
+
+Get available artifacts from [GitHub Releases](https://github.com/rfdiosuao/lom-desktop/releases). Read the release notes and verify the published SHA-256 checksum.
+
+| Platform | Community distribution |
+| --- | --- |
+| macOS · Apple silicon | Community desktop DMG |
+| Android | LAN pairing validation APK; full Agent source has a separate native build process |
+| Windows | **Not released at present.** No Windows installer or update is currently distributed. |
+| iPhone / iPad | No Lom release; retained upstream iOS source is not a support claim |
+
+Community builds use a separate application identifier and credential namespace. They do not read the commercial desktop's account or data directory. Official automatic updates are disabled.
+
+## Develop
+
+Use Node.js 24 LTS for the desktop frontend:
+
+```sh
+git clone --recurse-submodules https://github.com/rfdiosuao/lom-desktop.git
+cd lom-desktop/apps/desktop
+npm ci
+npm test -- --maxWorkers=2
+npm run build
+```
+
+A working desktop application also needs the locally built Rust core and verified Lark CLI sidecar. Follow [BUILDING.md](BUILDING.md) for native packaging, frontend development, Android prerequisites, and publication checks. A frontend build alone does not produce a complete application.
+
+LAN pairing is for a trusted private network. Its pairing/control HTTP transport is cleartext; pairing uses a one-time QR secret and bearer device token, while RPC payloads are signed and encrypted. Do not expose its port to the public internet. Public self-hosted relay, USB transport, and VPN setup are not implemented here.
+
+## Repository and licenses
+
+| Directory | Program | License |
 | --- | --- | --- |
-| `apps/desktop` | React/TypeScript UI and Tauri desktop shell | AGPL-3.0-only |
-| `core` | Local Rust execution core, based on AionCore | Apache-2.0; see component notices |
-| `apps/android` | Mobile source based on OpenMinis; Lom changes target Android | GPL-3.0; see third-party licenses |
-| `protocol` | Device schema, generated bindings and test vectors | MIT OR Apache-2.0 |
+| [`apps/desktop`](apps/desktop) | React / TypeScript frontend and Tauri shell | AGPL-3.0-only |
+| [`core`](core) | Local Rust execution API, based on AionCore | Apache-2.0; component notices apply |
+| [`apps/android`](apps/android) | Mobile program, based on OpenMinis | GPL-3.0; third-party notices apply |
+| [`protocol`](protocol) | Device schema, generated bindings, test vectors | MIT OR Apache-2.0 |
 
-These are separate programs communicating through protocols, not a relicensing of their components. Preserve each component's notices when redistributing. The included iOS source is upstream material, not a claim that Lom iPhone pairing is supported.
+These separate programs communicate through protocols; collecting their source here does not relicense them. Preserve the original notices. Thanks to the AionCore / AionUi, OpenMinis, Lark CLI, and other upstream contributors identified in each component.
 
-## Build
+## Contribute
 
-See [BUILDING.md](BUILDING.md) for the independent desktop, core and Android toolchains. No production keys, signing certificates, application installers or bundled desktop executables are supplied. Upstream mobile build assets are identified in the build guide. Desktop and mobile are not implicitly verified by a successful frontend build.
+Bug reports should include the community version, operating system, steps to reproduce, and a redacted error. Never attach credentials or private conversation history. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-See [the source snapshot record](docs/SOURCE_SNAPSHOTS.md) and [release boundaries](docs/OPEN_SOURCE_SCOPE.md). Private Git histories and commercial server sources are not imported. Historical public commits remain available in this repository's Git history.
+Source is synchronized as reviewed snapshots with a community adaptation layer, without private Git history, user data, production endpoints, or signing keys. Before publishing, run the component checks and worktree/staged-blob audits. The scanner reports file paths and rule names, not secret values; it is one review layer, not a universal guarantee.
 
-Before publishing changes, run `python3 tools/audit-source.py` and the relevant component tests. The audit reports paths/rule names only and never prints matching secret values. It is one review layer, not a guarantee that source is free of every possible sensitive datum.
+[Source versions](docs/SOURCE_SNAPSHOTS.md) · [Publication boundary](docs/OPEN_SOURCE_SCOPE.md) · [Verification and limits](docs/VERIFICATION.md) · [Phone protocol](docs/open/phone-access/README.md)

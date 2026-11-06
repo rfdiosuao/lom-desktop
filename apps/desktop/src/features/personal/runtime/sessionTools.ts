@@ -1,3 +1,8 @@
+import { registerPhoneReceipt } from './phoneReceipt';
+import { executePersonalSsh, executePersonalSshExec } from './sshTools';
+import { executePersonalSshManage } from './sshManageTool';
+import { registerDispatchHook } from './dispatchHook';
+import { TEAM_TOOLS, executeTeamTool } from './teamTools';
 import { discoverWithJev, observeCapabilities } from './jevObservation';
 import { discoverTargets } from './managementCatalog';
 import { waitSession, sessionState } from './sessionLifecycle';
@@ -125,8 +130,14 @@ async function send(self: Conv, args: Record<string, unknown>, current: () => bo
   if (!targetCurrent()) throw new Error('助理已停止或目标会话已变化，未派发');
   if (c.owner !== 'pc') {
     if (S.agents[c.owner]?.status === 'offline') throw new Error('手机离线，未派发');
+    const armedAt = Date.now();
     await sendPhone(c, text, [], targetCurrent);
-  } else if (!await sendFromChannel(c, text, 'personal', targetCurrent)) throw new Error('目标会话没有接受这条消息，请让用户打开该会话查看');
+    if (targetCurrent()) registerPhoneReceipt(self, c, armedAt);
+  } else {
+    const armedAt = Date.now();
+    if (!await sendFromChannel(c, text, 'personal', targetCurrent)) throw new Error('目标会话没有接受这条消息，请让用户打开该会话查看');
+    if (targetCurrent()) registerDispatchHook(self, c, armedAt);
+  }
   return ok({ status: 'accepted', session_id: c.id, title: c.title, agent: agentOf(c), turn_id: c.turnId, message: '已派发。accepted 不等于完成：稍后用 session_read 核实真实结果。' });
 }
 
@@ -140,7 +151,11 @@ export async function executeSessionTool(call: CommanderCall): Promise<Result> {
     const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('会话工具参数必须是对象');
     if (call.name === 'personal_capabilities') result = ok(args.observe === undefined ? await discoverWithJev(self, args, current) : await observeCapabilities(self, args, current));
+    else if (call.name === 'personal_ssh') result = ok(await executePersonalSsh(args, current));
+    else if (call.name === 'personal_ssh_exec') result = await dispatchOnce(call, `ssh-exec:${call.id}`, current, async () => ok(await executePersonalSshExec(args, current)));
+    else if (call.name === 'personal_ssh_manage') result = await dispatchOnce(call, `ssh-manage:${call.id}`, current, async () => ok(await executePersonalSshManage(args, current)));
     else if (call.name === 'personal_targets') result = ok(discoverTargets(args));
+    else if (TEAM_TOOLS.includes(call.name)) result = await executeTeamTool(self, call, current);
     else if (call.name === 'session_create') result = await dispatchOnce(call, `create:${call.id}`, current, async () => ok(await createSession(self, args, current)));
     else if (call.name === 'session_wait') result = ok(await waitSession(target(self, args.session_id), args, current));
     else if (call.name === 'session_list') result = list(self, args);

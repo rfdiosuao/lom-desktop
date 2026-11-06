@@ -8,6 +8,8 @@ import { t } from '@/shared/i18n/index';
 import { ComposerPlaceholder } from './ComposerPlaceholder';
 import { composerHints } from './composerHints';
 import { TurtleCard } from './TurtleCard';
+import { WorkspaceChip } from './WorkspaceChip';
+import { mustPickWorkspace } from '@/features/workspace/runtime/required';
 import { convOfKey } from '@/features/teams/runtime/team';
 import { GoalStrip } from './GoalStrip';
 import { effortName, lomSupportsEffort } from '../runtime/commands';
@@ -20,18 +22,19 @@ import { closeMenu, openMenu } from '@/shared/overlays/controller';
 import { Dropdown, IconBtn } from '@/shared/ui/Button';
 import { Spinner } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
+import { phoneSendBlock } from '@/features/phones/runtime/phoneCapabilities';
 import { agent, attached, convModelLabel, currentPcModel, model, pcModels, perm, phone, phoneModelName } from '@/state/selectors';
 import { agentRow, externalAgentName, externalEffort, externalModel } from '@/features/settings/runtime/agents';
 import { prepareAgentTask } from '@/features/settings/runtime/agentWarmup';
-import { getEndpoint } from '@/core/client';
 import { isProbing } from '@/features/settings/runtime/agentOptions';
 import { S, update, useStore } from '@/state/store';
 import { cx } from '@/shared/lib/util';
 
 /* ===== 输入框（首页、对话、团队窗格共用一个实现） ===== */
 
-export function Composer({ ckey, compact = false, agentId, placeholder, toolbar = true, note = true }: {
-  ckey: string; compact?: boolean; agentId?: string; placeholder?: string; toolbar?: boolean; note?: boolean;
+/** controls=false：只留输入和发送（团队群聊：每位成员用自己的模型和权限，这里不提供切换） */
+export function Composer({ ckey, compact = false, agentId, placeholder, toolbar = true, note = true, controls = true }: {
+  ckey: string; compact?: boolean; agentId?: string; placeholder?: string; toolbar?: boolean; note?: boolean; controls?: boolean;
 }) {
   const s = useStore();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -46,9 +49,11 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
   const ag = agentId ? agent(agentId) : desk ? agent('pc') : phone();
   const isPhone = ag?.kind === 'phone';
   const running = !!s.running[runKeyOf(ckey)];
+  const needWs = mustPickWorkspace(ckey);
   const atts = s.attachments[ckey] || [];
   const nAtt = attached(ckey).length;
   const max = compact ? 120 : 240;
+  const limitNote = isPhone && ag?.real ? phoneSendBlock(ag.id, s.drafts[ckey] || '') : undefined; // 超过手机声明的字数上限就提示（PHONE-CAPS-01）
   /* 外部 Agent（Codex CLI 等）的任务：模型由它自己决定，手机工具由会话独立授权 */
   const ext = !personal && desk && !isPhone ? externalAgentName(ckey) : '';
   const extModel = ext ? externalModel(ckey) : null;
@@ -82,7 +87,7 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
     const a = ckey === 'home' && desk && !isPhone && focused ? agentRow(s.agentPick) : undefined;
     if (a?.backend !== 'codex') return;
     let dispose: (() => void) | undefined;
-    const timer = setTimeout(() => { dispose = prepareAgentTask(a, s.folder || getEndpoint()?.defaultFolder || ''); }, 350);
+    const timer = setTimeout(() => { if (s.folder) dispose = prepareAgentTask(a, s.folder); }, 350);
     return () => { clearTimeout(timer); dispose?.(); };
   }, [ckey, desk, isPhone, focused, s.agentPick, s.folder, s.permission, s.agentModelPick[s.agentPick], s.agentEffortPick[s.agentPick], s.account?.id]);
 
@@ -108,6 +113,7 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
       {!isPhone && <TurtleCard key={ckey} ckey={ckey} />}
       {/* 工作文件夹、发送文件到手机、添加手机都收在左下角「+」里 */}
       {toolbar && !isPhone && <GoalStrip ckey={ckey} />}
+      {toolbar && !personal && !isPhone && <WorkspaceChip ckey={ckey} prominent={!compact} />}
       <div
         className={cx('composer', compact && 'composer--compact', dragOver && 'is-dragover')}
         onDragOver={e => { if (isFileDrop(e.dataTransfer) || isHistoryDrop(e.dataTransfer)) { e.preventDefault(); setDragOver(true); } }}
@@ -170,24 +176,26 @@ export function Composer({ ckey, compact = false, agentId, placeholder, toolbar 
             }}
           />
         </div>
+        {limitNote && <p className="form-error" role="alert">{limitNote}</p>}
         <div className="composer__bar">
-          <div className="composer__group">
+          {controls && <div className="composer__group">
             <IconBtn ic="plus" label="添加" variant="soft" className="ibtn--round" size={compact ? 'sm' : undefined} onClick={e => openMenu('attach', e.currentTarget.closest<HTMLElement>('.composer') || e.currentTarget, { key: `att${ckey}`, ckey, matchWidth: 'true' })} />
             {personal ? <span className="pa-muted" title={`个人助理当前权限：${personalPermissionLabel(convOfKey(ckey))}`}>{personalPermissionLabel(convOfKey(ckey))}</span> : <Dropdown label={ext ? (keyConv?.agentId ? externalPermission(ckey).label : `请求权限：${perm(s.permission).name}`) : deskPermLabel} ic={ext ? 'lock' : perm(s.permission).ic} menu="permission" ctx={{ ckey }} size={compact ? 'sm' : undefined} />}
-          </div>
+          </div>}
+          {!controls && <span className="grow" />}
           <div className="composer__group">
             {/* 推理强度：每个 Agent 用它自己的档位（Lom 低/中/高，外部 Agent 是它 CLI 报的选项） */}
-            {!isPhone && <Dropdown
+            {controls && !isPhone && <Dropdown
               label={effLabel || '推理'} ic="brain" menu="effort" size={compact ? 'sm' : undefined}
               dim={effState !== 'ready'}
               title={extEff ? `${extEff.agentId === 'pc' ? 'Lom' : agentRow(extEff.agentId)?.name || 'Agent'} 的推理强度` : '推理强度'}
               ctx={{ ckey, key: `eff${ckey}` }} />}
-            {ext
+            {!controls ? null : ext
               ? <Dropdown label={extModel?.label || (extModel && isProbing(extModel.agentId) ? '正在读取模型…' : `${ext} · 默认模型`)} ic="cube" menu="agentModel" ctx={{ ckey, key: `am${ckey}` }} size={compact ? 'sm' : undefined} />
               : <Dropdown label={modelLabel} menu="model" ctx={{ agent: ag?.id ?? 'pc', ckey }} size={compact ? 'sm' : undefined} />}
             {running
               ? <button type="button" className="composer__send is-stop" onClick={() => stopRun(runKeyOf(ckey))} aria-label="停止" title="停止（Esc）"><Icon name="stop" /></button>
-              : <button type="button" className="composer__send" onClick={() => void send(ckey)} aria-label="发送" title="发送（Enter）"><Icon name="up" /></button>}
+              : <button type="button" className={cx('composer__send', needWs && 'is-blocked')} onClick={() => void send(ckey)} aria-label="发送" aria-disabled={needWs || undefined} title={needWs ? '先选择工作区才能发送' : '发送（Enter）'}><Icon name="up" /></button>}
           </div>
         </div>
       </div>

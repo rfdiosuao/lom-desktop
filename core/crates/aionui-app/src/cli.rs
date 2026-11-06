@@ -136,6 +136,13 @@ pub(crate) enum Command {
     /// token in its environment; every call is forwarded to the loopback
     /// runtime route that holds the cloud credential.
     McpLomSearchStdio,
+    /// OS-secret-backed OAuth bridge for a configured HTTP MCP service.
+    McpOauthStdio {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long)]
+        server_url: String,
+    },
     /// Self-check: hydrate the agent registry, probe every CLI on `$PATH`,
     /// and print a per-agent availability table. Useful when the user
     /// reports "no agent works" — running this from the same shell the
@@ -173,6 +180,7 @@ impl Command {
             Self::AntigravityHook => "antigravity-hook",
             Self::McpTeamStdio => "mcp-team-stdio",
             Self::McpLomSearchStdio => "mcp-lom-search-stdio",
+            Self::McpOauthStdio { .. } => "mcp-oauth-stdio",
             Self::Doctor => "doctor",
             Self::PrepareManagedResources(_) => "prepare-managed-resources",
             Self::User(_) => "user",

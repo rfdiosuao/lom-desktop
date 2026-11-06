@@ -5,6 +5,7 @@ import { S } from '@/state/store';
 import { addAssistant, loadAssistants } from './catalog';
 import { approveCapability } from './capabilityApproval';
 import { dispatchOnce } from './sessionDispatch';
+import { isHumanSource } from './humanSource';
 const result = (value: unknown, isError = false) => ({ isError, content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }] });
 export const CAPABILITY_TOOLS = ['personal_assistant_create', 'personal_memory_merge', 'personal_memory_versions', 'personal_memory_rollback', 'personal_schedule_help'];
 const choices: Record<string, string[]> = { language: ['zh', 'en'], length: ['concise', 'detailed'], format: ['table', 'bullets', 'paragraphs'], workflow: ['verify-result', 'read-source-first', 'check-prerequisites'] };
@@ -28,7 +29,7 @@ function identity(self: Conv) {
 }
 async function mutate(self: Conv, call: CommanderCall, args: Record<string, unknown>, current: () => boolean) {
   const user = self.messages.findLast(m => m.type === 'user');
-  if (!user?.text || user.source === 'schedule' || user.source === 'personal') throw new Error('personal.capability_source：需要当前用户提出操作，不接受定时或其他助理递归触发');
+  if (!user?.text || !isHumanSource(user.source)) throw new Error('personal.capability_source：需要当前用户提出操作，不接受定时任务、其他助理或本机回执触发');
   const live = () => {
     try { return current() && self.messages.findLast(m => m.type === 'user') === user && !!identity(self); }
     catch { return false; } // Missing ownership deliberately denies a pending mutation.

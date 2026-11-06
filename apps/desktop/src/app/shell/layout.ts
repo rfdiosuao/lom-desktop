@@ -1,4 +1,4 @@
-import { refreshWorkspace } from '@/features/workspace/runtime/workspace';
+import { refreshPreview, refreshWorkspace, treeIsCurrent } from '@/features/workspace/runtime/workspace';
 import { S, update } from '@/state/store';
 import { workspaceOptional } from '@/state/selectors';
 import { toast } from '@/shared/overlays/controller';
@@ -19,7 +19,9 @@ export const setTheme = (v: 'light' | 'dark' | 'system') => { update(s => { s.th
 
 export const wsTab = (v: 'preview' | 'files' | 'plan' | 'changes' | 'phone') => {
   update(s => { showRight(); s.wsTab = v; });
-  if (v !== 'phone') void refreshWorkspace();
+  // 文件树已经是当前工作目录的，就不重扫；预览页仍然刷新预览（WS-TREE-01 #408）
+  if (v === 'phone') return;
+  if (!treeIsCurrent()) void refreshWorkspace(); else if (v === 'preview') void refreshPreview();
 };
 
 export const watchPhone = (id: string) => update(s => { showRight(); s.phoneId = id; s.wsTab = 'phone'; s.live = true; });

@@ -1,10 +1,12 @@
+import { t, tf } from '@/shared/i18n/index';
 import { useEffect, useState } from 'react';
 import { addCustomAgent, checkAgent, isTesting, pinAgent, unpinAgent } from '../actions/agents';
 import { Btn } from '@/shared/ui/Button';
 import { Badge, Seg } from '@/shared/ui/Controls';
 import { Icon } from '@/shared/ui/Icon';
 import { ListRow, PageHead } from '@/shared/ui/Layout';
-import { toast } from '@/shared/overlays/controller';
+import { redactDiagnostic } from '@/shared/lib/redact';
+import { toast, toastError } from '@/shared/overlays/controller';
 import { loadAgents, logoUrl, type AgentRow } from '../runtime/agents';
 import { agentHint, agentState, canPin, STATE_BADGE, type AgentState } from '../runtime/agentState';
 import { useStore } from '@/state/store';
@@ -25,16 +27,25 @@ const TAB_OF: Record<AgentState, Exclude<Tab, 'all'>> = { ok: 'ok', unchecked: '
 
 const matches = (q: string, ...text: (string | undefined)[]) => !q || text.some(x => x?.toLowerCase().includes(q));
 
+/** 复制给用户去反馈的诊断：先隐藏密钥和路径里的用户名；剪贴板写不进去就如实提示，不假装成功。 */
+async function copyDiagnostic(text: string) {
+  try {
+    if (!navigator.clipboard) throw new Error(t('当前环境没有可用的剪贴板'));
+    await navigator.clipboard.writeText(text);
+    toast(t('诊断已复制（已隐藏密钥和个人路径）'));
+  } catch (error) { toastError(t('复制诊断失败'), error); }
+}
+
 /** 失败条目：一句中文原因 + 可展开、可复制的原始诊断（UI-04） */
 function Diagnosis({ a }: { a: AgentRow }) {
-  const hint = agentHint(a), raw = a.last_check_error_message;
+  const hint = agentHint(a), raw = a.last_check_error_message && redactDiagnostic(a.last_check_error_message);
   if (!hint) return <>{a.description || (a.backend ? `命令行：${a.backend}` : undefined)}</>;
   return <span className="agent-diag">
     <span>{hint}</span>
     {raw && <details className="agent-diag__more">
-      <summary>诊断详情</summary>
+      <summary>{t('诊断详情')}</summary>
       <pre className="agent-diag__raw">{raw}</pre>
-      <Btn label="复制诊断" ic="copy" variant="link" size="sm" onClick={() => { void navigator.clipboard?.writeText(`${a.name}${a.backend ? ` (${a.backend})` : ''}\n${raw}`).then(() => toast('诊断已复制')); }} />
+      <Btn label="复制诊断" ic="copy" variant="link" size="sm" onClick={() => void copyDiagnostic(`${a.name}${a.backend ? ` (${a.backend})` : ''}\n${raw}`)} />
     </details>}
   </span>;
 }
@@ -59,21 +70,21 @@ export function AgentsPage() {
     <PageHead title="Agents" desc="管理本机可用的 AI 编程 Agent。Lom 是内置的总指挥，无需安装；其他 Agent 需要先在本机安装对应的 CLI 才能被识别。加到切换器后，可以在左上角切换新任务使用的 Agent。"
       actions={<Btn label="添加自定义 Agent" ic="plus" variant="primary" onClick={addCustomAgent} disabled={s.conn !== 'ready'} />} />
     <div className="row" style={{ gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-      <Seg options={[{ value: 'all', label: `全部 ${rows.length + 1}` }, { value: 'ok', label: `可用 ${count('ok') + 1}` }, { value: 'todo', label: `待处理 ${count('todo')}` }, { value: 'missing', label: `未安装 ${count('missing')}` }]} value={tab} onChange={v => setTab(v as Tab)} />
+      <Seg options={[{ value: 'all', label: `${t('全部')} ${rows.length + 1}` }, { value: 'ok', label: `${t('可用')} ${count('ok') + 1}` }, { value: 'todo', label: `${t('待处理')} ${count('todo')}` }, { value: 'missing', label: `${t('未安装')} ${count('missing')}` }]} value={tab} onChange={v => setTab(v as Tab)} />
       <div className="grow" />
-      <input className="input agent-search" placeholder="搜索 Agent…" value={q} onChange={e => setQ(e.target.value)} aria-label="搜索 Agent" />
+      <input className="input agent-search" placeholder={t('搜索 Agent…')} value={q} onChange={e => setQ(e.target.value)} aria-label={t('搜索 Agent')} />
       <Btn label="重新检测" ic="refresh" variant="secondary" size="sm" onClick={() => void loadAgents()} disabled={s.conn !== 'ready'} />
     </div>
-    {tab === 'todo' && <p className="muted" style={{ marginBottom: 10 }}>待处理包括尚未检测、需要登录和启动异常的 Agent。</p>}
+    {tab === 'todo' && <p className="muted" style={{ marginBottom: 10 }}>{t('待处理包括尚未检测、需要登录和启动异常的 Agent。')}</p>}
     {s.agentsError && <p className="form-error" style={{ marginBottom: 10 }}>{s.agentsError}</p>}
     <div className="list">
       {showLom && (
         <ListRow lead={<span className="agent-logo"><img src="/logo.png" alt="" /></span>} title={LOM_NAME} titleExtra={<Badge text="内置 · 可用" tone="ok" />}
-          sub={LOM_DESC} actions={<Badge text="始终在切换器" />} />
+          sub={t(LOM_DESC)} actions={<Badge text="始终在切换器" />} />
       )}
-      {s.conn !== 'ready' && <div className="list-row muted">核心服务未连接，无法检测本机 Agent</div>}
-      {s.conn === 'ready' && !s.agentCatalog && <div className="list-row muted">正在检测本机 Agent…</div>}
-      {nothing && <div className="list-row muted" role="status"><span className="grow">没有找到与「{q.trim()}」匹配的 Agent</span><Btn label="清空搜索" variant="link" size="sm" onClick={() => setQ('')} /></div>}
+      {s.conn !== 'ready' && <div className="list-row muted">{t('核心服务未连接，无法检测本机 Agent')}</div>}
+      {s.conn === 'ready' && !s.agentCatalog && <div className="list-row muted">{t('正在检测本机 Agent…')}</div>}
+      {nothing && <div className="list-row muted" role="status"><span className="grow">{tf('没有找到与「{q}」匹配的 Agent', { q: q.trim() })}</span><Btn label="清空搜索" variant="link" size="sm" onClick={() => setQ('')} /></div>}
       {shown.map(a => {
         const st = STATE_BADGE[agentState(a)], pinned = s.agentPins.includes(a.id), testing = isTesting(a.id);
         return (

@@ -12,6 +12,28 @@ export const inShell = () => isTauri();
 /** 桌面外壳运行在 Windows 上（原生标题栏已隐藏，需要应用绘制窗口按钮）。 */
 export const isWindowsShell = () => inShell() && /Windows/i.test(navigator.userAgent);
 
+/** 给 <html> 打上平台标记：外壳内 `in-shell`；Windows 外壳额外 `is-windows`（窗口按钮自绘在右上角，侧栏顶部与顶栏让出位置）。 */
+export function applyShellClasses(root: HTMLElement = document.documentElement) {
+  root.classList.toggle('in-shell', inShell());
+  root.classList.toggle('is-windows', isWindowsShell());
+}
+
+/** 运行在 macOS 上（浏览器与外壳都适用）。 */
+export const isMacPlatform = () => /Macintosh|Mac OS X/i.test(navigator.userAgent);
+
+/** 快捷键的修饰键写法：macOS 显示 ⌘ / ⌥，其他平台显示 Ctrl / Alt（应用内两者都生效，见 app/App.tsx）。 */
+export function shortcutKeys(): { mod: string; alt: string } {
+  return isMacPlatform() ? { mod: '⌘', alt: '⌥' } : { mod: 'Ctrl', alt: 'Alt' };
+}
+
+/** 系统文件管理器的名字：macOS 叫「访达」，Windows 叫「文件资源管理器」；其他平台或浏览器开发模式返回空。 */
+export function fileManagerName(): string {
+  if (!inShell()) return '';
+  if (/Windows/i.test(navigator.userAgent)) return '文件资源管理器';
+  if (isMacPlatform()) return '访达';
+  return '';
+}
+
 export function pickFolder(): Promise<string | null> {
   if (inShell()) return open({ directory: true, multiple: false }).then(p => (typeof p === 'string' ? p : null));
   return new Promise(resolve => {

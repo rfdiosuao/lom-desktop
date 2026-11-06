@@ -1,4 +1,4 @@
-import { turtleStartPrompt, turtleAnswerPrompt } from '../runtime/turtlePrompt';
+import { turtleStartPrompt, turtleAnswerPrompt, turtleAnswerCount, turtleRetryRequest } from '../runtime/turtlePrompt';
 import { sendToTask, startDesktopTask, stopTask } from '../runtime/tasks';
 import { modelChanges } from '../runtime/taskModel';
 import { convOfKey, paneIsDesktop, paneOf, sendToTeam } from '@/features/teams/runtime/team';
@@ -47,7 +47,7 @@ export async function submitTurtle(key: string, answer?: string) {
   const topic = (S.drafts[key] || '').trim();
   const text = answer?.trim();
   if (session.started && !text && !session.request) return;
-  const request = !session.started ? turtleStartPrompt(topic) : text ? turtleAnswerPrompt(text) : session.request;
+  const request = !session.started ? turtleStartPrompt(topic) : text ? turtleAnswerPrompt(text, turtleAnswerCount(c?.messages || []) + 1) : turtleRetryRequest(session.request);
   pending.add(key);
   update(() => { session.error = ''; session.request = request; });
   try {
