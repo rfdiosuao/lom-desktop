@@ -16,6 +16,7 @@
 | `schedule.list` | **必需（可返回空）** | 同上 |
 | `document.write` | 可选 | 编辑人格 / 记忆文档 |
 | `device.capabilities` | 可选（**建议实现**） | 告诉桌面这台手机实现了哪些方法；桌面据此隐藏或置灰不支持的入口（见 §6） |
+| `sidebar.list` | 可选 | 手机声明要在桌面侧栏显示的入口（内置功能入口、预设提示词入口）（见 §6） |
 | `device.profile` / `device.logo` | 可选 | 手机上 Agent 的名字与头像（logo），桌面在手机列表、侧栏和切换手机处显示（见 §6） |
 | `device.status` | 可选 | 电量与网络 |
 | `device.rename` | 可选 | 桌面改手机名称 |
@@ -294,6 +295,7 @@
 | `file.max_bytes` | 手机接受的单个文件最大字节数（`file.begin` 的 `size` 上限）。桌面据此在发送大文件前提示 |
 | `device.logo.max_bytes` | `device.logo` 返回的图片最大字节数（解码后）。不声明时按 §6 的默认 131072 |
 | `screen.max_displays` | `screen.list` 最多返回的屏幕数。不声明时桌面最多显示前 8 个 |
+| `sidebar.max_items` | `sidebar.list` 最多返回的入口数。不声明时桌面最多显示前 12 个 |
 
 行为要求：
 
@@ -315,6 +317,45 @@
 | 附件、图片 | `chat.file` `chat.image` | 附件按钮置灰，提示「这台手机的应用暂不支持发送附件」 |
 
 此外，桌面运行中如果某个方法回了 `remote.method_unknown`，会把它记入该手机的「不支持」缓存（同样按设备 ID + App 版本），之后按上表处理；这样即使 `device.capabilities` 清单不准确，也不会反复点到失败的功能。
+
+### `sidebar.list`（可选）
+
+手机应用有自己的特色功能时，用它**声明想在桌面侧栏显示哪些入口**。桌面据此渲染手机模式的侧栏，而不是对所有手机一律摆出同一组入口。入口是**声明式**的：手机只说「叫什么、用哪个内置图标、点了做什么」，页面和控件始终由桌面渲染，手机不能向桌面传页面代码、脚本或网址。
+
+请求 `{}`。响应：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `version` | string | 入口格式的版本，目前为 `"1"`；桌面遇到更大的版本时，只处理自己认识的 `kind`，其余忽略 |
+| `items` | **JSON 文本** | 入口数组，每项见下表，按显示顺序排列 |
+| `revision` | string | 入口集合的版本标记（任意不超过 64 字符的字符串，内容变了就要变）；桌面用它判断要不要刷新界面 |
+| `sampled_at` | string | 采样时间，毫秒时间戳的十进制字符串 |
+
+`items` 每项：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 入口标识，1–32 个 `[a-z0-9_-]`；在一份清单里唯一，重复的后者被忽略 |
+| `label` | string | 显示名称，1–16 个字符，不含控制字符与换行 |
+| `icon` | string | 图标名，只能是下面「内置图标」里的一个；不认识的用默认图标 |
+| `kind` | string | `builtin`（桌面内置功能入口）或 `prompt`（预设提示词入口）；其他值（含将来新增的）桌面忽略 |
+| `target` | string | 仅 `builtin`：`schedule` / `skills` / `subagents` / `soul` / `memory`，分别对应定时任务、技能、子代理、人格（SOUL.md）、记忆 |
+| `prompt` | string | 仅 `prompt`：点击后放进输入框的文字，1–2000 个字符 |
+| `desc` | string | 可选：鼠标悬停说明，≤ 60 字符 |
+
+内置图标（`icon` 只能取这些，区分大小写）：`clock` `grid` `people` `person` `database` `folder` `file` `image` `search` `star` `bolt` `sparkles` `terminal` `globe` `book` `brain` `chart` `tag` `message` `calendar` `camera` `eye` `send` `sync` `check` `shield` `bell`。
+
+规则：
+
+1. **声明了清单，就以清单为准**：桌面侧栏只显示清单里的入口，顺序照清单；没在清单里的内置功能不显示。手机不想显示技能就不要列 `skills`。
+2. **`builtin` 入口仍受方法能力约束**：桌面照 `device.capabilities`（[上文](#devicecapabilities可选建议实现)）判断该入口背后的方法手机是否实现，不满足的入口不显示（只读视图的规则同上）。声明不等于实现，所以清单与 `device.capabilities` 要一致。
+3. **`prompt` 入口不会自动发送**：桌面只把 `prompt` 放进这台手机的输入框并聚焦，由用户检查后自己点发送。手机不能借它让桌面替用户发消息。
+4. 一份清单最多 `sidebar.max_items`（默认 12）项，超出的忽略；非法的项（缺字段、字符集不符、超长、未知 `kind` 或 `target`）单独忽略，不影响其余项。
+5. 不实现本方法的手机（回 `remote.method_unknown`）：桌面显示默认的五个内置入口，再按 `device.capabilities` 隐藏不支持的，行为与以前一致。读取失败（超时、`remote.not_ready`）时沿用上一次的清单；从没读到过就按「不实现」处理，稍后再试。
+6. 清单只读、无副作用；入口变化后 `revision` 必须变。桌面在连上手机时和后续同步周期里读取，并按「设备 ID + 手机 App 版本」缓存。
+7. 将来可能新增 `kind`（例如由手机提供的内容页）。你**现在不需要**处理，只要对自己不认识的字段和 `kind` 保持忽略即可，桌面也会忽略它不认识的 `kind`。
+
+错误码：除 `remote.method_unknown` 与 `remote.not_ready` 外没有专属错误码。
 
 ### `device.profile`（可选）
 
