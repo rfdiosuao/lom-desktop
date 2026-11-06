@@ -10,6 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = ('crates/lom-server/', 'deploy/', 'apps/site/', 'lom-admin/')
 RUNTIME = {'.db', '.sqlite', '.sqlite3', '.jks', '.keystore', '.p12', '.pfx', '.mobileprovision', '.o', '.lo', '.la'}
+# Public marketing links are documentation, never runtime service configuration.
+README_PUBLIC_PATHS = {
+    'lom.entermodetwo.com': ('/', '/en/', '/docs/', '/en/docs/', '/docs/phone-access/', '/#download', '/en/#download'),
+    'lom-cn.heang.top': ('/', '/docs/'),
+}
+README_PUBLIC_LINKS = {f'https://{host}{path}' for host, paths in README_PUBLIC_PATHS.items() for path in paths}
 RULES = {
     'private-key': re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]{100,}'),
     'github-token': re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{60,}\b'),
@@ -31,6 +37,9 @@ def issues(name, data):
     if re.search(r' 2\.(rs|ts|tsx)$', path.name): found.append('recovery-copy')
     for rule, pattern in RULES.items():
         inspected = re.sub(rb'https?://(?:user:(?:pass|password)|u:p)@example[.](?:com|invalid)', b'https://example.invalid', data) if rule == 'credential-url' else data
+        if rule == 'official-endpoint' and name in {'README.md', 'README.zh-CN.md'}:
+            for link in sorted(README_PUBLIC_LINKS, key=len, reverse=True):
+                inspected = re.sub(re.escape(link.encode()) + rb'(?=[\s)\]>"\']|$)', b'https://example.invalid/', inspected)
         if pattern.search(inspected): found.append(rule)
     if path.suffix.lower() in {'.pptx', '.docx', '.xlsx', '.zip', '.jar'}:
         try:

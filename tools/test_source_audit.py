@@ -42,6 +42,21 @@ class AuditTests(unittest.TestCase):
         self.assertIn('official-ssh-credential-service', audit.issues('identity.rs', service))
         self.assertEqual([], audit.issues('identity.rs', b'"org.lom.community.desktop.ssh.password"'))
 
+    def test_allows_only_explicit_public_marketing_links_in_root_readmes(self):
+        site = 'https://lom.' + 'entermodetwo.com/en/'
+        domestic = 'https://lom-cn.' + 'heang.top/docs/'
+        self.assertEqual([], audit.issues('README.md', f'[Product]({site})'.encode()))
+        self.assertEqual([], audit.issues('README.zh-CN.md', f'<a href="{domestic}">'.encode()))
+        self.assertIn('official-endpoint', audit.issues('config.ts', site.encode()))
+        self.assertIn('official-endpoint', audit.issues('docs/README.md', site.encode()))
+
+    def test_readme_allowlist_does_not_hide_api_urls_queries_or_credentials(self):
+        site = 'https://lom.' + 'entermodetwo.com/'
+        for suffix in ['api/providers', '?token=secret', 'docs/?token=secret']:
+            self.assertIn('official-endpoint', audit.issues('README.md', (site + suffix).encode()))
+        data = (site + '\n' + 'ghp_' + 'x' * 36).encode()
+        self.assertIn('github-token', audit.issues('README.md', data))
+
     def test_checks_compressed_document_contents_and_blocks_object_files(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, 'w') as archive:
