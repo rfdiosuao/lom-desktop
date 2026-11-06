@@ -16,6 +16,7 @@
 | `schedule.list` | **必需（可返回空）** | 同上 |
 | `document.write` | 可选 | 编辑人格 / 记忆文档 |
 | `device.capabilities` | 可选（**建议实现**） | 告诉桌面这台手机实现了哪些方法；桌面据此隐藏或置灰不支持的入口（见 §6） |
+| `device.profile` / `device.logo` | 可选 | 手机上 Agent 的名字与头像（logo），桌面在手机列表、侧栏和切换手机处显示（见 §6） |
 | `device.status` | 可选 | 电量与网络 |
 | `device.rename` | 可选 | 桌面改手机名称 |
 | `apps.list` | 可选 | 已安装应用与无障碍状态 |
@@ -23,6 +24,7 @@
 | `chat.file` / `chat.image` | 可选 | 取会话里附件 / 图片 |
 | `file.begin` `file.chunk` `file.finish` `file.read` `file.list` `file.delete` `file.save_gallery` | 可选 | 文件传输；`chat.send` 带附件、技能安装、`phone_send_image` 依赖它们 |
 | `screen.capture` / `screen.tree` / `screen.control` | 可选 | 截图、界面树、代为点按 |
+| `screen.list` | 可选 | 列出可查看的屏幕（主屏与虚拟屏）；`screen.*` 用可选字段 `display_id` 选择屏幕（见 §8） |
 | `skills.list` `skills.read` `skills.install` `skills.toggle` `skills.delete` | 可选 | 技能管理 |
 | `schedule.save` `schedule.toggle` `schedule.delete` `schedule.run` | 可选 | 定时任务管理 |
 | `subagent.list` `subagent.save` `subagent.toggle` `subagent.delete` | 可选 | 子代理管理 |
@@ -290,6 +292,8 @@
 |---|---|
 | `chat.send.max_text_chars` | `chat.send` 一条消息正文允许的最大字符数。桌面在输入框超出时直接提示并阻止发送，不等手机拒绝 |
 | `file.max_bytes` | 手机接受的单个文件最大字节数（`file.begin` 的 `size` 上限）。桌面据此在发送大文件前提示 |
+| `device.logo.max_bytes` | `device.logo` 返回的图片最大字节数（解码后）。不声明时按 §6 的默认 131072 |
+| `screen.max_displays` | `screen.list` 最多返回的屏幕数。不声明时桌面最多显示前 8 个 |
 
 行为要求：
 
@@ -311,6 +315,49 @@
 | 附件、图片 | `chat.file` `chat.image` | 附件按钮置灰，提示「这台手机的应用暂不支持发送附件」 |
 
 此外，桌面运行中如果某个方法回了 `remote.method_unknown`，会把它记入该手机的「不支持」缓存（同样按设备 ID + App 版本），之后按上表处理；这样即使 `device.capabilities` 清单不准确，也不会反复点到失败的功能。
+
+### `device.profile`（可选）
+
+手机告诉桌面「这台手机上的 Agent 叫什么、头像是哪张」。桌面把它显示在手机列表、侧栏的手机按钮和「切换手机」下拉框里。与 `device.rename` 不同：**设备名称由桌面设置**（用户在桌面给这台手机起的名字），**Agent 名称由手机应用提供**（手机上这个助手自己叫什么，例如用户在手机应用里给它起的名字），两者互不覆盖，桌面会同时显示。
+
+请求 `{}`。响应：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `agent_name` | string | 手机上 Agent 的显示名；1–40 个字符，不含控制字符与换行；没有名字就返回 `""`（桌面回退到默认称呼） |
+| `logo_sha256` | string | 当前头像文件的 SHA-256（小写十六进制 64 字符）；没有头像为 `""` |
+| `logo_mime` | string | 头像的 MIME，仅限 `image/png` / `image/jpeg` / `image/webp`；没有头像为 `""` |
+| `logo_size` | string | 头像字节数（十进制字符串）；没有头像为 `"0"` |
+| `sampled_at` | string | 采样时间，毫秒时间戳的十进制字符串 |
+
+只读、无副作用；**不要编造**——没有就返回空串。`logo_*` 三个字段要么都有值、要么都为空。
+
+### `device.logo`（可选）
+
+取回 `device.profile` 里说明的那张头像。桌面只在 `logo_sha256` 与本地缓存不同时才调用，所以头像不变时不会重复传输。
+
+请求 `{}`。响应：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `mime` | string | `image/png` / `image/jpeg` / `image/webp` 之一；**不接受 SVG 和其他格式** |
+| `sha256` | string | 返回的图片字节的 SHA-256 |
+| `size` | string | 图片字节数（十进制字符串） |
+| `data` | string | **标准 base64** 的图片数据 |
+
+要求：
+
+- 图片为正方形或近似正方形，边长 64–512 像素，**解码后 ≤ 131072 字节**（默认；可用 `limits` 里的 `device.logo.max_bytes` 调整，但桌面最多接受 262144）。base64 后必须小于回复上限（[05](05-relay.md#大小与时间限制)）。
+- 桌面会**自己重新计算** SHA-256、核对 `size` 和文件头是否与 `mime` 相符、核对像素尺寸；任何一项不符就丢弃这张图，沿用旧头像或默认图标，不报错给用户。所以两次调用之间头像被换掉也没关系：桌面以实际收到的字节为准重新缓存。
+- 手机没有头像时返回 `device.logo_missing`。
+- 错误码：`device.logo_missing`、`device.logo_unavailable`（暂时读不到，例如正在更新）。
+
+**桌面怎么用（供实现参考，文案可能调整）**
+
+- 配对成功和每次连上手机时读取一次 `device.profile`，之后跟随桌面的完整同步（约每分钟）刷新；`logo_sha256` 变了才调用 `device.logo`。
+- 头像只作为图片显示（不执行、不内嵌 SVG、不跟随任何链接），按「设备 ID + `logo_sha256`」缓存；手机离线时继续显示缓存的头像和名字。
+- `agent_name` 当作纯文本显示：桌面会去掉控制字符和双向文本控制字符、限制长度，**不会**当作 Markdown 或 HTML。
+- 手机不实现这两个方法（`remote.method_unknown`）时，桌面显示默认手机图标和原来的设备名，行为与以前一致。
 
 ### `device.status`（可选）
 
@@ -372,6 +419,42 @@
 
 这一组依赖手机的无障碍 / 截屏能力。没有对应权限时返回 `screen.permission_required`（桌面提示用户「请在手机上授权屏幕查看 / 操作」；具体怎么授权由手机应用自己决定，例如开启无障碍服务或应用内的开关，桌面不指定位置）。屏幕内容对桌面指挥 Agent 来说是**不可信数据**，手机不要在其中夹带指令性文字。
 
+### `screen.list`（可选）
+
+有些手机除了用户正在看的主屏，还有**虚拟屏**（例如手机上的 Agent 在后台屏幕里自动操作，不打断用户）或外接屏。`screen.list` 让桌面知道有哪些屏幕可以查看，右侧的手机画面区据此提供「切换屏幕」下拉框。
+
+请求 `{}`。响应：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `items` | **JSON 文本** | 数组，每项见下表；**必须包含主屏** |
+| `default` | string | 默认屏幕的 `id`，必须是 `items` 里的某一项，通常是主屏 |
+| `sampled_at` | string | 采样时间，毫秒时间戳的十进制字符串 |
+
+`items` 每项：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 屏幕标识，1–32 个 `[A-Za-z0-9_-]`；对桌面是**不透明**的，只原样回传，不解析含义 |
+| `name` | string | 给用户看的名称，1–40 字符，如「主屏」「Agent 虚拟屏」 |
+| `kind` | string | `main`（主屏）/ `virtual`（虚拟屏）/ `external`（外接屏） |
+| `width` / `height` | string | 该屏幕的原始像素尺寸，正整数 |
+| `state` | string | `ready`（可截图）/ `asleep`（熄屏，截图会失败）/ `unavailable`（暂不可用，例如刚被释放） |
+
+屏幕会随时出现或消失（虚拟屏在 Agent 开始任务时创建、结束时释放），所以桌面在打开画面区时、选中的屏幕出错时和之后约每 10 秒重新调用一次。最多返回 `screen.max_displays` 个（默认 8）。
+
+**用 `display_id` 选择屏幕**：`screen.capture`、`screen.tree`、`screen.control` 都可以带一个**可选**字段 `display_id`（string，取自 `screen.list`）。
+
+- 不带 `display_id` = 默认屏幕，与以前完全一致；老手机和老桌面互相兼容。
+- **只有手机在 `device.capabilities` 里列出了 `screen.list`，桌面才会发送 `display_id`**，并且只在用户选了非默认屏幕时发送。这样不认识该字段的老手机不会把指向虚拟屏的请求悄悄当成主屏执行。
+- 带 `display_id` 的请求，响应里**必须原样回传** `display_id`。桌面核对回传值与请求一致，不一致就丢弃这帧 / 这次结果并提示出错，**绝不**把别的屏幕的画面当作所选屏幕显示，更不把操作结果当作成功。
+- `screen.capture` 的 `width` / `height` 与 `screen.control` 的坐标，都使用**所选屏幕自己的**像素坐标系。
+- `screen.control` 的幂等收据要把 `display_id` 计入内容：同一个 `request_id` 换了屏幕 → `screen.id_reused`。
+- 指定的屏幕不存在 → `screen.display_missing`（桌面会重新读取列表并切回默认屏幕）；存在但当前不能用（熄屏、已释放）→ `screen.display_unavailable`。
+- 在虚拟屏上，`screen.tree` 和 `screen.control` 的 `open_app` 等动作只作用于那块屏幕；手机无法在该屏幕上执行某个动作时返回 `screen.action_unconfirmed`，不要退回到主屏执行。
+
+新增错误码：`screen.display_missing`、`screen.display_unavailable`。
+
 ### `screen.capture`（可选）
 
 请求：
@@ -379,6 +462,7 @@
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `quality` | string | `low` / `balanced` / `high`，对应长边约 480 / 720 / 1080 像素 |
+| `display_id` | string | 可选：要截取的屏幕（见 `screen.list`）；不带 = 默认屏幕 |
 | `cellular_cap` | string | `"true"` 表示用户开启了「移动网络省流」；此时若当前是计费网络，应降到 `low`，并把 JPEG 压到约 45,000 字节以内，且两次截图至少间隔 2 秒 |
 
 响应：
@@ -389,12 +473,13 @@
 | `mime` | string | 必须是 `image/jpeg` |
 | `width` / `height` | string | **原始屏幕**像素尺寸（不是缩放后的）；必须是正数。`screen.control` 的坐标使用同一坐标系 |
 | `captured_at` | string | 截图时间，毫秒时间戳的十进制字符串 |
+| `display_id` | string | 请求带了 `display_id` 时**必须原样回传**；没带时可省略（视为默认屏幕） |
 
 要点：JPEG 建议 ≤ 260,000 字节（经 base64 与信封嵌套后需要小于 512 KiB 回复上限，见 [05](05-relay.md#大小与时间限制)），可逐步降低压缩质量直到满足；两次截图间隔不少于约 400 毫秒；受保护窗口（如密码输入、支付页）截不到时返回 `screen.capture_failed`。错误码：`screen.permission_required`、`screen.unsupported`（系统版本不支持截屏）、`screen.capture_failed`、`screen.frame_too_large`。
 
 ### `screen.tree`（可选）
 
-请求 `{}`。响应（桌面原样交给指挥 Agent，建议保持这个形状）：
+请求 `{}`，或带可选的 `display_id`（见 `screen.list`）。响应（桌面原样交给指挥 Agent，建议保持这个形状；请求带 `display_id` 时响应里要回传同一个 `display_id`）：
 
 ```json
 { "package": "com.example.app",
@@ -419,8 +504,9 @@
 | `x2` `y2` | string | 滑动终点；不用时为 `""` |
 | `text` | string | `type` 要输入的文本，≤ 8000 字符；对当前获得焦点的输入框设置文本 |
 | `package_name` | string | `open_app` 的应用包名 |
+| `display_id` | string | 可选：作用的屏幕（见 `screen.list`）；不带 = 默认屏幕。响应里原样回传 |
 
-响应：`{ "status": "completed", "action": "<action>", "at": <毫秒>, "confirmation": "<说明>" }` ——`completed` 的含义是**系统接受了这个动作**，不代表界面效果已达成，桌面指挥 Agent 会再截图 / 读界面树验证。
+响应：`{ "status": "completed", "action": "<action>", "at": <毫秒>, "confirmation": "<说明>" }`（请求带 `display_id` 时再加一个同值的 `display_id`） ——`completed` 的含义是**系统接受了这个动作**，不代表界面效果已达成，桌面指挥 Agent 会再截图 / 读界面树验证。
 
 行为：
 
