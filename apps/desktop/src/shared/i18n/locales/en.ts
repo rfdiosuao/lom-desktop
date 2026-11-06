@@ -1,5 +1,11 @@
 /** App chrome / settings. Model responses, user names and documents are deliberately not translated. */
 export const EN: Record<string, string> = {
+  '添加 API Key': 'Add API key',
+  '配置你自己的模型服务。Key 由本机核心服务加密保存，请求发往你指定的模型服务。': 'Configure your own model provider. The local core encrypts stored keys; requests go to your selected provider.',
+  '还没有添加模型服务，请先添加 API Key。': 'No model provider yet. Add an API key to get started.',
+  '社区版使用局域网配对，请让手机和电脑连接同一私有网络。': 'Community pairing uses the LAN. Connect your phone and computer to the same private network.',
+  '局域网 RPC 载荷经过签名与加密；配对和控制使用 HTTP，请勿将配对端口暴露到公网。': 'LAN RPC payloads are signed and encrypted. Pairing and control use HTTP; keep the pairing port off the public internet.',
+  '这里只显示真实配对。撤销会解除本机与该手机的连接，手机上的数据保留。': 'Only real pairings appear here. Revoking a pairing disconnects this computer from the phone and keeps the data on the phone.',
   '开源社区版账号': 'Community edition account',
   '开源版未包含账号、云端 PA 和手机中转后端。请使用自带 API Key 的通用任务；社区可自行实现兼容服务。': 'The community edition does not include account, cloud Personal Agent, or phone relay backends. Use ordinary tasks with your own API key, or implement a compatible service.',
   '通用任务直接使用本机核心和你配置的模型服务。': 'Ordinary tasks use the local core and your configured model provider.',

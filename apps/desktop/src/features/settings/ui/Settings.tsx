@@ -130,17 +130,17 @@ function Models() {
     </Section>}
     <Section title="默认模型">
       <SettingCard>
-        <SettingRow title="电脑主控（总指挥）" desc="大模型，负责创作、规划和接管手机。" control={<Dropdown label={currentPcModel()?.name ?? '登录或添加 API Key'} menu="model" ctx={{ agent: 'pc', key: 'mdpc' }} variant="secondary" size="sm" />} />
+        <SettingRow title="电脑主控（总指挥）" desc="大模型，负责创作、规划和接管手机。" control={<Dropdown label={currentPcModel()?.name ?? (cloudConfigured() ? '登录或添加 API Key' : '添加 API Key')} menu="model" ctx={{ agent: 'pc', key: 'mdpc' }} variant="secondary" size="sm" />} />
         <SettingRow title="手机 Agent" desc="手机执行任务默认用的模型（建议小模型，便宜快速）；发任务时同步到手机。" control={<Dropdown label={phoneModelName(s.phoneModel)} menu="model" ctx={{ agent: 'phones', key: 'mdph' }} variant="secondary" size="sm" />} />
       </SettingCard>
     </Section>
-    <Section title="自带 API Key" hint="自带 Key 是可选项，调用不消耗平台额度。Key 由本机核心服务加密保存，不会上传到麓鸣服务器。">
+    <Section title="自带 API Key" hint={cloudConfigured() ? '自带 Key 是可选项，调用不消耗平台额度。Key 由本机核心服务加密保存，不会上传到麓鸣服务器。' : '配置你自己的模型服务。Key 由本机核心服务加密保存，请求发往你指定的模型服务。'}>
       <div className="list">
         {own.length ? own.map(p => (
           <ListRow key={p.id} lead={<IconTile ic="key" />} title={p.name} titleExtra={p.enabled ? <Badge text="可用" tone="ok" /> : <Badge text="已停用" />}
             sub={`${p.models.slice(0, 3).join('、')}${p.models.length > 3 ? ` ${t('等')} ${p.models.length} ${t('个模型')}` : ''} · ${prettyPath(p.base_url)} · ${t('添加于')} ${agoText(p.created_at)}`}
             actions={<><Btn label="测试" variant="ghost" size="sm" onClick={() => void testKey(p.id)} /><IconBtn ic="trash" label="删除" onClick={() => deleteKey(p.id)} /></>} />
-        )) : <div className="list-row muted">{s.conn === 'ready' ? t('还没有添加自带 Key。也可以直接使用上方的 Lom 内置模型。') : t('核心服务未连接，无法读取模型服务')}</div>}
+        )) : <div className="list-row muted">{s.conn === 'ready' ? t(cloudConfigured() ? '还没有添加自带 Key。也可以直接使用上方的 Lom 内置模型。' : '还没有添加模型服务，请先添加 API Key。') : t('核心服务未连接，无法读取模型服务')}</div>}
       </div>
       <div style={{ marginTop: 10 }}><Btn label="添加模型" ic="plus" variant="secondary" size="sm" onClick={addKey} disabled={s.conn !== 'ready'} /></div>
     </Section>
@@ -151,7 +151,7 @@ function Connections() {
   const s = useStore();
   const real = phones().filter(p => p.real), demo = phones().filter(p => !p.real);
   return <>
-    <PageHead title="手机与连接" desc="管理配对设备、连接方式与实时画面。手机和电脑不需要在同一网络。" actions={<Btn label="添加手机" ic="plus" variant="primary" onClick={pair} />} />
+    <PageHead title="手机与连接" desc={cloudConfigured() ? '管理配对设备、连接方式与实时画面。手机和电脑不需要在同一网络。' : '社区版使用局域网配对，请让手机和电脑连接同一私有网络。'} actions={<Btn label="添加手机" ic="plus" variant="primary" onClick={pair} />} />
     <Section title="已配对手机" extra={<Badge text={String(real.length)} />} hint="真实手机支持会话、人格、记忆和技能同步；子代理管理尚未接入。">
       <div className="list">{real.length ? real.map(p => (
         <ListRow key={p.id} lead={<Avatar agent={p} status />} title={p.name} sub={`${t(phoneAppText(p))} · ${p.device}`}
@@ -204,7 +204,7 @@ function AgentDefaults() {
 function Security() {
   const s = useStore();
   return <>
-    <PageHead title="权限与安全" desc="所有电脑与手机之间的通信都端到端加密，麓鸣服务器只负责转发。" />
+    <PageHead title="权限与安全" desc={cloudConfigured() ? '所有电脑与手机之间的通信都端到端加密，麓鸣服务器只负责转发。' : '局域网 RPC 载荷经过签名与加密；配对和控制使用 HTTP，请勿将配对端口暴露到公网。'} />
     <Section title="电脑上的操作">
       <SettingCard>
         <SettingRow title="安装软件与执行命令" desc={INSTALL_POLICY_DESC} control={<Dropdown label={INSTALL_POLICY_LABELS[String(s.prefs.allowInstall)] || INSTALL_POLICY_LABELS.ask} menu="installPolicy" size="sm" variant="secondary" />} />
@@ -212,7 +212,7 @@ function Security() {
         <SettingRow title="查看审计日志" control={<Btn label="打开" variant="secondary" size="sm" onClick={auditLog} />} />
       </SettingCard>
     </Section>
-    <Section title="配对授权" hint="这里只显示真实配对。撤销会解除该手机与账号的连接，手机上的数据保留。">
+    <Section title="配对授权" hint={cloudConfigured() ? '这里只显示真实配对。撤销会解除该手机与账号的连接，手机上的数据保留。' : '这里只显示真实配对。撤销会解除本机与该手机的连接，手机上的数据保留。'}>
       <div className="list">{phones().filter(p => p.real).map(p => <ListRow key={p.id} lead={<IconTile ic="phone" />} title={p.name} sub={p.device}
         actions={<Btn label="撤销配对" variant="danger-ghost" size="sm" onClick={() => unpair(p.id)} />} />)}
         {!phones().some(p => p.real) && <div className="list-row muted">{t('暂无真实配对授权')}</div>}
